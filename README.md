@@ -70,6 +70,15 @@ checksums for:
 Android is intentionally not part of the required release matrix for now
 because Codex itself does not currently compile for Android.
 
+The crate publishing workflow follows the same tag discipline. On tag pushes it
+verifies the `Cargo.toml` version, runs `cargo publish --dry-run`, authenticates
+with crates.io trusted publishing, and publishes `brokk-codex-acp`. Manual
+workflow runs default to dry-run mode unless `publish` is explicitly enabled.
+
+Before the first publish, configure crates.io trusted publishing for this
+repository, the `.github/workflows/publish-crate.yml` workflow, and the
+`release` GitHub environment.
+
 ## License
 
 This project is licensed under GPL-3.0-or-later.

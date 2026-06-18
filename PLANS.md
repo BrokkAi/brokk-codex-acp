@@ -166,6 +166,18 @@ Release rules:
 - Keep `workflow_dispatch` available for dry artifact builds without creating a
   release.
 
+Crates.io publishing:
+
+- Publish `brokk-codex-acp` from the separate `Publish crate` workflow.
+- Use crates.io trusted publishing via GitHub OIDC instead of a long-lived
+  registry token.
+- Require the `release` GitHub environment for the publish job.
+- On tag pushes, verify the tag version matches `Cargo.toml`, run
+  `cargo publish --dry-run -p brokk-codex-acp --locked`, then publish.
+- On manual workflow runs, dry-run by default and only publish when the
+  `publish` input is explicitly set.
+- Configure the crates.io trusted publisher before the first real publish.
+
 Android:
 
 - Do not make Android a required release target yet.

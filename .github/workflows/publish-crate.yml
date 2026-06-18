@@ -1,0 +1,74 @@
+name: Publish crate
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish to crates.io instead of running a dry-run
+        required: false
+        default: false
+        type: boolean
+
+# Harden cargo's network layer against transient crates.io index fetches that
+# intermittently abort publishes while curl pulls the sparse index over HTTP/2.
+env:
+  CARGO_NET_RETRY: "10"
+  CARGO_HTTP_MULTIPLEXING: "false"
+
+jobs:
+  publish:
+    name: Publish brokk-codex-acp to crates.io
+    runs-on: ubuntu-latest
+    environment: release
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-publish-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-publish-
+            ${{ runner.os }}-cargo-
+
+      - name: Verify tag matches Cargo.toml version
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          EXPECTED_VERSION="${TAG#v}"
+          CARGO_VERSION=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+          if [ "$EXPECTED_VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Tag version ($EXPECTED_VERSION) does not match Cargo.toml version ($CARGO_VERSION). Bump Cargo.toml before tagging."
+            exit 1
+          fi
+          echo "Tag and Cargo.toml versions match: $CARGO_VERSION"
+
+      - name: Verify package
+        run: cargo publish --dry-run -p brokk-codex-acp --locked
+
+      - name: Authenticate with crates.io
+        if: github.event_name == 'push' || github.event.inputs.publish == 'true'
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1.0.4
+
+      - name: Publish crate
+        if: github.event_name == 'push' || github.event.inputs.publish == 'true'
+        run: cargo publish -p brokk-codex-acp --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
