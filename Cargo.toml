@@ -6,7 +6,7 @@ authors = ["Brokk Codex ACP contributors"]
 license = "GPL-3.0-or-later"
 description = "An Agent Client Protocol server for Codex backed by codex app-server"
 readme = "README.md"
-repository = "https://github.com/brokk/brokk-codex-acp"
+repository = "https://github.com/BrokkAi/brokk-codex-acp"
 
 [[bin]]
 name = "brokk-codex-acp"
