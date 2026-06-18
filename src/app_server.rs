@@ -85,14 +85,8 @@ impl AppServerClient {
     }
 
     pub async fn thread_start(&mut self, cwd: String) -> anyhow::Result<ThreadStartResponse> {
-        self.request(
-            "thread/start",
-            ThreadStartParams {
-                cwd: Some(cwd),
-                ..ThreadStartParams::default()
-            },
-        )
-        .await
+        self.request("thread/start", ThreadStartParams { cwd: Some(cwd) })
+            .await
     }
 
     pub async fn thread_fork(

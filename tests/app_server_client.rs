@@ -83,8 +83,26 @@ impl FakeCodex {
 
 fn fake_codex_app_server() -> anyhow::Result<FakeCodex> {
     let temp_dir = tempfile::tempdir()?;
-    let path = temp_dir.path().join("codex");
-    fs::write(&path, FAKE_CODEX_APP_SERVER)?;
+
+    #[cfg(windows)]
+    let path = {
+        let script_path = temp_dir.path().join("fake_codex_app_server.py");
+        fs::write(&script_path, FAKE_CODEX_APP_SERVER)?;
+
+        let wrapper_path = temp_dir.path().join("codex.cmd");
+        fs::write(
+            &wrapper_path,
+            "@echo off\r\npython \"%~dp0fake_codex_app_server.py\" %*\r\n",
+        )?;
+        wrapper_path
+    };
+
+    #[cfg(not(windows))]
+    let path = {
+        let path = temp_dir.path().join("codex");
+        fs::write(&path, FAKE_CODEX_APP_SERVER)?;
+        path
+    };
 
     #[cfg(unix)]
     {
