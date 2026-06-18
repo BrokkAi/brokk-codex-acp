@@ -136,6 +136,110 @@ This baseline intentionally supports only text and resource-link prompt blocks.
 Tool calls, command output, approval requests, reasoning chunks, history replay,
 skills catalogs, and slash command routing remain planned work.
 
+## Immediate Roadmap
+
+The next work should stay focused on making normal Codex turns feel real in an
+ACP client before expanding into catalogs and slash commands.
+
+### Milestone A: Complete Turn Streaming
+
+Goal: a normal prompt should render the same major events an app-server client
+would see.
+
+Tasks:
+
+- Add a typed app-server notification dispatcher instead of handling only
+  prompt-local `item/agentMessage/delta` and `turn/completed`.
+- Track active turns by `threadId` and `turnId`.
+- Track active items by app-server `itemId`.
+- Map command execution, tool calls, reasoning, file changes, and usage updates
+  into ACP updates.
+- Add tests that feed fake app-server notifications and assert ACP output.
+
+Acceptance criteria:
+
+- Agent text streams as it does today.
+- Reasoning deltas appear as ACP thought chunks when supported.
+- Shell commands appear as ACP tool calls.
+- Shell output streams incrementally.
+- File changes appear as tool call updates or diff content.
+- Prompt completion returns the correct `StopReason`.
+
+### Milestone B: Skills Catalog and Invocation
+
+Goal: skills should be discoverable and invokable, not just passed through as
+unstructured text.
+
+Tasks:
+
+- Add `skills/list` request support.
+- Refresh skills on `session/new`, `session/resume`, `session/fork`, and
+  `skills/changed`.
+- Cache skills by cwd and invalidate on `skills/changed`.
+- Publish skills through ACP available commands and, where supported, mention
+  metadata.
+- Convert `$skill-name` and `/skill skill-name` input into app-server
+  `UserInput::Skill` when the skill path is known.
+- Fall back to plain text when a skill cannot be resolved.
+- Add `skills/config/write` support for enable/disable.
+
+Acceptance criteria:
+
+- A client can list available skills for a session cwd.
+- `$skill-name do work` reaches Codex with structured skill metadata when
+  possible.
+- Disabled skills disappear from the published list after refresh.
+- Unknown skills produce a clear error or clean text fallback.
+
+### Milestone C: Slash Command Router
+
+Goal: supported slash commands should route to real app-server APIs or explicit
+client behavior, not model prompts.
+
+Tasks:
+
+- Add a parser that only treats a leading slash at the start of the user message
+  as a command.
+- Build a command registry with name, aliases, availability, required active
+  turn state, and handler.
+- Publish ACP available commands from that registry plus skills.
+- Implement backend commands first: `/new`, `/resume`, `/fork`, `/review`,
+  `/compact`, `/rename`, `/model`, `/permissions`, `/mcp`, `/apps`,
+  `/plugins`, `/hooks`, and `/status`.
+- Return explicit unsupported-command responses for known UI-only commands that
+  ACP cannot represent.
+- Add fake app-server tests for each backend command mapping.
+
+Acceptance criteria:
+
+- `/fork` creates a new ACP session via `thread/fork`.
+- `/review` calls `review/start`.
+- `/compact` calls the app-server compaction API when available.
+- `/model` and `/permissions` expose pickers/config updates rather than sending
+  text to the model.
+- Unknown commands never silently become prompts unless explicitly configured.
+
+### Milestone D: Session History and Replay
+
+Goal: resume, load, and fork should be useful in clients that need transcript
+hydration.
+
+Tasks:
+
+- Add `thread/read` support.
+- Decide when `session/resume` should replay history versus only attach to the
+  active app-server thread.
+- Convert stored user messages, agent messages, reasoning, command executions,
+  MCP tool calls, and file changes into ACP updates.
+- Add pagination and size limits for large histories.
+- Add tests for replay ordering and partial history.
+
+Acceptance criteria:
+
+- `session/list` plus `session/resume` can reopen a useful prior conversation.
+- Large histories do not require loading all turns into memory.
+- Fork replay behavior is explicit and tested.
+
 ## Core Session Mapping
 
 ACP sessions should map directly to app-server threads.
@@ -404,6 +508,24 @@ The adapter should keep a per-session active item map:
 app-server item id -> ACP tool call id / message stream id
 ```
 
+### Notification Mapping Matrix
+
+| App-server notification | ACP output | Notes |
+| --- | --- | --- |
+| `turn/started` | internal active-turn state | Store `turn.id`; do not need a visible update by default. |
+| `turn/completed` | `PromptResponse.stopReason` | Already handled for the active prompt path. |
+| `item/agentMessage/delta` | `AgentMessageChunk` | Already handled for the active prompt path. |
+| `item/reasoning/delta` | `AgentThoughtChunk` | Gate on client support where needed. |
+| `item/started` | `ToolCall` or internal item state | Depends on item subtype. |
+| `item/completed` | `ToolCallUpdate` | Mark final status and attach final content. |
+| `item/commandExecution/outputDelta` | `ToolCallUpdate` with terminal/output content | Preserve stdout/stderr boundaries if present. |
+| `turn/diff/updated` | `ToolCallUpdate` or diff content | Useful for file edit previews. |
+| `turn/plan/updated` | `Plan` or `PlanUpdate` | Use stable `Plan` first; use unstable operations only deliberately. |
+| `permissions/requestApproval` | `session/request_permission` | Must block app-server until the ACP client answers. |
+| `skills/changed` | `AvailableCommandsUpdate` and `ConfigOptionUpdate` | Re-run `skills/list` first. |
+| `model/rerouted` | `SessionInfoUpdate` or warning chunk | Prefer non-invasive visibility. |
+| `warning` / `error` | agent message chunk or tool-call error | Keep user-actionable text. |
+
 ## Slash Commands
 
 Commands should be divided into three categories.
@@ -434,6 +556,46 @@ These map cleanly to app-server APIs and should be supported early:
 | `/ps` | `thread/backgroundTerminals/list` |
 | `/stop` | `thread/backgroundTerminals/clean` |
 | `/status` | local summary plus app-server status/config reads |
+
+### Command Parser Rules
+
+- Only parse slash commands when the first non-whitespace character is `/`.
+- Treat escaped `\/command` as plain text.
+- Preserve the raw original input for error messages and logging.
+- Split the command name from the rest of the line with shell-like quoting only
+  where a command needs it; most commands can treat the remainder as a raw
+  string.
+- Do not parse slash commands inside code blocks or multi-line text unless the
+  first logical user input line is the command.
+- Prefer exact command names over aliases.
+- Keep aliases explicit in the registry.
+- Reject ambiguous or partial commands with suggestions.
+
+### Command Registry Shape
+
+The registry should be data-driven enough to publish ACP available commands and
+route user input through the same source of truth.
+
+```rust
+struct CommandSpec {
+    name: &'static str,
+    aliases: &'static [&'static str],
+    description: &'static str,
+    availability: CommandAvailability,
+    handler: CommandHandler,
+}
+
+enum CommandAvailability {
+    Always,
+    RequiresSession,
+    RequiresActiveTurn,
+    RequiresNoActiveTurn,
+    RequiresAppServerMethod(&'static str),
+}
+```
+
+Do not hardcode a separate available-commands list; derive it from the registry
+plus the current session state and app-server capability probes.
 
 ### Client/UI Commands
 
@@ -482,6 +644,18 @@ Expose skills to ACP clients as:
 - mention completions if ACP supports mentions
 - config options if ACP supports enable/disable toggles
 
+The app-server shape to use is:
+
+```text
+skills/list
+skills/config/write
+skills/extraRoots/set
+plugin/skill/read
+```
+
+`skills/list` accepts `forceReload`; use it after config writes and
+`skills/changed`, not on every prompt.
+
 ### Invocation
 
 Support both forms:
@@ -500,6 +674,21 @@ Preferred transport to app-server:
 Fallback transport:
 
 - send the text as-is and rely on Codex's skill mention parser
+
+Structured app-server input should use `UserInput::Skill`:
+
+```json
+{
+  "type": "skill",
+  "name": "skill-name",
+  "path": "/absolute/path/to/SKILL.md"
+}
+```
+
+When the user writes `$skill-name extra instructions`, the `turn/start.input`
+list should include both the skill item and a text item for the remaining user
+text. Preserve the visible text in the ACP transcript so the client still shows
+what the user typed.
 
 ### Enable/Disable
 
@@ -552,6 +741,15 @@ Invocation should follow app-server mention semantics:
 - plugins use `plugin://<plugin-name>@<marketplace-name>`
 - MCP tools are invoked by the model through Codex after config refresh
 
+The adapter should expose these as command/catalog surfaces first, not as direct
+model prompts:
+
+- `/apps` should call `app/list`.
+- `/plugins` should call `plugin/list` and `plugin/installed`.
+- `/mcp` should call `mcpServerStatus/list`.
+- resource reads and direct tool calls should only be exposed when an ACP client
+  has a clear UI affordance for them.
+
 ## Config Options
 
 Expose session config options from app-server catalogs.
@@ -573,6 +771,17 @@ Mappings:
 - `collaborationMode/list` -> mode picker
 - `thread/settings/update` -> persisted next-turn setting changes
 
+ACP config option IDs should be stable and adapter-owned:
+
+| ACP option id | App-server source | App-server write |
+| --- | --- | --- |
+| `model` | `model/list` | `thread/settings/update.model` |
+| `reasoning_effort` | `model/list` selected model metadata | `thread/settings/update.effort` |
+| `permission_profile` | `permissionProfile/list` | `thread/settings/update.permissions` |
+| `approval_policy` | config/read or thread settings | `thread/settings/update.approvalPolicy` |
+| `collaboration_mode` | `collaborationMode/list` | `thread/settings/update.collaborationMode` |
+| `skills.enabled` | `skills/list` | `skills/config/write` |
+
 ## Approval Flow
 
 Approval routing should preserve app-server semantics.
@@ -588,6 +797,17 @@ When app-server emits a command approval request:
 
 Do not invent approval policies in the adapter. Policies should come from
 Codex config, app-server thread settings, or explicit ACP session options.
+
+### Approval Implementation Notes
+
+- Treat app-server approval notifications as blocking requests.
+- Store pending app-server request IDs by ACP permission request ID.
+- Include command argv, cwd, sandbox profile, affected paths, and any app-server
+  rationale.
+- Map ACP `Allowed` to the app-server approval response shape.
+- Map ACP `Rejected` and `Cancelled` distinctly.
+- When the ACP client disconnects, reject outstanding approval requests with a
+  cancellation outcome.
 
 ## History and Replay
 
@@ -635,6 +855,8 @@ Prefer graceful degradation:
 - Skills list cache invalidation.
 - `session/fork` request and response mapping.
 - Approval option mapping.
+- Prompt cancellation state cleanup.
+- Active item mapping for command execution and MCP calls.
 
 ### Integration Tests
 
@@ -642,15 +864,15 @@ Use a fake app-server JSON-RPC process first.
 
 Scenarios:
 
-- initialize
-- new session
-- prompt and stream final answer
+- initialize `[done]`
+- new session `[done]`
+- prompt and stream final answer `[done]`
 - command tool call output
 - approval request and approval response
 - skills list and changed notification
 - enable/disable skill
-- fork session and prompt in fork
-- cancel active turn
+- fork session and prompt in fork `[partial: fork mapping covered]`
+- cancel active turn `[done at app-server client level]`
 
 Then add smoke tests against a real local `codex app-server --stdio` when the
 Codex source checkout is available.
@@ -689,40 +911,50 @@ Manual flows:
 
 ### Phase 2: Event Translation
 
-- Map agent messages, thoughts, command tool calls, file edits, and turn
-  completion.
-- Add active turn tracking.
-- Add active item/tool-call tracking.
-- Add buffered output fallback for clients without terminal streaming.
+- [x] Map agent message deltas for the active prompt.
+- [x] Map turn completion for the active prompt.
+- [x] Add active turn tracking for cancellation.
+- [ ] Move notification handling into a typed app-server event dispatcher.
+- [ ] Map reasoning deltas.
+- [ ] Map command execution lifecycle and output.
+- [ ] Map file diffs/changes.
+- [ ] Map MCP tool calls.
+- [ ] Add active item/tool-call tracking.
+- [ ] Add buffered output fallback for clients without terminal streaming.
+- [ ] Add fake app-server tests for each notification family.
 
 ### Phase 3: Slash Commands
 
-- Add command catalog generation.
-- Implement backend commands:
-  - `/review`
-  - `/compact`
-  - `/init`
-  - `/rename`
-  - `/new`
-  - `/resume`
-  - `/fork`
-  - `/goal`
-  - `/model`
-  - `/permissions`
-  - `/mcp`
-  - `/apps`
-  - `/plugins`
-  - `/hooks`
-  - `/status`
+- [ ] Add command parser.
+- [ ] Add command registry.
+- [ ] Publish command registry through ACP available commands.
+- [ ] Implement `/new`.
+- [ ] Implement `/resume`.
+- [ ] Implement `/fork`.
+- [ ] Implement `/review`.
+- [ ] Implement `/compact`.
+- [ ] Implement `/init`.
+- [ ] Implement `/rename`.
+- [ ] Implement `/goal`.
+- [ ] Implement `/model`.
+- [ ] Implement `/permissions`.
+- [ ] Implement `/mcp`.
+- [ ] Implement `/apps`.
+- [ ] Implement `/plugins`.
+- [ ] Implement `/hooks`.
+- [ ] Implement `/status`.
 
 ### Phase 4: Skills
 
-- Implement `skills/list` refresh.
-- Publish skills as ACP commands or mentions.
-- Support `$skill-name` invocation.
-- Implement enable/disable with `skills/config/write`.
-- Handle `skills/changed`.
-- Support `skills/extraRoots/set`.
+- [ ] Implement `skills/list` request/response types.
+- [ ] Implement skill cache by cwd.
+- [ ] Refresh skills on session lifecycle and `skills/changed`.
+- [ ] Publish skills as ACP commands or mentions.
+- [ ] Support `$skill-name` invocation.
+- [ ] Support `/skill skill-name` invocation.
+- [ ] Implement enable/disable with `skills/config/write`.
+- [ ] Support `skills/extraRoots/set`.
+- [ ] Add fake app-server tests for discovery, invocation, and invalidation.
 
 ### Phase 5: session/fork
 
@@ -735,20 +967,24 @@ Manual flows:
 
 ### Phase 6: Catalogs and Advanced Surfaces
 
-- Add model and reasoning effort config options.
-- Add permission profile config options.
-- Add apps/plugins/MCP commands.
-- Add hooks display.
-- Add background terminal list/clean.
+- [ ] Add model and reasoning effort config options.
+- [ ] Add permission profile config options.
+- [ ] Add approval policy config options.
+- [ ] Add collaboration mode config options.
+- [ ] Add apps/plugins/MCP commands.
+- [ ] Add hooks display.
+- [ ] Add background terminal list/clean.
 
 ### Phase 7: Hardening
 
-- Version-gate app-server methods.
-- Add compatibility handling for older Codex versions.
-- Add structured logging.
-- Add backpressure for notification bursts.
-- Add shutdown cleanup for app-server child process.
-- Add real app-server smoke tests.
+- [ ] Version-gate app-server methods.
+- [ ] Add compatibility handling for older Codex versions.
+- [ ] Add structured logging around app-server requests and ACP dispatch.
+- [ ] Add backpressure for notification bursts.
+- [x] Add shutdown cleanup for app-server child process.
+- [ ] Add real app-server smoke tests.
+- [ ] Add connection-disconnect cleanup for active prompts and approvals.
+- [ ] Add error mapping tests.
 
 ## Open Questions
 
@@ -762,16 +998,31 @@ Manual flows:
 - Should the adapter use the installed `codex` binary or link app-server crates
   directly in-process?
 
-## Recommended First Commit
+## Next Concrete PRs
 
-The first implementation commit should be intentionally small:
+Keep PRs small enough to review against fake app-server tests.
 
-- replace the hello-world binary with a real CLI entrypoint
-- add an app-server JSON-RPC client module
-- add a session manager module
-- implement initialize and app-server handshake
-- add a fake app-server integration test
+1. App-server event dispatcher:
+   - add typed notification enum
+   - move active prompt handling onto the dispatcher
+   - keep existing behavior unchanged
 
-Do not start by porting `codex-acp` wholesale. Use it as a reference for ACP
-event shapes and client compatibility, but keep the new adapter centered on
-`codex app-server`.
+2. Command execution streaming:
+   - decode command execution start/output/completion notifications
+   - map them to ACP `ToolCall` and `ToolCallUpdate`
+   - add fake app-server tests
+
+3. Skills discovery:
+   - add `skills/list`
+   - publish available commands for skills
+   - refresh on session lifecycle
+
+4. Slash command parser and `/fork`:
+   - add parser and registry
+   - route `/fork` through existing session fork logic
+   - publish `/fork` as an ACP available command
+
+5. Config options:
+   - add `model/list` and `permissionProfile/list`
+   - publish `model` and `permission_profile` ACP config options
+   - write changes with `thread/settings/update`
