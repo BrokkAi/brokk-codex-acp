@@ -1,0 +1,248 @@
+name: GitHub Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Harden cargo's network layer against transient crates.io index fetches that
+# can fail with `[16] Error in the HTTP2 framing layer` while curl pulls the
+# sparse index over HTTP/2.
+env:
+  CARGO_NET_RETRY: "10"
+  CARGO_HTTP_MULTIPLEXING: "false"
+
+jobs:
+  build-linux:
+    name: Build x86_64-unknown-linux-gnu
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Install zip
+        run: sudo apt-get update && sudo apt-get install -y zip
+
+      - name: Verify tag matches Cargo.toml version
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          EXPECTED_VERSION="${TAG#v}"
+          CARGO_VERSION=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+          if [ "$EXPECTED_VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Tag version ($EXPECTED_VERSION) does not match Cargo.toml version ($CARGO_VERSION). Bump Cargo.toml before tagging."
+            exit 1
+          fi
+          echo "Tag and Cargo.toml versions match: $CARGO_VERSION"
+
+      - name: Build release binary
+        run: cargo build --release --locked --target x86_64-unknown-linux-gnu
+
+      - name: Package archive
+        shell: bash
+        run: |
+          ref="${GITHUB_REF_NAME//\//-}"
+          name="brokk-codex-acp-${ref}-x86_64-unknown-linux-gnu"
+          mkdir "$name"
+          cp "target/x86_64-unknown-linux-gnu/release/brokk-codex-acp" "$name/"
+          cp README.md LICENSE.md "$name/"
+          zip -r "$name.zip" "$name"
+          sha256sum "$name.zip" > "$name.zip.sha256"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: x86_64-unknown-linux-gnu
+          path: |
+            brokk-codex-acp-*.zip
+            brokk-codex-acp-*.zip.sha256
+          if-no-files-found: error
+
+  build-linux-arm64:
+    name: Build aarch64-unknown-linux-gnu
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Install zip
+        run: sudo apt-get update && sudo apt-get install -y zip
+
+      - name: Verify tag matches Cargo.toml version
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          EXPECTED_VERSION="${TAG#v}"
+          CARGO_VERSION=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+          if [ "$EXPECTED_VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Tag version ($EXPECTED_VERSION) does not match Cargo.toml version ($CARGO_VERSION). Bump Cargo.toml before tagging."
+            exit 1
+          fi
+          echo "Tag and Cargo.toml versions match: $CARGO_VERSION"
+
+      - name: Build release binary
+        run: cargo build --release --locked --target aarch64-unknown-linux-gnu
+
+      - name: Package archive
+        shell: bash
+        run: |
+          ref="${GITHUB_REF_NAME//\//-}"
+          name="brokk-codex-acp-${ref}-aarch64-unknown-linux-gnu"
+          mkdir "$name"
+          cp "target/aarch64-unknown-linux-gnu/release/brokk-codex-acp" "$name/"
+          cp README.md LICENSE.md "$name/"
+          zip -r "$name.zip" "$name"
+          sha256sum "$name.zip" > "$name.zip.sha256"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: aarch64-unknown-linux-gnu
+          path: |
+            brokk-codex-acp-*.zip
+            brokk-codex-acp-*.zip.sha256
+          if-no-files-found: error
+
+  build-windows:
+    name: Build x86_64-pc-windows-msvc
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Verify tag matches Cargo.toml version
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          EXPECTED_VERSION="${TAG#v}"
+          CARGO_VERSION=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+          if [ "$EXPECTED_VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Tag version ($EXPECTED_VERSION) does not match Cargo.toml version ($CARGO_VERSION). Bump Cargo.toml before tagging."
+            exit 1
+          fi
+          echo "Tag and Cargo.toml versions match: $CARGO_VERSION"
+
+      - name: Build release binary
+        run: cargo build --release --locked --target x86_64-pc-windows-msvc
+
+      - name: Package archive
+        shell: pwsh
+        run: |
+          $ref = $env:GITHUB_REF_NAME -replace '/', '-'
+          $name = "brokk-codex-acp-$ref-x86_64-pc-windows-msvc"
+          New-Item -ItemType Directory -Path $name | Out-Null
+          Copy-Item "target\x86_64-pc-windows-msvc\release\brokk-codex-acp.exe" -Destination $name
+          Copy-Item "README.md" -Destination $name
+          Copy-Item "LICENSE.md" -Destination $name
+          Compress-Archive -Path $name -DestinationPath "$name.zip"
+          $hash = (Get-FileHash -Algorithm SHA256 "$name.zip").Hash.ToLower()
+          "$hash  $name.zip" | Set-Content -Path "$name.zip.sha256" -NoNewline
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: x86_64-pc-windows-msvc
+          path: |
+            brokk-codex-acp-*.zip
+            brokk-codex-acp-*.zip.sha256
+          if-no-files-found: error
+
+  build-macos:
+    name: Build universal-apple-darwin
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+
+      - name: Verify tag matches Cargo.toml version
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          EXPECTED_VERSION="${TAG#v}"
+          CARGO_VERSION=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+          if [ "$EXPECTED_VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Tag version ($EXPECTED_VERSION) does not match Cargo.toml version ($CARGO_VERSION). Bump Cargo.toml before tagging."
+            exit 1
+          fi
+          echo "Tag and Cargo.toml versions match: $CARGO_VERSION"
+
+      - name: Build x86_64 binary
+        run: cargo build --release --locked --target x86_64-apple-darwin
+
+      - name: Build aarch64 binary
+        run: cargo build --release --locked --target aarch64-apple-darwin
+
+      - name: Create universal binary
+        run: |
+          mkdir -p target/universal-apple-darwin/release
+          lipo -create \
+            target/x86_64-apple-darwin/release/brokk-codex-acp \
+            target/aarch64-apple-darwin/release/brokk-codex-acp \
+            -output target/universal-apple-darwin/release/brokk-codex-acp
+          lipo -info target/universal-apple-darwin/release/brokk-codex-acp
+
+      - name: Package archive
+        shell: bash
+        run: |
+          ref="${GITHUB_REF_NAME//\//-}"
+          name="brokk-codex-acp-${ref}-universal-apple-darwin"
+          mkdir "$name"
+          cp target/universal-apple-darwin/release/brokk-codex-acp "$name/"
+          cp README.md LICENSE.md "$name/"
+          zip -r "$name.zip" "$name"
+          shasum -a 256 "$name.zip" > "$name.zip.sha256"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: universal-apple-darwin
+          path: |
+            brokk-codex-acp-*.zip
+            brokk-codex-acp-*.zip.sha256
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    if: github.event_name == 'push'
+    needs: [build-linux, build-linux-arm64, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/brokk-codex-acp-*.zip
+            artifacts/brokk-codex-acp-*.zip.sha256

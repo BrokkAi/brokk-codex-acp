@@ -141,6 +141,37 @@ skills catalogs, and slash command routing remain planned work.
 The next work should stay focused on making normal Codex turns feel real in an
 ACP client before expanding into catalogs and slash commands.
 
+## Release Strategy
+
+Match Anvil's desktop/server platform coverage while excluding Android until
+Codex can compile there.
+
+Required release artifacts:
+
+| Target | Runner | Artifact |
+| --- | --- | --- |
+| `x86_64-unknown-linux-gnu` | `ubuntu-latest` | `brokk-codex-acp-<tag>-x86_64-unknown-linux-gnu.zip` |
+| `aarch64-unknown-linux-gnu` | `ubuntu-24.04-arm` | `brokk-codex-acp-<tag>-aarch64-unknown-linux-gnu.zip` |
+| `x86_64-pc-windows-msvc` | `windows-latest` | `brokk-codex-acp-<tag>-x86_64-pc-windows-msvc.zip` |
+| `universal-apple-darwin` | `macos-latest` | `brokk-codex-acp-<tag>-universal-apple-darwin.zip` |
+
+Release rules:
+
+- Trigger GitHub releases from `v*.*.*` tags.
+- Verify the tag version matches `Cargo.toml`.
+- Build with `cargo build --release --locked`.
+- Include `README.md` and `LICENSE.md` in each archive.
+- Publish `.sha256` files next to every archive.
+- Generate GitHub release notes automatically.
+- Keep `workflow_dispatch` available for dry artifact builds without creating a
+  release.
+
+Android:
+
+- Do not make Android a required release target yet.
+- Revisit only if Codex gains Android support or the adapter stops depending on
+  an installed Codex runtime.
+
 ### Milestone A: Complete Turn Streaming
 
 Goal: a normal prompt should render the same major events an app-server client

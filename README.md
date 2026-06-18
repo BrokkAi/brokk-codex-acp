@@ -56,6 +56,20 @@ cargo fmt
 cargo check
 ```
 
+## Release Strategy
+
+Releases are cut from `v*.*.*` tags. The GitHub release workflow verifies that
+the tag version matches `Cargo.toml`, builds archives, and uploads SHA-256
+checksums for:
+
+- `x86_64-unknown-linux-gnu`
+- `aarch64-unknown-linux-gnu`
+- `x86_64-pc-windows-msvc`
+- `universal-apple-darwin`
+
+Android is intentionally not part of the required release matrix for now
+because Codex itself does not currently compile for Android.
+
 ## License
 
 This project is licensed under GPL-3.0-or-later.
