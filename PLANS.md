@@ -102,6 +102,38 @@ The bridge should keep one app-server process per ACP server process. Multiple
 ACP sessions can share that app-server process and map to separate app-server
 threads.
 
+## Implemented Baseline
+
+The current repository has the first working ACP/app-server bridge in place:
+
+- CLI commands:
+  - `probe` starts `codex app-server --stdio`, initializes it, and reports the
+    returned runtime metadata.
+  - `serve` starts `codex app-server --stdio`, initializes it, and serves ACP
+    over stdio.
+- ACP protocol handling:
+  - `initialize`
+  - `session/new`
+  - `session/resume`
+  - `session/list`
+  - `session/close`
+  - `session/fork`
+  - `session/prompt`
+- App-server mappings:
+  - `session/new` -> `thread/start`
+  - `session/resume` -> `thread/resume`
+  - `session/list` -> `thread/list`
+  - `session/close` -> `thread/unsubscribe`
+  - `session/fork` -> `thread/fork`
+  - `session/prompt` -> `turn/start`
+- Event translation:
+  - `item/agentMessage/delta` -> ACP agent message chunks
+  - `turn/completed` -> ACP prompt response completion
+
+This baseline intentionally supports only text and resource-link prompt blocks.
+Tool calls, command output, approval requests, reasoning chunks, cancellation,
+history replay, skills catalogs, and slash command routing remain planned work.
+
 ## Core Session Mapping
 
 ACP sessions should map directly to app-server threads.
@@ -642,12 +674,15 @@ Manual flows:
 
 ### Phase 1: Transport and Thread Basics
 
-- Add dependencies for ACP, async runtime, serde, and JSON-RPC transport.
-- Spawn `codex app-server --stdio`.
-- Implement app-server client with request IDs and notification dispatch.
-- Implement ACP initialize.
-- Implement `session/new`, `session/resume`, `session/list`, `session/close`.
-- Implement `prompt` via `turn/start`.
+- [x] Add dependencies for ACP, async runtime, serde, and JSON-RPC transport.
+- [x] Spawn `codex app-server --stdio`.
+- [x] Implement app-server client with request IDs and notification dispatch.
+- [x] Implement ACP initialize.
+- [x] Implement `session/new`, `session/resume`, `session/list`, and
+  `session/close`.
+- [x] Implement `session/fork` via `thread/fork`.
+- [x] Implement basic text `prompt` via `turn/start`.
+- [ ] Add fake app-server integration tests.
 - Implement cancellation via `turn/interrupt`.
 
 ### Phase 2: Event Translation
@@ -689,9 +724,9 @@ Manual flows:
 
 ### Phase 5: session/fork
 
-- Add ACP `session/fork` handler.
-- Map to app-server `thread/fork`.
-- Register the returned thread as a new ACP session.
+- [x] Add ACP `session/fork` handler.
+- [x] Map to app-server `thread/fork`.
+- [x] Return the returned thread as a new ACP session.
 - Replay fork history when requested.
 - Route `/fork` through the same code path.
 - Add tests for persistent and ephemeral forks.
@@ -715,8 +750,6 @@ Manual flows:
 
 ## Open Questions
 
-- Does the ACP crate currently define `session/fork`, or do we need an
-  extension method until upstream ACP standardizes it?
 - Should `session/close` mean unsubscribe, archive, or no-op for Codex?
 - Should `/fork <prompt>` create a persistent fork, or should that behavior be
   reserved for `/side <prompt>` as an ephemeral fork?

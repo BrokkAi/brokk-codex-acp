@@ -1,4 +1,5 @@
 use anyhow::Context;
+use brokk_codex_acp::agent::CodexAcpAgent;
 use brokk_codex_acp::app_server::{AppServerClient, AppServerCommand};
 use brokk_codex_acp::cli::{Cli, Command};
 use clap::Parser;
@@ -48,7 +49,10 @@ async fn main() -> anyhow::Result<()> {
                 .await
                 .context("failed to initialize codex app-server")?;
 
-            info!("ACP serve loop is not implemented yet; app-server bootstrap is ready");
+            CodexAcpAgent::new(client)
+                .serve_stdio()
+                .await
+                .map_err(|error| anyhow::anyhow!("ACP server failed: {error}"))?;
         }
     }
 

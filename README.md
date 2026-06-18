@@ -12,14 +12,21 @@ See [PLANS.md](PLANS.md) for the implementation plan.
 
 ## Status
 
-Early bootstrap. The project currently includes:
+Early adapter implementation. The project currently includes:
 
 - Cargo package metadata.
 - GPL-3.0-or-later licensing metadata.
-- A CLI skeleton.
-- A minimal JSON-RPC client that can spawn and initialize `codex app-server --stdio`.
+- A CLI with `probe` and `serve` commands.
+- A JSON-RPC client that can spawn and initialize `codex app-server --stdio`.
+- An ACP serving loop backed by `agent-client-protocol`.
+- ACP handlers for `initialize`, `session/new`, `session/resume`,
+  `session/list`, `session/close`, `session/fork`, and `session/prompt`.
+- Initial prompt streaming from Codex `item/agentMessage/delta` notifications to
+  ACP agent message chunks.
 
-The ACP serving loop is not implemented yet.
+The adapter is not complete yet. Tool calls, approvals, command output,
+reasoning chunks, slash command routing, skills catalogs, cancellation, and
+history replay are still planned work.
 
 ## Usage
 
@@ -35,7 +42,7 @@ Use a custom Codex binary:
 cargo run -- probe --codex-bin /path/to/codex
 ```
 
-Start the placeholder serve command:
+Start the ACP server:
 
 ```shell
 cargo run -- serve
