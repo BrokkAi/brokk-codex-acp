@@ -682,7 +682,7 @@ Manual flows:
   `session/close`.
 - [x] Implement `session/fork` via `thread/fork`.
 - [x] Implement basic text `prompt` via `turn/start`.
-- [ ] Add fake app-server integration tests.
+- [x] Add fake app-server integration tests for thread and prompt mappings.
 - Implement cancellation via `turn/interrupt`.
 
 ### Phase 2: Event Translation
