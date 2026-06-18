@@ -2,5 +2,32 @@
 name = "brokk-codex-acp"
 version = "0.1.0"
 edition = "2024"
+authors = ["Brokk Codex ACP contributors"]
+license = "GPL-3.0-or-later"
+description = "An Agent Client Protocol server for Codex backed by codex app-server"
+readme = "README.md"
+repository = "https://github.com/brokk/brokk-codex-acp"
+
+[[bin]]
+name = "brokk-codex-acp"
+path = "src/main.rs"
+
+[lib]
+name = "brokk_codex_acp"
+path = "src/lib.rs"
 
 [dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-thread", "sync"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[lints.rust]
+rust-2018-idioms = "warn"
+unused = "warn"
+
+[lints.clippy]
+large_futures = "warn"
