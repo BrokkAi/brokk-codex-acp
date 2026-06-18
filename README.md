@@ -1,5 +1,11 @@
 # Brokk Codex ACP
 
+> ⚠️ **Alpha — work in progress, expect a hot mess.** This is early,
+> incomplete, and unstable. Core features are missing, APIs and behavior will
+> change without notice, and things will break. It is **not** ready for
+> production use. Use at your own risk, pin a specific version, and don't be
+> surprised by sharp edges. Feedback and issues are welcome.
+
 Brokk Codex ACP is an Agent Client Protocol server for Codex.
 
 The project is intentionally built around `codex app-server` instead of linking
@@ -12,7 +18,12 @@ See [PLANS.md](PLANS.md) for the implementation plan.
 
 ## Status
 
-Early adapter implementation. The project currently includes:
+**Alpha / pre-0.1 in spirit.** This is an early, rough adapter under active
+construction. Large parts of the ACP surface are stubbed or unimplemented, error
+handling is thin, there is little test coverage, and breaking changes should be
+expected on every release until this stabilizes.
+
+The project currently includes:
 
 - Cargo package metadata.
 - GPL-3.0-or-later licensing metadata.
