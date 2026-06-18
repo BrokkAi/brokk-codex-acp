@@ -119,6 +119,7 @@ The current repository has the first working ACP/app-server bridge in place:
   - `session/close`
   - `session/fork`
   - `session/prompt`
+  - `session/cancel`
 - App-server mappings:
   - `session/new` -> `thread/start`
   - `session/resume` -> `thread/resume`
@@ -126,13 +127,14 @@ The current repository has the first working ACP/app-server bridge in place:
   - `session/close` -> `thread/unsubscribe`
   - `session/fork` -> `thread/fork`
   - `session/prompt` -> `turn/start`
+  - `session/cancel` -> `turn/interrupt`
 - Event translation:
   - `item/agentMessage/delta` -> ACP agent message chunks
   - `turn/completed` -> ACP prompt response completion
 
 This baseline intentionally supports only text and resource-link prompt blocks.
-Tool calls, command output, approval requests, reasoning chunks, cancellation,
-history replay, skills catalogs, and slash command routing remain planned work.
+Tool calls, command output, approval requests, reasoning chunks, history replay,
+skills catalogs, and slash command routing remain planned work.
 
 ## Core Session Mapping
 
@@ -683,7 +685,7 @@ Manual flows:
 - [x] Implement `session/fork` via `thread/fork`.
 - [x] Implement basic text `prompt` via `turn/start`.
 - [x] Add fake app-server integration tests for thread and prompt mappings.
-- Implement cancellation via `turn/interrupt`.
+- [x] Implement cancellation via `turn/interrupt`.
 
 ### Phase 2: Event Translation
 

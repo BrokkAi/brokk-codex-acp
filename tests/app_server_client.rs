@@ -1,7 +1,10 @@
 use std::fs;
 
-use brokk_codex_acp::app_server::{AppServerClient, AppServerCommand, AppServerPromptEvent};
+use brokk_codex_acp::app_server::{
+    AppServerClient, AppServerCommand, AppServerPromptCompletion, AppServerPromptEvent,
+};
 use tempfile::TempDir;
+use tokio::{sync::oneshot, time};
 
 #[tokio::test]
 async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()> {
@@ -32,14 +35,34 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
 
     let mut deltas = Vec::new();
     client
-        .turn_start_text_until_complete("thread-1".to_string(), "hello".to_string(), |event| {
-            match event {
-                AppServerPromptEvent::AgentMessageDelta(delta) => deltas.push(delta),
-            }
-            Ok(())
-        })
+        .turn_start_text_until_complete(
+            "thread-1".to_string(),
+            "hello".to_string(),
+            None,
+            |event| {
+                match event {
+                    AppServerPromptEvent::AgentMessageDelta(delta) => deltas.push(delta),
+                }
+                Ok(())
+            },
+        )
         .await?;
     assert_eq!(deltas, vec!["fake response"]);
+
+    let (cancel_tx, cancel_rx) = oneshot::channel();
+    tokio::spawn(async move {
+        time::sleep(time::Duration::from_millis(50)).await;
+        let _ = cancel_tx.send(());
+    });
+    let cancelled = client
+        .turn_start_text_until_complete(
+            "thread-1".to_string(),
+            "cancel me".to_string(),
+            Some(cancel_rx),
+            |_event| Ok(()),
+        )
+        .await?;
+    assert!(matches!(cancelled, AppServerPromptCompletion::Cancelled));
 
     let closed = client.thread_unsubscribe("thread-1".to_string()).await?;
     assert_eq!(closed.status, "ok");
@@ -138,22 +161,37 @@ for line in sys.stdin:
         })
     elif method == "turn/start":
         assert params["threadId"] == "thread-1"
-        assert params["input"] == [{"type": "text", "text": "hello"}]
-        response(message_id, {"turn": {"id": "turn-1", "status": "running"}})
-        send({
-            "method": "item/agentMessage/delta",
-            "params": {
-                "threadId": "thread-1",
-                "turnId": "turn-1",
-                "itemId": "item-1",
-                "delta": "fake response",
-            },
-        })
+        if params["input"] == [{"type": "text", "text": "hello"}]:
+            response(message_id, {"turn": {"id": "turn-1", "status": "running"}})
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "item-1",
+                    "delta": "fake response",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {"id": "turn-1", "status": "completed"},
+                },
+            })
+        elif params["input"] == [{"type": "text", "text": "cancel me"}]:
+            response(message_id, {"turn": {"id": "turn-2", "status": "running"}})
+        else:
+            raise AssertionError(f"unexpected input: {params['input']}")
+    elif method == "turn/interrupt":
+        assert params["threadId"] == "thread-1"
+        assert params["turnId"] == "turn-2"
+        response(message_id, {})
         send({
             "method": "turn/completed",
             "params": {
                 "threadId": "thread-1",
-                "turn": {"id": "turn-1", "status": "completed"},
+                "turn": {"id": "turn-2", "status": "completed"},
             },
         })
     elif method == "thread/unsubscribe":

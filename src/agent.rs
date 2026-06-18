@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use agent_client_protocol::schema::{
-    AgentCapabilities, CloseSessionRequest, CloseSessionResponse, ContentBlock, ContentChunk,
-    ForkSessionRequest, ForkSessionResponse, InitializeRequest, InitializeResponse,
+    AgentCapabilities, CancelNotification, CloseSessionRequest, CloseSessionResponse, ContentBlock,
+    ContentChunk, ForkSessionRequest, ForkSessionResponse, InitializeRequest, InitializeResponse,
     ListSessionsRequest, ListSessionsResponse, NewSessionRequest, NewSessionResponse,
     PromptCapabilities, PromptRequest, PromptResponse, ProtocolVersion, ResumeSessionRequest,
     ResumeSessionResponse, SessionCapabilities, SessionCloseCapabilities, SessionForkCapabilities,
@@ -10,22 +10,25 @@ use agent_client_protocol::schema::{
     SessionResumeCapabilities, SessionUpdate, StopReason, TextContent,
 };
 use agent_client_protocol::{
-    Agent, ByteStreams, Client, ConnectTo, ConnectionTo, Error, on_receive_request,
+    Agent, ByteStreams, Client, ConnectTo, ConnectionTo, Error, on_receive_notification,
+    on_receive_request,
 };
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-use crate::app_server::{AppServerClient, AppServerPromptEvent};
+use crate::app_server::{AppServerClient, AppServerPromptCompletion, AppServerPromptEvent};
 
 #[derive(Clone)]
 pub struct CodexAcpAgent {
     app_server: Arc<Mutex<AppServerClient>>,
+    active_prompts: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
 }
 
 impl CodexAcpAgent {
     pub fn new(app_server: AppServerClient) -> Self {
         Self {
             app_server: Arc::new(Mutex::new(app_server)),
+            active_prompts: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -138,6 +141,15 @@ impl CodexAcpAgent {
                 },
                 on_receive_request!(),
             )
+            .on_receive_notification(
+                {
+                    let agent = agent.clone();
+                    async move |notification: CancelNotification, _cx: ConnectionTo<Client>| {
+                        agent.cancel_session(notification).await
+                    }
+                },
+                on_receive_notification!(),
+            )
             .connect_to(transport)
             .await
     }
@@ -242,11 +254,23 @@ impl CodexAcpAgent {
     ) -> Result<PromptResponse, Error> {
         let text = prompt_text(request.prompt)?;
         let session_id = request.session_id.clone();
-
-        self.app_server
+        let thread_id = request.session_id.0.to_string();
+        let (cancel_tx, cancel_rx) = oneshot::channel();
+        if self
+            .active_prompts
             .lock()
             .await
-            .turn_start_text_until_complete(request.session_id.0.to_string(), text, |event| {
+            .insert(thread_id.clone(), cancel_tx)
+            .is_some()
+        {
+            return Err(Error::invalid_request().data("session already has an active prompt turn"));
+        }
+
+        let completion = self
+            .app_server
+            .lock()
+            .await
+            .turn_start_text_until_complete(thread_id.clone(), text, Some(cancel_rx), |event| {
                 match event {
                     AppServerPromptEvent::AgentMessageDelta(delta) => {
                         cx.send_notification(SessionNotification::new(
@@ -263,9 +287,28 @@ impl CodexAcpAgent {
                 Ok(())
             })
             .await
-            .map_err(acp_internal_error)?;
+            .map_err(acp_internal_error);
 
-        Ok(PromptResponse::new(StopReason::EndTurn))
+        self.active_prompts.lock().await.remove(&thread_id);
+
+        let stop_reason = match completion? {
+            AppServerPromptCompletion::EndTurn => StopReason::EndTurn,
+            AppServerPromptCompletion::Cancelled => StopReason::Cancelled,
+        };
+
+        Ok(PromptResponse::new(stop_reason))
+    }
+
+    async fn cancel_session(&self, notification: CancelNotification) -> Result<(), Error> {
+        if let Some(cancel) = self
+            .active_prompts
+            .lock()
+            .await
+            .remove(notification.session_id.0.as_ref())
+        {
+            let _ = cancel.send(());
+        }
+        Ok(())
     }
 
     fn capabilities() -> AgentCapabilities {

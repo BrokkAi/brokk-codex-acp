@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::sync::oneshot;
 use tracing::{debug, trace};
 
 #[derive(Debug, Clone)]
@@ -155,8 +156,9 @@ impl AppServerClient {
         &mut self,
         thread_id: String,
         text: String,
+        cancel_rx: Option<oneshot::Receiver<()>>,
         mut on_event: impl FnMut(AppServerPromptEvent) -> anyhow::Result<()>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<AppServerPromptCompletion> {
         let id = self.next_id;
         self.next_id += 1;
 
@@ -172,12 +174,42 @@ impl AppServerClient {
         self.write_message(&request).await?;
 
         let mut turn_started = false;
-        let mut active_turn_id = None;
+        let mut active_turn_id: Option<String> = None;
+        let mut cancel_rx = cancel_rx;
+        let mut interrupt_request_id = None;
+        let mut interrupt_requested = false;
         loop {
-            let message = self
-                .read_message()
-                .await?
-                .with_context(|| "codex app-server exited during turn")?;
+            if interrupt_requested
+                && interrupt_request_id.is_none()
+                && let Some(turn_id) = active_turn_id.as_deref()
+            {
+                let interrupt_id = self.next_id;
+                self.next_id += 1;
+                let request = json!({
+                    "id": interrupt_id,
+                    "method": "turn/interrupt",
+                    "params": TurnInterruptParams {
+                        thread_id: thread_id.clone(),
+                        turn_id: turn_id.to_owned(),
+                    },
+                });
+                self.write_message(&request).await?;
+                interrupt_request_id = Some(interrupt_id);
+            }
+
+            let message = if let Some(rx) = cancel_rx.as_mut() {
+                tokio::select! {
+                    message = self.read_message() => message?,
+                    _ = rx => {
+                        cancel_rx = None;
+                        interrupt_requested = true;
+                        continue;
+                    }
+                }
+            } else {
+                self.read_message().await?
+            }
+            .with_context(|| "codex app-server exited during turn")?;
 
             if message.get("id").and_then(Value::as_u64) == Some(id) {
                 if let Some(error) = message.get("error") {
@@ -196,6 +228,22 @@ impl AppServerClient {
                     turn_id = active_turn_id.as_deref(),
                     "codex app-server turn started"
                 );
+                continue;
+            }
+
+            if let Some(interrupt_id) = interrupt_request_id
+                && message.get("id").and_then(Value::as_u64) == Some(interrupt_id)
+            {
+                if let Some(error) = message.get("error") {
+                    bail!("codex app-server turn/interrupt failed: {error}");
+                }
+
+                let result = message
+                    .get("result")
+                    .cloned()
+                    .context("turn/interrupt response did not include `result`")?;
+                let _response: TurnInterruptResponse = serde_json::from_value(result)
+                    .context("failed to decode turn/interrupt result")?;
                 continue;
             }
 
@@ -225,7 +273,11 @@ impl AppServerClient {
                     if notification.thread_id == thread_id
                         && Some(notification.turn.id.as_str()) == active_turn_id.as_deref()
                     {
-                        return Ok(());
+                        return Ok(if interrupt_requested {
+                            AppServerPromptCompletion::Cancelled
+                        } else {
+                            AppServerPromptCompletion::EndTurn
+                        });
                     }
                 }
                 _ => {
@@ -459,6 +511,17 @@ struct TurnStartParams {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TurnInterruptParams {
+    thread_id: String,
+    turn_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TurnInterruptResponse {}
+
+#[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 enum TurnInput {
     Text { text: String },
@@ -493,4 +556,9 @@ struct TurnCompletedNotification {
 
 pub enum AppServerPromptEvent {
     AgentMessageDelta(String),
+}
+
+pub enum AppServerPromptCompletion {
+    EndTurn,
+    Cancelled,
 }

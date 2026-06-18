@@ -20,13 +20,14 @@ Early adapter implementation. The project currently includes:
 - A JSON-RPC client that can spawn and initialize `codex app-server --stdio`.
 - An ACP serving loop backed by `agent-client-protocol`.
 - ACP handlers for `initialize`, `session/new`, `session/resume`,
-  `session/list`, `session/close`, `session/fork`, and `session/prompt`.
+  `session/list`, `session/close`, `session/fork`, `session/prompt`, and
+  `session/cancel`.
 - Initial prompt streaming from Codex `item/agentMessage/delta` notifications to
   ACP agent message chunks.
 
 The adapter is not complete yet. Tool calls, approvals, command output,
-reasoning chunks, slash command routing, skills catalogs, cancellation, and
-history replay are still planned work.
+reasoning chunks, slash command routing, skills catalogs, and history replay are
+still planned work.
 
 ## Usage
 
