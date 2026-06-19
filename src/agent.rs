@@ -59,6 +59,7 @@ const FORK_COMMAND: &str = "fork";
 const GOAL_COMMAND: &str = "goal";
 const HOOKS_COMMAND: &str = "hooks";
 const INIT_COMMAND: &str = "init";
+const KILL_COMMAND: &str = "kill";
 const MCP_COMMAND: &str = "mcp";
 const MODEL_COMMAND: &str = "model";
 const NEW_COMMAND: &str = "new";
@@ -964,6 +965,27 @@ impl CodexAcpAgent {
                     catalog_summary("Hooks", &response),
                     cx,
                 )
+            }
+            BuiltinCommand::Kill { process_id } => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .thread_background_terminals_terminate(thread_id.to_owned(), process_id.clone())
+                    .await
+                    .map_err(|error| {
+                        acp_app_server_method_error("thread/backgroundTerminals/terminate", error)
+                    })?;
+                let terminated = response
+                    .get("terminated")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
+                let message = if terminated {
+                    format!("Terminated background terminal process `{process_id}`.")
+                } else {
+                    format!("No running background terminal process `{process_id}` was found.")
+                };
+                publish_catalog_message(session_id, "Kill", message, cx)
             }
             BuiltinCommand::Init => {
                 let input = vec![AppServerTurnInput::Text {
@@ -2163,6 +2185,7 @@ enum BuiltinCommand {
     GoalGet,
     GoalClear,
     Hooks,
+    Kill { process_id: String },
     Init,
     Mcp,
     Model,
@@ -2199,6 +2222,7 @@ enum CommandHandler {
     Fork,
     Goal,
     Hooks,
+    Kill,
     Init,
     Mcp,
     Model,
@@ -2273,6 +2297,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: None,
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::Hooks,
+    },
+    BuiltinCommandSpec {
+        name: KILL_COMMAND,
+        aliases: &[],
+        description: "Terminate a Codex background terminal",
+        input_hint: Some("background terminal process id"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Kill,
     },
     BuiltinCommandSpec {
         name: INIT_COMMAND,
@@ -2443,6 +2475,15 @@ fn parse_command_from_spec(
         CommandHandler::Fork => parse_no_argument_command(rest, spec.name, BuiltinCommand::Fork),
         CommandHandler::Goal => parse_goal_command(rest),
         CommandHandler::Hooks => parse_no_argument_command(rest, spec.name, BuiltinCommand::Hooks),
+        CommandHandler::Kill => {
+            let process_id = rest.trim();
+            if process_id.is_empty() {
+                return Err(Error::invalid_params().data("/kill requires a process id"));
+            }
+            Ok(Some(BuiltinCommand::Kill {
+                process_id: process_id.to_owned(),
+            }))
+        }
         CommandHandler::Init => parse_no_argument_command(rest, spec.name, BuiltinCommand::Init),
         CommandHandler::Mcp => parse_no_argument_command(rest, spec.name, BuiltinCommand::Mcp),
         CommandHandler::Model => parse_no_argument_command(rest, spec.name, BuiltinCommand::Model),
@@ -3709,6 +3750,16 @@ mod tests {
     }
 
     #[test]
+    fn parse_builtin_command_recognizes_kill() {
+        let command = parse_builtin_command("/kill 42").unwrap().unwrap();
+
+        assert!(matches!(
+            command,
+            BuiltinCommand::Kill { process_id } if process_id == "42"
+        ));
+    }
+
+    #[test]
     fn parse_shell_command_recognizes_bang_command() {
         assert_eq!(
             parse_shell_command("  !echo hi").unwrap().as_deref(),
@@ -3880,6 +3931,16 @@ mod tests {
     }
 
     #[test]
+    fn parse_builtin_command_rejects_empty_kill() {
+        let error = parse_builtin_command("/kill").unwrap_err();
+
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("/kill requires a process id")
+        );
+    }
+
+    #[test]
     fn parse_builtin_command_rejects_archive_arguments() {
         let error = parse_builtin_command("/archive now").unwrap_err();
 
@@ -3998,6 +4059,7 @@ mod tests {
                 "fork",
                 "goal",
                 "hooks",
+                "kill",
                 "init",
                 "mcp",
                 "model",

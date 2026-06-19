@@ -185,9 +185,10 @@ The current repository has the first working ACP/app-server bridge in place:
     semantics while awaiting the ACP client.
 - Slash commands:
   - built-in `archive`, `apps`, `compact`, `fork`, `goal`, `hooks`, `init`,
-    `mcp`, `model`, `new`, `permissions`, `plugins`, `ps`, `rename`, `resume`,
-    `review`, `skill-roots`, `status`, `stop`, and `unarchive` commands are
-    published through ACP `available_commands_update` alongside enabled skills.
+    `kill`, `mcp`, `model`, `new`, `permissions`, `plugins`, `ps`, `rename`,
+    `resume`, `review`, `skill-roots`, `status`, `stop`, and `unarchive`
+    commands are published through ACP `available_commands_update` alongside
+    enabled skills.
   - `/archive` is intercepted by the adapter, mapped to `thread/archive`, and
     reflected to ACP clients through `session_info_update._meta`.
   - `/unarchive` is intercepted by the adapter, mapped to `thread/unarchive`,
@@ -226,6 +227,9 @@ The current repository has the first working ACP/app-server bridge in place:
   - `/ps` and `/stop` are intercepted by the adapter, mapped to
     `thread/backgroundTerminals/list` and `thread/backgroundTerminals/clean`,
     and reflected as short ACP agent-message summaries.
+  - `/kill <process-id>` is intercepted by the adapter, mapped to
+    `thread/backgroundTerminals/terminate`, and reflected as a short ACP
+    agent-message summary.
   - `/model` and `/permissions` are intercepted by the adapter, refresh
     app-server-backed config catalogs, publish ACP `config_option_update`, and
     send a short ACP agent-message summary.
@@ -388,20 +392,20 @@ client behavior, not model prompts.
 Tasks:
 
 - [x] Add an initial parser for leading slash commands, currently `/archive`,
-  `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/mcp`, `/model`,
-  `/new`, `/permissions`, `/plugins`, `/ps`, `/rename`, `/resume`, `/review`,
-  `/skill-roots`, `/status`, `/stop`, and `/unarchive`.
+  `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/kill`, `/mcp`,
+  `/model`, `/new`, `/permissions`, `/plugins`, `/ps`, `/rename`, `/resume`,
+  `/review`, `/skill-roots`, `/status`, `/stop`, and `/unarchive`.
 - [x] Build the full command registry with aliases, availability, required
   active turn state, and handler metadata.
 - [x] Publish adapter-owned ACP available commands plus skills.
 - Implement backend commands first: `/new`, `/resume`, `/review`,
   `/compact`, `/rename`, `/model`, `/permissions`, `/mcp`, `/apps`,
   `/plugins`, `/hooks`, and `/status`. Implemented so far: `/archive`,
-  `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/mcp`, `/model`,
-  `/new`, `/permissions`, `/plugins`, `/ps`, `/rename`, `/resume`, `/review`,
-  `/skill-roots`, `/status`, `/stop`, and `/unarchive`. `/fork` is implemented
-  only as an extension command backed by Codex `thread/fork`, not as required
-  ACP v1 behavior.
+  `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/kill`, `/mcp`,
+  `/model`, `/new`, `/permissions`, `/plugins`, `/ps`, `/rename`, `/resume`,
+  `/review`, `/skill-roots`, `/status`, `/stop`, and `/unarchive`. `/fork` is
+  implemented only as an extension command backed by Codex `thread/fork`, not
+  as required ACP v1 behavior.
 - [x] Return explicit unsupported-command responses for slash commands that are
   not currently handled by the adapter. `/skill ...` remains a supported
   non-builtin fallback.
@@ -428,6 +432,9 @@ Tasks:
   while `/skill ...` remains available for skill invocation fallback.
 - [x] Add fake app-server coverage for `thread/backgroundTerminals/list` and
   `thread/backgroundTerminals/clean` plus unit coverage for `/ps` and `/stop`
+  parsing/advertisement.
+- [x] Add fake app-server coverage for
+  `thread/backgroundTerminals/terminate` plus unit coverage for `/kill`
   parsing/advertisement.
 - [x] Add serialized ACP coverage proving `/rename` emits
   `session_info_update` and does not call `turn/start`.
@@ -864,6 +871,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/skill-roots <paths...>` | `skills/extraRoots/set` plus `skills/list(forceReload)` `[implemented as process-local summary]` |
 | `/ps` | `thread/backgroundTerminals/list` `[implemented as summary]` |
 | `/stop` | `thread/backgroundTerminals/clean` `[implemented as summary]` |
+| `/kill <process-id>` | `thread/backgroundTerminals/terminate` `[implemented as summary]` |
 | `/status` | local summary plus app-server status/config reads `[implemented as initial loaded-thread summary]` |
 
 ### Command Parser Rules

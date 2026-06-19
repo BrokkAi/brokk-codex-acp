@@ -568,6 +568,11 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         .await?;
     assert_eq!(cleaned_terminals["data"][0]["terminalId"], "terminal-1");
 
+    let terminated_terminal = client
+        .thread_background_terminals_terminate("thread-1".to_string(), "42".to_string())
+        .await?;
+    assert_eq!(terminated_terminal["terminated"], true);
+
     let user_input_summaries =
         run_text_turn_and_collect_messages(&mut client, "user input callback").await?;
     assert_eq!(user_input_summaries, vec!["message:empty user input"]);
@@ -1169,6 +1174,12 @@ for line in sys.stdin:
                 },
             ],
         })
+    elif method == "thread/backgroundTerminals/terminate":
+        assert params == {
+            "threadId": "thread-1",
+            "processId": "42",
+        }
+        response(message_id, {"terminated": True})
     elif method == "skills/list":
         assert params["cwds"] == ["/repo"]
         assert params["forceReload"] in (False, True)

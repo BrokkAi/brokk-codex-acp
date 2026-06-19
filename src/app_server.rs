@@ -378,6 +378,21 @@ impl AppServerClient {
         .await
     }
 
+    pub async fn thread_background_terminals_terminate(
+        &mut self,
+        thread_id: String,
+        process_id: String,
+    ) -> anyhow::Result<Value> {
+        self.request(
+            "thread/backgroundTerminals/terminate",
+            ThreadBackgroundTerminalTerminateParams {
+                thread_id,
+                process_id,
+            },
+        )
+        .await
+    }
+
     pub async fn model_list(&mut self) -> anyhow::Result<ModelListResponse> {
         self.request(
             "model/list",
@@ -1469,6 +1484,13 @@ struct McpServerStatusListParams {
     thread_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     detail: Option<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadBackgroundTerminalTerminateParams {
+    thread_id: String,
+    process_id: String,
 }
 
 #[derive(Debug, Serialize)]

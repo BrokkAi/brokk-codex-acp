@@ -239,17 +239,21 @@ async fn serialized_bang_prompt_runs_shell_command_without_starting_turn() -> an
 #[tokio::test]
 async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Result<()> {
     for (command, expected_fragments) in [
-        ("/apps", ["Apps: 1 entries", "- GitHub"]),
+        ("/apps", &["Apps: 1 entries", "- GitHub"][..]),
         (
             "/plugins",
-            ["Plugins: 1 entries", "Installed plugins: 1 entries"],
+            &["Plugins: 1 entries", "Installed plugins: 1 entries"],
         ),
-        ("/mcp", ["MCP: 1 entries", "- filesystem"]),
-        ("/hooks", ["Hooks: 1 entries", "- /repo"]),
-        ("/ps", ["Background terminals: 1 entries", "terminal-1"]),
+        ("/mcp", &["MCP: 1 entries", "- filesystem"]),
+        ("/hooks", &["Hooks: 1 entries", "- /repo"]),
+        ("/ps", &["Background terminals: 1 entries", "terminal-1"]),
         (
             "/stop",
-            ["Background terminals cleaned: 1 entries", "terminal-1"],
+            &["Background terminals cleaned: 1 entries", "terminal-1"],
+        ),
+        (
+            "/kill 42",
+            &["Terminated background terminal process `42`."],
         ),
     ] {
         let (prompt, notifications) = run_serialized_prompt(command).await?;
@@ -683,6 +687,16 @@ for line in sys.stdin:
                         "status": "cleaned",
                     },
                 ],
+            },
+        })
+    elif method == "thread/backgroundTerminals/terminate":
+        assert params == {
+            "threadId": "thread-serialized",
+            "processId": "42",
+        }
+        response(message_id, {
+            "result": {
+                "terminated": True,
             },
         })
     elif method == "model/list":
