@@ -185,6 +185,51 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
     Ok(())
 }
 
+#[tokio::test]
+async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Result<()> {
+    for (command, expected_fragments) in [
+        ("/apps", ["Apps: 1 entries", "- GitHub"]),
+        (
+            "/plugins",
+            ["Plugins: 1 entries", "Installed plugins: 1 entries"],
+        ),
+        ("/mcp", ["MCP: 1 entries", "- filesystem"]),
+        ("/hooks", ["Hooks: 1 entries", "- /repo"]),
+        ("/ps", ["Background terminals: 1 entries", "terminal-1"]),
+        (
+            "/stop",
+            ["Background terminals cleaned: 1 entries", "terminal-1"],
+        ),
+    ] {
+        let (prompt, notifications) = run_serialized_prompt(command).await?;
+
+        assert_eq!(prompt["result"]["stopReason"], "end_turn", "{command}");
+        let message = agent_message_texts(&notifications).join("\n");
+        for expected in expected_fragments {
+            assert!(
+                message.contains(expected),
+                "command {command} did not publish {expected:?}; message: {message:?}"
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn agent_message_texts(notifications: &[Value]) -> Vec<String> {
+    notifications
+        .iter()
+        .filter(|notification| notification["method"] == "session/update")
+        .filter_map(|notification| {
+            let update = &notification["params"]["update"];
+            (update["sessionUpdate"] == "agent_message_chunk")
+                .then(|| update["content"]["text"].as_str())
+                .flatten()
+                .map(ToOwned::to_owned)
+        })
+        .collect()
+}
+
 async fn run_serialized_prompt(prompt_text: &str) -> anyhow::Result<(Value, Vec<Value>)> {
     let fake_codex = fake_codex_app_server(SERIALIZED_RENAME_CODEX_APP_SERVER)?;
     let mut app_server =
@@ -492,6 +537,101 @@ for line in sys.stdin:
             "error": {
                 "code": -32000,
                 "message": "thread/read should not be called when paginated turns are available",
+            },
+        })
+    elif method == "app/list":
+        assert params == {}
+        response(message_id, {
+            "result": {
+                "data": [
+                    {
+                        "displayName": "GitHub",
+                        "connectorId": "github",
+                        "isAccessible": True,
+                    },
+                ],
+            },
+        })
+    elif method == "plugin/list":
+        assert params == {}
+        response(message_id, {
+            "result": {
+                "data": [
+                    {
+                        "name": "github",
+                        "marketplaceName": "openai",
+                        "availability": "AVAILABLE",
+                    },
+                ],
+            },
+        })
+    elif method == "plugin/installed":
+        assert params == {}
+        response(message_id, {
+            "result": {
+                "data": [
+                    {
+                        "pluginId": "github@openai",
+                        "name": "github",
+                    },
+                ],
+            },
+        })
+    elif method == "mcpServerStatus/list":
+        assert params == {
+            "threadId": "thread-serialized",
+            "detail": "full",
+        }
+        response(message_id, {
+            "result": {
+                "data": [
+                    {
+                        "serverName": "filesystem",
+                        "status": "running",
+                        "tools": [
+                            {"name": "read_file"},
+                        ],
+                    },
+                ],
+            },
+        })
+    elif method == "hooks/list":
+        assert params == {"cwds": [thread_cwd]}
+        response(message_id, {
+            "result": {
+                "data": [
+                    {
+                        "cwd": "/repo",
+                        "hooks": [
+                            {"name": "SessionStart"},
+                        ],
+                    },
+                ],
+            },
+        })
+    elif method == "thread/backgroundTerminals/list":
+        assert params == {"threadId": "thread-serialized"}
+        response(message_id, {
+            "result": {
+                "data": [
+                    {
+                        "terminalId": "terminal-1",
+                        "command": "cargo test",
+                        "status": "running",
+                    },
+                ],
+            },
+        })
+    elif method == "thread/backgroundTerminals/clean":
+        assert params == {"threadId": "thread-serialized"}
+        response(message_id, {
+            "result": {
+                "data": [
+                    {
+                        "terminalId": "terminal-1",
+                        "status": "cleaned",
+                    },
+                ],
             },
         })
     elif method == "model/list":

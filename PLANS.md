@@ -427,7 +427,7 @@ Tasks:
   `session_info_update._meta` and does not call `turn/start`.
 - [x] Add serialized ACP coverage proving `/goal` emits
   `session_info_update._meta` and does not call `turn/start`.
-- [ ] Add fake app-server tests for each remaining backend command mapping.
+- [x] Add fake app-server tests for each remaining backend command mapping.
 
 Acceptance criteria:
 
