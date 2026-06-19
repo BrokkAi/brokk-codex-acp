@@ -112,12 +112,24 @@ impl AppServerClient {
         thread_id: String,
         cwd: String,
     ) -> anyhow::Result<ThreadForkResponse> {
+        self.thread_fork_with_options(thread_id, cwd, false, false)
+            .await
+    }
+
+    pub async fn thread_fork_with_options(
+        &mut self,
+        thread_id: String,
+        cwd: String,
+        ephemeral: bool,
+        exclude_turns: bool,
+    ) -> anyhow::Result<ThreadForkResponse> {
         self.request(
             "thread/fork",
             ThreadForkParams {
                 thread_id,
                 cwd: Some(cwd),
-                ..ThreadForkParams::default()
+                ephemeral,
+                exclude_turns,
             },
         )
         .await

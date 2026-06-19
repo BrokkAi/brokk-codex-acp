@@ -1357,7 +1357,7 @@ Manual flows:
 - [x] Mark `session/fork` as extension/RFD behavior in code and docs.
 - [x] Replay fork history when app-server returns copied turns.
 - [x] Route `/fork` through the same extension code path.
-- [ ] Add tests for persistent and ephemeral forks.
+- [x] Add tests for persistent and ephemeral forks.
 
 ### Phase 6: Catalogs and Advanced Surfaces
 

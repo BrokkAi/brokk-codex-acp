@@ -40,6 +40,12 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     let fork_events = history_events_for_thread_turns(&forked.thread.turns);
     assert_eq!(fork_events, vec!["user:forked hello"]);
 
+    let ephemeral_fork = client
+        .thread_fork_with_options("thread-1".to_string(), "/repo-side".to_string(), true, true)
+        .await?;
+    assert_eq!(ephemeral_fork.thread.id, "thread-side");
+    assert!(ephemeral_fork.thread.turns.is_empty());
+
     let resumed = client
         .thread_resume("thread-1".to_string(), "/repo".to_string())
         .await?;
@@ -812,7 +818,20 @@ for line in sys.stdin:
         })
     elif method == "thread/fork":
         assert params["threadId"] == "thread-1"
+        if params["cwd"] == "/repo-side":
+            assert params["ephemeral"] is True
+            assert params["excludeTurns"] is True
+            response(message_id, {
+                "thread": {
+                    "id": "thread-side",
+                    "cwd": params["cwd"],
+                    "name": "Ephemeral Fork",
+                },
+            })
+            continue
         assert params["cwd"] == "/repo-fork"
+        assert "ephemeral" not in params
+        assert "excludeTurns" not in params
         response(message_id, {
             "thread": {
                 "id": "thread-2",
