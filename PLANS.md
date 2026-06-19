@@ -423,9 +423,9 @@ Tasks:
   parsing/advertisement.
 - [x] Add serialized ACP coverage proving `/rename` emits
   `session_info_update` and does not call `turn/start`.
-- [ ] Add serialized ACP coverage proving `/archive` emits
+- [x] Add serialized ACP coverage proving `/archive` emits
   `session_info_update._meta` and does not call `turn/start`.
-- [ ] Add serialized ACP coverage proving `/goal` emits
+- [x] Add serialized ACP coverage proving `/goal` emits
   `session_info_update._meta` and does not call `turn/start`.
 - [ ] Add fake app-server tests for each remaining backend command mapping.
 

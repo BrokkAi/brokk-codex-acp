@@ -12,6 +12,58 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 #[tokio::test]
 async fn serialized_rename_emits_session_info_update_without_starting_turn() -> anyhow::Result<()> {
+    let (prompt, notifications) = run_serialized_prompt("/rename Serialized Rename").await?;
+
+    assert_eq!(prompt["result"]["stopReason"], "end_turn");
+    assert!(
+        notifications.iter().any(|notification| {
+            notification["method"] == "session/update"
+                && notification["params"]["update"]["sessionUpdate"] == "session_info_update"
+                && notification["params"]["update"]["title"] == "Serialized Rename"
+        }),
+        "notifications: {notifications:#?}"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn serialized_archive_emits_session_info_meta_without_starting_turn() -> anyhow::Result<()> {
+    let (prompt, notifications) = run_serialized_prompt("/archive").await?;
+
+    assert_eq!(prompt["result"]["stopReason"], "end_turn");
+    assert!(
+        notifications.iter().any(|notification| {
+            notification["method"] == "session/update"
+                && notification["params"]["update"]["sessionUpdate"] == "session_info_update"
+                && notification["params"]["update"]["_meta"]["brokk_codex_acp"]["archived"] == true
+        }),
+        "notifications: {notifications:#?}"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn serialized_goal_emits_session_info_meta_without_starting_turn() -> anyhow::Result<()> {
+    let (prompt, notifications) =
+        run_serialized_prompt("/goal Improve serialized coverage").await?;
+
+    assert_eq!(prompt["result"]["stopReason"], "end_turn");
+    assert!(
+        notifications.iter().any(|notification| {
+            notification["method"] == "session/update"
+                && notification["params"]["update"]["sessionUpdate"] == "session_info_update"
+                && notification["params"]["update"]["_meta"]["brokk_codex_acp"]["goal"]["objective"]
+                    == "Improve serialized coverage"
+        }),
+        "notifications: {notifications:#?}"
+    );
+
+    Ok(())
+}
+
+async fn run_serialized_prompt(prompt_text: &str) -> anyhow::Result<(Value, Vec<Value>)> {
     let fake_codex = fake_codex_app_server(SERIALIZED_RENAME_CODEX_APP_SERVER)?;
     let mut app_server =
         AppServerClient::spawn(AppServerCommand::new(fake_codex.path().to_owned())).await?;
@@ -79,7 +131,7 @@ async fn serialized_rename_emits_session_info_update_without_starting_turn() -> 
                 "prompt": [
                     {
                         "type": "text",
-                        "text": "/rename Serialized Rename",
+                        "text": prompt_text,
                     },
                 ],
             },
@@ -87,20 +139,10 @@ async fn serialized_rename_emits_session_info_update_without_starting_turn() -> 
     )
     .await?;
     let prompt = read_response(&mut client_read, 3, &mut notifications).await?;
-    assert_eq!(prompt["result"]["stopReason"], "end_turn");
-
-    assert!(
-        notifications.iter().any(|notification| {
-            notification["method"] == "session/update"
-                && notification["params"]["update"]["sessionUpdate"] == "session_info_update"
-                && notification["params"]["update"]["title"] == "Serialized Rename"
-        }),
-        "notifications: {notifications:#?}"
-    );
 
     drop(client_write);
     agent_task.abort();
-    Ok(())
+    Ok((prompt, notifications))
 }
 
 async fn write_json(writer: &mut (impl AsyncWrite + Unpin), message: Value) -> anyhow::Result<()> {
@@ -215,6 +257,20 @@ for line in sys.stdin:
         assert params["threadId"] == "thread-serialized"
         assert params["name"] == "Serialized Rename"
         response(message_id, {"result": {}})
+    elif method == "thread/archive":
+        assert params["threadId"] == "thread-serialized"
+        response(message_id, {"result": {}})
+    elif method == "thread/goal/set":
+        assert params["threadId"] == "thread-serialized"
+        assert params["objective"] == "Improve serialized coverage"
+        response(message_id, {
+            "result": {
+                "goal": {
+                    "objective": "Improve serialized coverage",
+                    "status": "active",
+                },
+            },
+        })
     elif method == "turn/start":
         response(message_id, {
             "error": {
