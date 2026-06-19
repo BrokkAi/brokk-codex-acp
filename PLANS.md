@@ -1375,7 +1375,7 @@ Manual flows:
 
 - [x] Version-gate app-server methods through method-unavailable detection for
   experimental adapter surfaces.
-- [ ] Add compatibility handling for older Codex versions.
+- [x] Add compatibility handling for older Codex versions.
 - [x] Add structured logging around app-server requests and ACP dispatch.
 - [x] Add retry handling for app-server overload backpressure.
 - [x] Add backpressure handling for notification bursts.

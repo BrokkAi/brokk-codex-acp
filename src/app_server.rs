@@ -725,11 +725,9 @@ impl AppServerClient {
                     continue;
                 }
                 if app_server_method_unavailable(error) {
-                    return Err(AppServerMethodUnavailable {
-                        method: method.to_owned(),
-                        error: error.clone(),
-                    }
-                    .into());
+                    return Err(
+                        AppServerMethodUnavailable::new(method.to_owned(), error.clone()).into(),
+                    );
                 }
                 if app_server_request_overloaded(error) {
                     return Err(AppServerOverloaded {
@@ -834,6 +832,10 @@ pub struct AppServerMethodUnavailable {
 }
 
 impl AppServerMethodUnavailable {
+    pub(crate) fn new(method: String, error: Value) -> Self {
+        Self { method, error }
+    }
+
     pub fn method(&self) -> &str {
         &self.method
     }

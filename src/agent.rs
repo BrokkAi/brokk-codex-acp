@@ -677,7 +677,7 @@ impl CodexAcpAgent {
                 }
                 self.set_model_config(&session_id, value)
                     .await
-                    .map_err(acp_internal_error)?
+                    .map_err(|error| acp_app_server_method_error("thread/settings/update", error))?
             }
             REASONING_EFFORT_CONFIG_ID => {
                 if !self
@@ -690,7 +690,7 @@ impl CodexAcpAgent {
                 }
                 self.set_reasoning_effort_config(&session_id, value)
                     .await
-                    .map_err(acp_internal_error)?
+                    .map_err(|error| acp_app_server_method_error("thread/settings/update", error))?
             }
             SERVICE_TIER_CONFIG_ID => {
                 if !self
@@ -703,7 +703,7 @@ impl CodexAcpAgent {
                 }
                 self.set_service_tier_config(&session_id, value)
                     .await
-                    .map_err(acp_internal_error)?
+                    .map_err(|error| acp_app_server_method_error("thread/settings/update", error))?
             }
             APPROVAL_POLICY_CONFIG_ID => {
                 if !self
@@ -716,7 +716,7 @@ impl CodexAcpAgent {
                 }
                 self.set_approval_policy_config(&session_id, value)
                     .await
-                    .map_err(acp_internal_error)?
+                    .map_err(|error| acp_app_server_method_error("thread/settings/update", error))?
             }
             COLLABORATION_MODE_CONFIG_ID => {
                 if !self
@@ -728,7 +728,7 @@ impl CodexAcpAgent {
                 }
                 self.set_collaboration_mode_config(&session_id, value)
                     .await
-                    .map_err(acp_internal_error)?
+                    .map_err(|error| acp_app_server_method_error("thread/settings/update", error))?
             }
             PERMISSION_PROFILE_CONFIG_ID => {
                 if !self
@@ -740,7 +740,7 @@ impl CodexAcpAgent {
                 }
                 self.set_permission_profile_config(&session_id, value)
                     .await
-                    .map_err(acp_internal_error)?
+                    .map_err(|error| acp_app_server_method_error("thread/settings/update", error))?
             }
             _ if config_id.starts_with(SKILL_CONFIG_PREFIX) => {
                 let skill_name = config_id.trim_start_matches(SKILL_CONFIG_PREFIX);
@@ -3628,6 +3628,28 @@ mod tests {
         assert_eq!(
             error.data.as_ref().and_then(serde_json::Value::as_str),
             Some("/rename requires a title")
+        );
+    }
+
+    #[test]
+    fn app_server_method_unavailable_maps_to_user_actionable_acp_error() {
+        let error = acp_app_server_method_error(
+            "thread/settings/update",
+            crate::app_server::AppServerMethodUnavailable::new(
+                "thread/settings/update".to_owned(),
+                serde_json::json!({
+                    "code": -32601,
+                    "message": "Method not found",
+                }),
+            )
+            .into(),
+        );
+
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some(
+                "Codex app-server method `thread/settings/update` is unavailable in this Codex version"
+            )
         );
     }
 
