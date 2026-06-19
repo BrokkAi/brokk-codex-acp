@@ -281,6 +281,17 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         ]
     );
 
+    let turns_page = client
+        .thread_turns_list("thread-1".to_string(), None, 50)
+        .await?;
+    assert_eq!(turns_page.data.len(), 1);
+    assert_eq!(turns_page.next_cursor.as_deref(), Some("older-turns"));
+    let turns_page = client
+        .thread_turns_list("thread-1".to_string(), turns_page.next_cursor, 50)
+        .await?;
+    assert_eq!(turns_page.data[0].id, "turn-history-older");
+    assert!(turns_page.next_cursor.is_none());
+
     let mut events = Vec::new();
     client
         .turn_start_text_until_complete(
@@ -1258,6 +1269,41 @@ for line in sys.stdin:
                 {"threadId": "thread-1", "serviceTier": None},
             )
         response(message_id, {})
+    elif method == "thread/turns/list":
+        assert params["threadId"] == "thread-1"
+        assert params["limit"] == 50
+        assert params["sortDirection"] == "asc"
+        assert params["itemsView"] == "full"
+        if params.get("cursor") is None:
+            response(message_id, {
+                "data": [
+                    {
+                        "id": "turn-history-page",
+                        "items": [
+                            {
+                                "type": "userMessage",
+                                "content": [
+                                    {"type": "text", "text": "page hello"},
+                                ],
+                            },
+                        ],
+                    },
+                ],
+                "nextCursor": "older-turns",
+                "backwardsCursor": None,
+            })
+        else:
+            assert params["cursor"] == "older-turns"
+            response(message_id, {
+                "data": [
+                    {
+                        "id": "turn-history-older",
+                        "items": [],
+                    },
+                ],
+                "nextCursor": None,
+                "backwardsCursor": "newer-turns",
+            })
     elif method == "thread/read":
         assert params["threadId"] == "thread-1"
         assert params["includeTurns"] is True

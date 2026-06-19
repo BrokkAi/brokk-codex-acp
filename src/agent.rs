@@ -37,8 +37,7 @@ use crate::app_server::{
     AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
     ThreadSettingsUpdateParams, decode_thread_archived, decode_thread_goal_cleared,
     decode_thread_goal_updated, decode_thread_name_updated, decode_thread_settings_updated,
-    decode_thread_status_changed, history_events, history_events_for_turns,
-    is_app_server_method_unavailable,
+    decode_thread_status_changed, history_events_for_turns, is_app_server_method_unavailable,
 };
 
 const MODEL_CONFIG_ID: &str = "model";
@@ -73,6 +72,7 @@ const SKILL_ROOTS_COMMAND: &str = "skill-roots";
 const STATUS_COMMAND: &str = "status";
 const STOP_COMMAND: &str = "stop";
 type CancelSignals = Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>;
+const HISTORY_REPLAY_PAGE_SIZE: u32 = 50;
 const APPROVAL_POLICY_OPTIONS: [(&str, &str, &str); 4] = [
     (
         "untrusted",
@@ -517,40 +517,16 @@ impl CodexAcpAgent {
         let cwd = request.cwd.to_string_lossy().into_owned();
         debug!(method = "session/load", thread_id, %cwd, "handling ACP request");
 
-        let thread = self
-            .app_server
-            .lock()
-            .await
-            .thread_read(thread_id.clone())
-            .await
-            .map_err(acp_internal_error)?
-            .thread;
-
         let resume_response = self
             .app_server
             .lock()
             .await
-            .thread_resume(thread_id, cwd)
+            .thread_resume(thread_id.clone(), cwd)
             .await
             .map_err(acp_internal_error)?;
 
-        let mut event_state = AcpEventState::default();
-        for event in history_events(&thread) {
-            match event {
-                AppServerHistoryEvent::UserMessage(text) => {
-                    send_session_update(
-                        &cx,
-                        request.session_id.clone(),
-                        SessionUpdate::UserMessageChunk(text_chunk(text)),
-                    )
-                    .map_err(acp_internal_error)?;
-                }
-                AppServerHistoryEvent::PromptEvent(event) => {
-                    send_prompt_event(&cx, request.session_id.clone(), *event, &mut event_state)
-                        .map_err(acp_internal_error)?;
-                }
-            }
-        }
+        self.replay_session_history(&thread_id, &request.session_id, &cx)
+            .await?;
 
         let mut config_options = self
             .refresh_config_options(
@@ -1284,6 +1260,60 @@ impl CodexAcpAgent {
             }
         }
         Ok(())
+    }
+
+    async fn replay_session_history(
+        &self,
+        thread_id: &str,
+        session_id: &SessionId,
+        cx: &ConnectionTo<Client>,
+    ) -> Result<(), Error> {
+        let mut cursor = None;
+        loop {
+            let page = self
+                .app_server
+                .lock()
+                .await
+                .thread_turns_list(
+                    thread_id.to_owned(),
+                    cursor.clone(),
+                    HISTORY_REPLAY_PAGE_SIZE,
+                )
+                .await;
+
+            match page {
+                Ok(page) => {
+                    self.replay_thread_turns(session_id, &page.data, cx)?;
+                    let next_cursor = page.next_cursor;
+                    if next_cursor.is_none() {
+                        return Ok(());
+                    }
+                    if next_cursor == cursor {
+                        return Err(acp_internal_error(anyhow::anyhow!(
+                            "app-server thread/turns/list returned a repeated cursor"
+                        )));
+                    }
+                    cursor = next_cursor;
+                }
+                Err(error) if is_app_server_method_unavailable(&error).is_some() => {
+                    debug!(
+                        %error,
+                        "falling back to thread/read history replay because thread/turns/list is unavailable"
+                    );
+                    let thread = self
+                        .app_server
+                        .lock()
+                        .await
+                        .thread_read(thread_id.to_owned())
+                        .await
+                        .map_err(acp_internal_error)?
+                        .thread;
+                    self.replay_thread_turns(session_id, &thread.turns, cx)?;
+                    return Ok(());
+                }
+                Err(error) => return Err(acp_internal_error(error)),
+            }
+        }
     }
 
     async fn resume_thread(

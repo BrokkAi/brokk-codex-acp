@@ -455,7 +455,8 @@ Tasks:
   v1.
 - [x] Convert stored user messages, agent messages, reasoning, command executions,
   MCP tool calls, and file changes into ACP updates.
-- [ ] Add pagination and size limits for large histories.
+- [x] Add pagination and size limits for large histories through
+  `thread/turns/list`, with `thread/read` fallback for older Codex versions.
 - [x] Add fake app-server tests for replay ordering.
 - [ ] Add ACP client tests for replay notification ordering before the
   `session/load` response and partial history behavior.
@@ -464,7 +465,8 @@ Acceptance criteria:
 
 - [x] `session/list` plus `session/load` can reopen a useful prior conversation
   with replayed transcript state.
-- [ ] Large histories do not require loading all turns into memory.
+- [x] Large histories do not require loading all turns into memory when
+  app-server supports paginated `thread/turns/list`.
 - [x] Fork replay behavior is explicit and tested for the extension path.
 
 ## Core Session Mapping

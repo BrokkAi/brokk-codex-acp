@@ -168,6 +168,25 @@ impl AppServerClient {
         .await
     }
 
+    pub async fn thread_turns_list(
+        &mut self,
+        thread_id: String,
+        cursor: Option<String>,
+        limit: u32,
+    ) -> anyhow::Result<ThreadTurnsListResponse> {
+        self.request(
+            "thread/turns/list",
+            ThreadTurnsListParams {
+                thread_id,
+                cursor,
+                limit: Some(limit),
+                sort_direction: Some("asc"),
+                items_view: Some("full"),
+            },
+        )
+        .await
+    }
+
     pub async fn thread_list(
         &mut self,
         cwd: Option<String>,
@@ -1153,6 +1172,30 @@ struct ThreadReadParams {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadReadResponse {
     pub thread: AppServerThreadHistory,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadTurnsListParams {
+    thread_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cursor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limit: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sort_direction: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    items_view: Option<&'static str>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadTurnsListResponse {
+    pub data: Vec<AppServerTurnHistory>,
+    #[serde(default)]
+    pub next_cursor: Option<String>,
+    #[serde(default)]
+    pub backwards_cursor: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
