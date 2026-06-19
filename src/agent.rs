@@ -68,6 +68,7 @@ const RENAME_COMMAND: &str = "rename";
 const RESUME_COMMAND: &str = "resume";
 const REVIEW_COMMAND: &str = "review";
 const SKILL_COMMAND: &str = "skill";
+const SKILL_ROOTS_COMMAND: &str = "skill-roots";
 const STATUS_COMMAND: &str = "status";
 const STOP_COMMAND: &str = "stop";
 const APPROVAL_POLICY_OPTIONS: [(&str, &str, &str); 4] = [
@@ -1026,6 +1027,21 @@ impl CodexAcpAgent {
                     cx,
                 )
             }
+            BuiltinCommand::SkillRoots { roots } => {
+                let cwd = self
+                    .session_cwd(session_id)
+                    .await
+                    .ok_or_else(|| Error::invalid_request().data("session cwd is not known yet"))?;
+                self.app_server
+                    .lock()
+                    .await
+                    .skills_extra_roots_set(roots.clone())
+                    .await
+                    .map_err(acp_internal_error)?;
+                self.refresh_and_publish_skills(cwd, session_id, cx, true)
+                    .await?;
+                publish_catalog_message(session_id, "Skill roots", skill_roots_summary(&roots), cx)
+            }
             BuiltinCommand::Rename { title } => {
                 self.app_server
                     .lock()
@@ -1949,6 +1965,7 @@ enum BuiltinCommand {
     Rename { title: String },
     Resume { target: String },
     Review,
+    SkillRoots { roots: Vec<String> },
     Status,
     Stop,
 }
@@ -2021,6 +2038,7 @@ fn parse_builtin_command(text: &str) -> Result<Option<BuiltinCommand>, Error> {
             Ok(Some(BuiltinCommand::Review))
         }
         SKILL_COMMAND => Ok(None),
+        SKILL_ROOTS_COMMAND => parse_skill_roots_command(rest),
         STATUS_COMMAND => parse_no_argument_command(rest, STATUS_COMMAND, BuiltinCommand::Status),
         STOP_COMMAND => parse_no_argument_command(rest, STOP_COMMAND, BuiltinCommand::Stop),
         _ => Err(Error::invalid_params().data(format!("unsupported slash command `/{command}`"))),
@@ -2054,6 +2072,19 @@ fn parse_goal_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
     Ok(Some(BuiltinCommand::GoalSet {
         objective: rest.to_owned(),
     }))
+}
+
+fn parse_skill_roots_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
+    let roots = rest
+        .split([',', ';'])
+        .flat_map(str::split_whitespace)
+        .filter(|root| !root.trim().is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if roots.is_empty() {
+        return Err(Error::invalid_params().data("/skill-roots requires at least one path"));
+    }
+    Ok(Some(BuiltinCommand::SkillRoots { roots }))
 }
 
 fn init_prompt() -> String {
@@ -2914,6 +2945,18 @@ fn status_summary(thread_id: &str, cwd: &str, loaded_threads: &serde_json::Value
     )
 }
 
+fn skill_roots_summary(roots: &[String]) -> String {
+    let mut lines = vec![format!(
+        "Skill roots updated for this app-server process: {} entries",
+        roots.len()
+    )];
+    lines.extend(roots.iter().take(10).map(|root| format!("- {root}")));
+    if roots.len() > 10 {
+        lines.push(format!("- ... {} more", roots.len() - 10));
+    }
+    lines.join("\n")
+}
+
 fn compact_json(value: &serde_json::Value) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "<unprintable>".to_owned())
 }
@@ -2971,6 +3014,11 @@ fn builtin_commands() -> Vec<AvailableCommand> {
             AvailableCommandInput::Unstructured(UnstructuredCommandInput::new("thread id or name")),
         ),
         AvailableCommand::new("review", "Run Codex review for this thread"),
+        AvailableCommand::new("skill-roots", "Set process-local Codex extra skill roots").input(
+            AvailableCommandInput::Unstructured(UnstructuredCommandInput::new(
+                "absolute skill root paths",
+            )),
+        ),
         AvailableCommand::new("status", "Show Codex thread status"),
         AvailableCommand::new("stop", "Clean Codex background terminals"),
     ]
@@ -3203,6 +3251,7 @@ mod tests {
             "/permissions",
             "/plugins",
             "/ps",
+            "/skill-roots /repo/.codex/skills,/shared/skills",
             "/status",
             "/stop",
         ] {
@@ -3218,6 +3267,11 @@ mod tests {
                 "/permissions" => assert!(matches!(command, BuiltinCommand::Permissions)),
                 "/plugins" => assert!(matches!(command, BuiltinCommand::Plugins)),
                 "/ps" => assert!(matches!(command, BuiltinCommand::Ps)),
+                "/skill-roots /repo/.codex/skills,/shared/skills" => assert!(matches!(
+                    command,
+                    BuiltinCommand::SkillRoots { roots }
+                        if roots == vec!["/repo/.codex/skills", "/shared/skills"]
+                )),
                 "/status" => assert!(matches!(command, BuiltinCommand::Status)),
                 "/stop" => assert!(matches!(command, BuiltinCommand::Stop)),
                 _ => unreachable!(),
@@ -3315,6 +3369,16 @@ mod tests {
     }
 
     #[test]
+    fn parse_builtin_command_rejects_empty_skill_roots() {
+        let error = parse_builtin_command("/skill-roots").unwrap_err();
+
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("/skill-roots requires at least one path")
+        );
+    }
+
+    #[test]
     fn parse_builtin_command_rejects_unknown_slash_command() {
         let error = parse_builtin_command("/unknown now").unwrap_err();
 
@@ -3364,6 +3428,7 @@ mod tests {
                 "rename",
                 "resume",
                 "review",
+                "skill-roots",
                 "status",
                 "stop",
                 "skill:skill-creator"

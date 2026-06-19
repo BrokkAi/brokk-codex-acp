@@ -185,7 +185,7 @@ The current repository has the first working ACP/app-server bridge in place:
 - Slash commands:
   - built-in `archive`, `apps`, `compact`, `fork`, `goal`, `hooks`, `init`,
     `mcp`, `model`, `new`, `permissions`, `plugins`, `ps`, `rename`, `resume`,
-    `review`, `status`, and `stop` commands are published through ACP
+    `review`, `skill-roots`, `status`, and `stop` commands are published through ACP
     `available_commands_update` alongside enabled skills.
   - `/archive` is intercepted by the adapter, mapped to `thread/archive`, and
     reflected to ACP clients through `session_info_update._meta`.
@@ -360,6 +360,7 @@ Tasks:
 - [x] Fall back to plain text when a skill cannot be resolved.
 - [x] Add app-server `skills/config/write` request support.
 - [x] Expose skill enable/disable through ACP session config options.
+- [x] Support process-local extra skill roots through `skills/extraRoots/set`.
 
 Acceptance criteria:
 
@@ -380,7 +381,7 @@ Tasks:
 - [x] Add an initial parser for leading slash commands, currently `/archive`,
   `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/mcp`, `/model`,
   `/new`, `/permissions`, `/plugins`, `/ps`, `/rename`, `/resume`, `/review`,
-  `/status`, and `/stop`.
+  `/skill-roots`, `/status`, and `/stop`.
 - [ ] Build the full command registry with aliases, availability, required
   active turn state, and handler metadata.
 - [x] Publish adapter-owned ACP available commands plus skills.
@@ -389,8 +390,9 @@ Tasks:
   `/plugins`, `/hooks`, and `/status`. Implemented so far: `/archive`,
   `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/mcp`, `/model`,
   `/new`, `/permissions`, `/plugins`, `/ps`, `/rename`, `/resume`, `/review`,
-  `/status`, and `/stop`. `/fork` is implemented only as an extension command
-  backed by Codex `thread/fork`, not as required ACP v1 behavior.
+  `/skill-roots`, `/status`, and `/stop`. `/fork` is implemented only as an
+  extension command backed by Codex `thread/fork`, not as required ACP v1
+  behavior.
 - [x] Return explicit unsupported-command responses for slash commands that are
   not currently handled by the adapter. `/skill ...` remains a supported
   non-builtin fallback.
@@ -848,6 +850,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/apps` | `app/list` `[implemented as summary]` |
 | `/plugins` | `plugin/list` and `plugin/installed` `[implemented as summary]` |
 | `/hooks` | `hooks/list` `[implemented as summary]` |
+| `/skill-roots <paths...>` | `skills/extraRoots/set` plus `skills/list(forceReload)` `[implemented as process-local summary]` |
 | `/ps` | `thread/backgroundTerminals/list` `[implemented as summary]` |
 | `/stop` | `thread/backgroundTerminals/clean` `[implemented as summary]` |
 | `/status` | local summary plus app-server status/config reads `[implemented as initial loaded-thread summary]` |
@@ -1029,7 +1032,10 @@ Expose a config path for:
 skills/extraRoots/set
 ```
 
-This is process-local and should be documented as non-persistent.
+This is process-local and should be documented as non-persistent. The adapter
+currently exposes it as `/skill-roots <paths...>`, calls
+`skills/extraRoots/set`, then refreshes the current cwd skills with
+`forceReload: true`.
 
 ## Apps, Plugins, and MCP
 
@@ -1330,7 +1336,7 @@ Manual flows:
 - [x] Support `/skill skill-name` invocation.
 - [x] Implement app-server `skills/config/write` mapping.
 - [x] Expose enable/disable through ACP session config options.
-- [ ] Support `skills/extraRoots/set`.
+- [x] Support `skills/extraRoots/set`.
 - [x] Add fake app-server tests for discovery.
 - [x] Add fake app-server tests for invocation.
 - [x] Add fake app-server tests for app-server config writes.

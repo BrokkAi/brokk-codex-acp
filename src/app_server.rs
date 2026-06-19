@@ -270,6 +270,14 @@ impl AppServerClient {
         .await
     }
 
+    pub async fn skills_extra_roots_set(
+        &mut self,
+        roots: Vec<String>,
+    ) -> anyhow::Result<SkillsExtraRootsSetResponse> {
+        self.request("skills/extraRoots/set", SkillsExtraRootsSetParams { roots })
+            .await
+    }
+
     pub async fn app_list(&mut self) -> anyhow::Result<Value> {
         self.request("app/list", EmptyParams {}).await
     }
@@ -1208,6 +1216,16 @@ struct SkillsConfigWriteParams {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillsConfigWriteResponse {}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillsExtraRootsSetParams {
+    roots: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillsExtraRootsSetResponse {}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

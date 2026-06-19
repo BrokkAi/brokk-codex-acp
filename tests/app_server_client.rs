@@ -154,6 +154,13 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     let skills = client.skills_list("/repo".to_string(), true).await?;
     assert!(!skills.data[0].skills[0].enabled);
 
+    client
+        .skills_extra_roots_set(vec![
+            "/repo/.codex/skills".to_string(),
+            "/shared/codex-skills".to_string(),
+        ])
+        .await?;
+
     let models = client.model_list().await?;
     assert_eq!(models.data.len(), 2);
     assert_eq!(models.data[0].id, "gpt-5");
@@ -1086,6 +1093,14 @@ for line in sys.stdin:
         assert params["name"] == "skill-creator"
         assert "path" not in params
         skill_creator_enabled = params["enabled"]
+        response(message_id, {})
+    elif method == "skills/extraRoots/set":
+        assert params == {
+            "roots": [
+                "/repo/.codex/skills",
+                "/shared/codex-skills",
+            ],
+        }
         response(message_id, {})
     elif method == "model/list":
         assert params == {"includeHidden": False}

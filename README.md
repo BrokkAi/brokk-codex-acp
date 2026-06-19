@@ -47,11 +47,14 @@ The project currently includes:
   returns a skill path, with plain-text fallback otherwise.
 - App-server `skills/config/write` mapping for skill enable/disable state,
   exposed through ACP session config options named `skill:<name>`.
+- App-server `skills/extraRoots/set` mapping through `/skill-roots <paths...>`;
+  roots are process-local and not persisted by Codex app-server.
 - Initial slash-command routing for `/rename <title>`, `/archive`, `/goal`,
   `/compact`, `/review`, `/init`, `/new`, `/resume`, `/fork`, `/apps`,
-  `/plugins`, `/mcp`, `/hooks`, `/model`, `/permissions`, `/ps`, `/stop`,
-  and `/status`, mapped to app-server thread, review, catalog, and config
-  endpoints with ACP session update, turn-stream, config-option, or
+  `/plugins`, `/mcp`, `/hooks`, `/model`, `/permissions`, `/ps`,
+  `/skill-roots`, `/stop`, and `/status`, mapped to app-server thread, review,
+  catalog, and config endpoints with ACP session update, turn-stream,
+  config-option, or
   agent-message summary projection as appropriate. Unsupported leading slash
   commands return an explicit ACP error instead of being forwarded to the model.
 - Initial command, file-change, and permission-profile approval routing from
