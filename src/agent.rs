@@ -769,6 +769,12 @@ impl CodexAcpAgent {
         let thread_id = request.session_id.0.to_string();
         debug!(method = "session/prompt", thread_id, "handling ACP request");
 
+        if let Some(command) = parse_shell_command(&text)? {
+            return self
+                .run_shell_command(command, &session_id, &thread_id, &cx)
+                .await;
+        }
+
         if let Some(command) = parse_builtin_command(&text)? {
             return self
                 .run_builtin_command(command, &session_id, &thread_id, &cx)
@@ -1538,6 +1544,69 @@ impl CodexAcpAgent {
             }
         }
         .map_err(acp_internal_error);
+
+        self.active_prompts.lock().await.remove(thread_id);
+
+        let stop_reason = match completion? {
+            AppServerPromptCompletion::EndTurn => StopReason::EndTurn,
+            AppServerPromptCompletion::Cancelled => StopReason::Cancelled,
+        };
+
+        self.publish_pending_updates(session_id, pending_updates, cx)
+            .await?;
+
+        Ok(PromptResponse::new(stop_reason))
+    }
+
+    async fn run_shell_command(
+        &self,
+        command: String,
+        session_id: &SessionId,
+        thread_id: &str,
+        cx: &ConnectionTo<Client>,
+    ) -> Result<PromptResponse, Error> {
+        let (cancel_tx, cancel_rx) = oneshot::channel();
+        if self
+            .active_prompts
+            .lock()
+            .await
+            .insert(thread_id.to_owned(), cancel_tx)
+            .is_some()
+        {
+            return Err(Error::invalid_request().data("session already has an active prompt turn"));
+        }
+
+        let mut event_state = AcpEventState::default();
+        let mut pending_updates = PendingAppServerUpdates::default();
+        let outstanding_approvals = self.outstanding_approvals.clone();
+        let completion = self
+            .app_server
+            .lock()
+            .await
+            .thread_shell_command_until_complete(
+                thread_id.to_owned(),
+                command,
+                Some(cancel_rx),
+                |event| {
+                    handle_app_server_event(
+                        cx,
+                        session_id.clone(),
+                        event,
+                        &mut event_state,
+                        &mut pending_updates,
+                    )
+                },
+                |approval| {
+                    request_permission(
+                        cx,
+                        session_id.clone(),
+                        approval,
+                        outstanding_approvals.clone(),
+                    )
+                },
+            )
+            .await
+            .map_err(acp_internal_error);
 
         self.active_prompts.lock().await.remove(thread_id);
 
@@ -2337,6 +2406,20 @@ fn parse_builtin_command(text: &str) -> Result<Option<BuiltinCommand>, Error> {
     };
 
     parse_command_from_spec(spec, rest)
+}
+
+fn parse_shell_command(text: &str) -> Result<Option<String>, Error> {
+    let text = text.trim_start();
+    let Some(command) = text.strip_prefix('!') else {
+        return Ok(None);
+    };
+
+    let command = command.trim();
+    if command.is_empty() {
+        return Err(Error::invalid_params().data("! shell command requires a command"));
+    }
+
+    Ok(Some(command.to_owned()))
 }
 
 fn builtin_command_spec(command: &str) -> Option<&'static BuiltinCommandSpec> {
@@ -3623,6 +3706,25 @@ mod tests {
         let command = parse_builtin_command("/unarchive").unwrap().unwrap();
 
         assert!(matches!(command, BuiltinCommand::Unarchive));
+    }
+
+    #[test]
+    fn parse_shell_command_recognizes_bang_command() {
+        assert_eq!(
+            parse_shell_command("  !echo hi").unwrap().as_deref(),
+            Some("echo hi")
+        );
+        assert_eq!(parse_shell_command("echo hi").unwrap(), None);
+    }
+
+    #[test]
+    fn parse_shell_command_rejects_empty_bang_command() {
+        let error = parse_shell_command("!  ").unwrap_err();
+
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("! shell command requires a command")
+        );
     }
 
     #[test]

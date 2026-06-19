@@ -541,6 +541,41 @@ impl AppServerClient {
         .await
     }
 
+    pub async fn thread_shell_command_until_complete<OnEvent, OnApproval, ApprovalFuture>(
+        &mut self,
+        thread_id: String,
+        command: String,
+        cancel_rx: Option<oneshot::Receiver<()>>,
+        on_event: OnEvent,
+        on_approval: OnApproval,
+    ) -> anyhow::Result<AppServerPromptCompletion>
+    where
+        OnEvent: FnMut(AppServerPromptEvent) -> anyhow::Result<()>,
+        OnApproval: FnMut(AppServerApprovalRequest) -> ApprovalFuture,
+        ApprovalFuture: Future<Output = anyhow::Result<AppServerApprovalDecision>>,
+    {
+        let messages_rx = self.subscribe();
+        let _response: ThreadShellCommandResponse = self
+            .request(
+                "thread/shellCommand",
+                ThreadShellCommandParams {
+                    thread_id: thread_id.clone(),
+                    command,
+                },
+            )
+            .await?;
+
+        self.wait_for_turn_until_complete(
+            messages_rx,
+            thread_id,
+            None,
+            cancel_rx,
+            on_event,
+            on_approval,
+        )
+        .await
+    }
+
     async fn wait_for_turn_until_complete<OnEvent, OnApproval, ApprovalFuture>(
         &mut self,
         mut messages_rx: broadcast::Receiver<AppServerMessage>,
@@ -1712,6 +1747,17 @@ struct ThreadCompactStartParams {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ThreadCompactStartResponse {}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadShellCommandParams {
+    thread_id: String,
+    command: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadShellCommandResponse {}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

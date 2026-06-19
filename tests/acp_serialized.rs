@@ -204,6 +204,39 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
 }
 
 #[tokio::test]
+async fn serialized_bang_prompt_runs_shell_command_without_starting_turn() -> anyhow::Result<()> {
+    let (prompt, notifications) = run_serialized_prompt("!echo hi").await?;
+
+    assert_eq!(prompt["result"]["stopReason"], "end_turn");
+
+    let session_updates = notifications
+        .iter()
+        .filter(|notification| notification["method"] == "session/update")
+        .map(|notification| &notification["params"]["update"])
+        .collect::<Vec<_>>();
+
+    assert!(
+        session_updates.iter().any(|update| {
+            update["sessionUpdate"] == "tool_call"
+                && update["toolCallId"] == "shell-serialized"
+                && update["title"] == "echo hi"
+                && update["kind"] == "execute"
+        }),
+        "session updates: {session_updates:#?}"
+    );
+    assert!(
+        session_updates.iter().any(|update| {
+            update["sessionUpdate"] == "tool_call_update"
+                && update["toolCallId"] == "shell-serialized"
+                && update["status"] == "completed"
+        }),
+        "session updates: {session_updates:#?}"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Result<()> {
     for (command, expected_fragments) in [
         ("/apps", ["Apps: 1 entries", "- GitHub"]),
@@ -687,6 +720,61 @@ for line in sys.stdin:
                     "objective": "Improve serialized coverage",
                     "status": "active",
                 },
+            },
+        })
+    elif method == "thread/shellCommand":
+        assert params["threadId"] == "thread-serialized"
+        assert params["command"] == "echo hi"
+        response(message_id, {"result": {}})
+        send({
+            "method": "turn/started",
+            "params": {
+                "threadId": "thread-serialized",
+                "turn": {"id": "turn-shell-serialized", "status": "running"},
+            },
+        })
+        send({
+            "method": "item/started",
+            "params": {
+                "threadId": "thread-serialized",
+                "turnId": "turn-shell-serialized",
+                "item": {
+                    "type": "commandExecution",
+                    "id": "shell-serialized",
+                    "command": "echo hi",
+                    "cwd": "/repo",
+                    "status": "inProgress",
+                },
+            },
+        })
+        send({
+            "method": "item/commandExecution/outputDelta",
+            "params": {
+                "threadId": "thread-serialized",
+                "turnId": "turn-shell-serialized",
+                "itemId": "shell-serialized",
+                "delta": "hi\n",
+            },
+        })
+        send({
+            "method": "item/completed",
+            "params": {
+                "threadId": "thread-serialized",
+                "turnId": "turn-shell-serialized",
+                "item": {
+                    "type": "commandExecution",
+                    "id": "shell-serialized",
+                    "command": "echo hi",
+                    "status": "completed",
+                    "aggregatedOutput": "hi\n",
+                },
+            },
+        })
+        send({
+            "method": "turn/completed",
+            "params": {
+                "threadId": "thread-serialized",
+                "turn": {"id": "turn-shell-serialized", "status": "completed"},
             },
         })
     elif method == "turn/start":

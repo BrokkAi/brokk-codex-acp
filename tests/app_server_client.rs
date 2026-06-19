@@ -364,6 +364,28 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         ]
     );
 
+    let mut shell_events = Vec::new();
+    client
+        .thread_shell_command_until_complete(
+            "thread-1".to_string(),
+            "echo hi".to_string(),
+            None,
+            |event| {
+                shell_events.push(summarize_prompt_event(event));
+                Ok(())
+            },
+            |_approval| async { Ok(AppServerApprovalDecision::Cancel) },
+        )
+        .await?;
+    assert_eq!(
+        shell_events,
+        vec![
+            "tool-started:shell-1:echo hi",
+            "tool-updated:shell-1",
+            "tool-updated:shell-1"
+        ]
+    );
+
     let mut approval_summaries = Vec::new();
     client
         .turn_start_until_complete(
@@ -1382,6 +1404,63 @@ for line in sys.stdin:
                     },
                 ],
             }
+        })
+    elif method == "thread/shellCommand":
+        assert params == {
+            "threadId": "thread-1",
+            "command": "echo hi",
+        }
+        response(message_id, {})
+        send({
+            "method": "turn/started",
+            "params": {
+                "threadId": "thread-1",
+                "turn": {"id": "turn-shell", "status": "running"},
+            },
+        })
+        send({
+            "method": "item/started",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-shell",
+                "item": {
+                    "type": "commandExecution",
+                    "id": "shell-1",
+                    "command": "echo hi",
+                    "cwd": "/repo",
+                    "status": "inProgress",
+                },
+            },
+        })
+        send({
+            "method": "item/commandExecution/outputDelta",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-shell",
+                "itemId": "shell-1",
+                "delta": "hi\n",
+            },
+        })
+        send({
+            "method": "item/completed",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-shell",
+                "item": {
+                    "type": "commandExecution",
+                    "id": "shell-1",
+                    "command": "echo hi",
+                    "status": "completed",
+                    "aggregatedOutput": "hi\n",
+                },
+            },
+        })
+        send({
+            "method": "turn/completed",
+            "params": {
+                "threadId": "thread-1",
+                "turn": {"id": "turn-shell", "status": "completed"},
+            },
         })
     elif method == "turn/start":
         assert params["threadId"] == "thread-1"

@@ -150,6 +150,7 @@ The current repository has the first working ACP/app-server bridge in place:
   - `session/set_config_option(permission_profile)` ->
     `thread/settings/update.permissions`
   - `session/prompt` -> `turn/start`
+  - `session/prompt` text beginning with `!` -> `thread/shellCommand`
   - `session/cancel` -> `turn/interrupt`
 - Catalog/config projection:
   - `model/list` -> ACP `model`, `reasoning_effort`, and `service_tier`
@@ -228,6 +229,9 @@ The current repository has the first working ACP/app-server bridge in place:
   - `/model` and `/permissions` are intercepted by the adapter, refresh
     app-server-backed config catalogs, publish ACP `config_option_update`, and
     send a short ACP agent-message summary.
+  - `!<command>` input is intercepted by the adapter, mapped to
+    `thread/shellCommand`, and streamed through the normal ACP turn update
+    projection.
   - Unknown leading slash commands return an explicit ACP error instead of
     being forwarded to the model; `/skill ...` remains a supported skill
     invocation fallback.
@@ -317,6 +321,8 @@ Tasks:
   notifications are routed independently of active requests.
 - [x] Add end-to-end ACP client tests that assert serialized `session/update`
   notifications.
+- [x] Route Codex bang shell commands through app-server `thread/shellCommand`
+  instead of model prompts.
 - [x] Add approval request bridging for command and file-change approvals.
 - [x] Add approval request bridging for permission-profile requests, granting
   the full requested profile for a turn/session or rejecting it.
