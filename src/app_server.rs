@@ -2368,8 +2368,7 @@ fn decode_approval_request(
             ];
             AppServerApprovalRequest {
                 item_id,
-                title: string_field(params, "reason")
-                    .unwrap_or_else(|| "Grant additional permissions".to_owned()),
+                title: permissions_approval_title(params, &requested_permissions),
                 kind: AppServerToolKind::Other,
                 raw: params.clone(),
                 response_kind: AppServerApprovalResponseKind::Permissions {
@@ -2524,6 +2523,66 @@ fn approval_options_from_params(
         defaults.to_vec()
     } else {
         parsed
+    }
+}
+
+fn permissions_approval_title(params: &Value, requested_permissions: &Value) -> String {
+    if let Some(reason) = string_field(params, "reason")
+        && !reason.trim().is_empty()
+    {
+        return reason;
+    }
+
+    permissions_summary(requested_permissions)
+        .map(|summary| format!("Grant {summary}"))
+        .unwrap_or_else(|| "Grant additional permissions".to_owned())
+}
+
+fn permissions_summary(permissions: &Value) -> Option<String> {
+    let mut parts = Vec::new();
+
+    if permissions
+        .get("network")
+        .and_then(|network| network.get("enabled"))
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        parts.push("network access".to_owned());
+    }
+
+    if let Some(file_system) = permissions.get("fileSystem") {
+        if let Some(part) = permission_path_summary(file_system, "read", "read access") {
+            parts.push(part);
+        }
+        if let Some(part) = permission_path_summary(file_system, "write", "write access") {
+            parts.push(part);
+        }
+    }
+
+    readable_list(parts)
+}
+
+fn permission_path_summary(file_system: &Value, field: &str, label: &str) -> Option<String> {
+    let paths = file_system.get(field)?.as_array()?;
+    match paths.len() {
+        0 => None,
+        1 => {
+            let path = paths[0].as_str()?;
+            Some(format!("{label} to `{path}`"))
+        }
+        count => Some(format!("{label} to {count} paths")),
+    }
+}
+
+fn readable_list(parts: Vec<String>) -> Option<String> {
+    match parts.as_slice() {
+        [] => None,
+        [only] => Some(only.clone()),
+        [first, second] => Some(format!("{first} and {second}")),
+        _ => {
+            let (last, rest) = parts.split_last()?;
+            Some(format!("{}, and {last}", rest.join(", ")))
+        }
     }
 }
 
@@ -3049,6 +3108,61 @@ mod tests {
                 AppServerApprovalOption::Accept,
                 AppServerApprovalOption::Decline
             ]
+        );
+    }
+
+    #[test]
+    fn permissions_approval_prefers_app_server_reason_as_title() {
+        let approval = decode_approval_request(
+            "item/permissions/requestApproval",
+            &json!({
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "itemId": "permissions-approval",
+                "startedAtMs": 123,
+                "cwd": "/repo",
+                "reason": "Need network and write access",
+                "permissions": {
+                    "network": {"enabled": true},
+                    "fileSystem": {"write": ["/repo/src"]},
+                },
+            }),
+            "thread-1",
+            Some("turn-1"),
+        )
+        .unwrap()
+        .expect("permissions request should decode");
+
+        assert_eq!(approval.title, "Need network and write access");
+    }
+
+    #[test]
+    fn permissions_approval_summarizes_requested_permissions_without_reason() {
+        let approval = decode_approval_request(
+            "item/permissions/requestApproval",
+            &json!({
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "itemId": "permissions-approval",
+                "startedAtMs": 123,
+                "cwd": "/repo",
+                "permissions": {
+                    "network": {"enabled": true},
+                    "fileSystem": {
+                        "read": ["/repo"],
+                        "write": ["/repo/src", "/repo/tests"],
+                    },
+                },
+            }),
+            "thread-1",
+            Some("turn-1"),
+        )
+        .unwrap()
+        .expect("permissions request should decode");
+
+        assert_eq!(
+            approval.title,
+            "Grant network access, read access to `/repo`, and write access to 2 paths"
         );
     }
 
