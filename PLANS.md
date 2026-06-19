@@ -1371,7 +1371,8 @@ Manual flows:
 
 ### Phase 7: Hardening
 
-- [ ] Version-gate app-server methods.
+- [x] Version-gate app-server methods through method-unavailable detection for
+  experimental adapter surfaces.
 - [ ] Add compatibility handling for older Codex versions.
 - [x] Add structured logging around app-server requests and ACP dispatch.
 - [ ] Add backpressure for notification bursts.

@@ -37,7 +37,7 @@ use crate::app_server::{
     AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
     decode_thread_archived, decode_thread_goal_cleared, decode_thread_goal_updated,
     decode_thread_name_updated, decode_thread_settings_updated, decode_thread_status_changed,
-    history_events,
+    history_events, is_app_server_method_unavailable,
 };
 
 const MODEL_CONFIG_ID: &str = "model";
@@ -1019,7 +1019,9 @@ impl CodexAcpAgent {
                     .await
                     .thread_background_terminals_list(thread_id.to_owned())
                     .await
-                    .map_err(acp_internal_error)?;
+                    .map_err(|error| {
+                        acp_app_server_method_error("thread/backgroundTerminals/list", error)
+                    })?;
                 publish_catalog_message(
                     session_id,
                     "Background terminals",
@@ -1037,7 +1039,7 @@ impl CodexAcpAgent {
                     .await
                     .skills_extra_roots_set(roots.clone())
                     .await
-                    .map_err(acp_internal_error)?;
+                    .map_err(|error| acp_app_server_method_error("skills/extraRoots/set", error))?;
                 self.refresh_and_publish_skills(cwd, session_id, cx, true)
                     .await?;
                 publish_catalog_message(session_id, "Skill roots", skill_roots_summary(&roots), cx)
@@ -1060,7 +1062,9 @@ impl CodexAcpAgent {
                     .await
                     .thread_background_terminals_clean(thread_id.to_owned())
                     .await
-                    .map_err(acp_internal_error)?;
+                    .map_err(|error| {
+                        acp_app_server_method_error("thread/backgroundTerminals/clean", error)
+                    })?;
                 publish_catalog_message(
                     session_id,
                     "Background terminals",
@@ -1880,6 +1884,16 @@ impl CodexAcpAgent {
 
 fn acp_internal_error(error: anyhow::Error) -> Error {
     Error::internal_error().data(error.to_string())
+}
+
+fn acp_app_server_method_error(method: &str, error: anyhow::Error) -> Error {
+    if is_app_server_method_unavailable(&error).is_some() {
+        Error::invalid_request().data(format!(
+            "Codex app-server method `{method}` is unavailable in this Codex version"
+        ))
+    } else {
+        acp_internal_error(error)
+    }
 }
 
 fn prompt_text(prompt: Vec<ContentBlock>) -> Result<String, Error> {

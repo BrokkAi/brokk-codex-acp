@@ -3,7 +3,7 @@ use std::fs;
 use brokk_codex_acp::app_server::{
     AppServerApprovalDecision, AppServerClient, AppServerCollaborationMode, AppServerCommand,
     AppServerHistoryEvent, AppServerMessage, AppServerPromptCompletion, AppServerPromptEvent,
-    AppServerTurnInput, history_events,
+    AppServerTurnInput, history_events, is_app_server_method_unavailable,
 };
 use tempfile::TempDir;
 use tokio::{sync::oneshot, time};
@@ -598,6 +598,12 @@ async fn app_server_client_maps_error_responses() -> anyhow::Result<()> {
     let message = format!("{error:#}");
     assert!(message.contains("failed to decode app-server `thread/start` response"));
 
+    let error = client.plugin_list().await.unwrap_err();
+    assert_eq!(
+        is_app_server_method_unavailable(&error),
+        Some("plugin/list")
+    );
+
     Ok(())
 }
 
@@ -710,6 +716,13 @@ for line in sys.stdin:
             "error": {
                 "code": -32000,
                 "message": "boom",
+            },
+        })
+    elif method == "plugin/list":
+        response(message_id, {
+            "error": {
+                "code": -32601,
+                "message": "Method not found",
             },
         })
     elif method == "thread/start":

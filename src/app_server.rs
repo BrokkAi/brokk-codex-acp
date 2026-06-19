@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::future::Future;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -701,6 +702,13 @@ impl AppServerClient {
 
         if let Some(error) = message.get("error") {
             warn!(method, %error, "codex app-server request failed");
+            if app_server_method_unavailable(error) {
+                return Err(AppServerMethodUnavailable {
+                    method: method.to_owned(),
+                    error: error.clone(),
+                }
+                .into());
+            }
             bail!("codex app-server request `{method}` failed: {error}");
         }
 
@@ -787,6 +795,49 @@ impl AppServerClient {
         });
         self.write_message(&response).await
     }
+}
+
+#[derive(Debug)]
+pub struct AppServerMethodUnavailable {
+    method: String,
+    error: Value,
+}
+
+impl AppServerMethodUnavailable {
+    pub fn method(&self) -> &str {
+        &self.method
+    }
+}
+
+impl fmt::Display for AppServerMethodUnavailable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "codex app-server method `{}` is unavailable: {}",
+            self.method, self.error
+        )
+    }
+}
+
+impl std::error::Error for AppServerMethodUnavailable {}
+
+pub fn is_app_server_method_unavailable(error: &anyhow::Error) -> Option<&str> {
+    error
+        .downcast_ref::<AppServerMethodUnavailable>()
+        .map(AppServerMethodUnavailable::method)
+}
+
+fn app_server_method_unavailable(error: &Value) -> bool {
+    if error.get("code").and_then(Value::as_i64) == Some(-32601) {
+        return true;
+    }
+    let Some(message) = error.get("message").and_then(Value::as_str) else {
+        return false;
+    };
+    let message = message.to_ascii_lowercase();
+    message.contains("method not found")
+        || message.contains("unknown method")
+        || message.contains("unsupported method")
 }
 
 impl Drop for AppServerClient {
