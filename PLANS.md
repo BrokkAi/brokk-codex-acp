@@ -354,7 +354,8 @@ Tasks:
 - [x] Cache skills by cwd.
 - [x] Invalidate the skill cache on `skills/changed` notifications.
 - [x] Publish enabled skills through ACP available commands.
-- [ ] Publish skills through ACP mention metadata where supported.
+- [x] Confirm ACP v1 has no skill mention publication surface; keep skills
+  exposed through available commands and config options until ACP adds one.
 - [x] Convert `$skill-name` and `/skill skill-name` input into app-server
   `UserInput::Skill` when the skill path is known.
 - [x] Fall back to plain text when a skill cannot be resolved.
@@ -931,8 +932,9 @@ Skills are a first-class requirement.
 
 ACP v1 does not define `skills/list` as an ACP method. `skills/list` below is an
 app-server API used by the adapter, and the ACP-facing projection should be
-available commands, config options, or future mention support depending on what
-clients can render.
+available commands and config options. The local stable ACP v1 schema has no
+mention-completion publication surface for agents, so skill mentions are an
+app-server prompt-input detail rather than an ACP catalog projection for now.
 
 ### Discovery
 
@@ -950,7 +952,7 @@ then publishes enabled skills as `skill:<name>` available commands.
 Expose skills to ACP clients as:
 
 - [x] available commands if ACP only supports slash commands
-- [ ] mention completions if ACP supports mentions
+- [x] no ACP v1 mention completions are available to publish
 - [x] config options using select controls for enable/disable toggles
 
 The app-server shape to use is:
@@ -1331,7 +1333,7 @@ Manual flows:
 - [x] Refresh skills on session lifecycle.
 - [x] Refresh skills on `skills/changed` notifications.
 - [x] Publish skills as ACP commands.
-- [ ] Publish skills as ACP mentions.
+- [x] Document that stable ACP v1 has no skill mention publication surface.
 - [x] Support `$skill-name` invocation.
 - [x] Support `/skill skill-name` invocation.
 - [x] Implement app-server `skills/config/write` mapping.
@@ -1390,8 +1392,6 @@ Manual flows:
   explicitly interrupt first?
 - Should `/fork <prompt>` create a persistent fork, or should that behavior be
   reserved for `/side <prompt>` as an ephemeral fork?
-- How should skills appear in ACP clients that do not support mention
-  completions?
 - Which ACP clients can represent app/plugin icons, descriptions, and install
   states?
 - Should the adapter use the installed `codex` binary or link app-server crates
