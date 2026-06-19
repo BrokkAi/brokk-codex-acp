@@ -465,7 +465,7 @@ Acceptance criteria:
 - [x] `session/list` plus `session/load` can reopen a useful prior conversation
   with replayed transcript state.
 - [ ] Large histories do not require loading all turns into memory.
-- [ ] Fork replay behavior is explicit and tested for the extension path.
+- [x] Fork replay behavior is explicit and tested for the extension path.
 
 ## Core Session Mapping
 
@@ -1305,7 +1305,7 @@ Manual flows:
 ### Phase 3: Slash Commands
 
 - [x] Add initial command parser.
-- [ ] Add command registry.
+- [x] Add command registry.
 - [x] Publish initial adapter-owned command through ACP available commands.
 - [x] Implement `/new`.
 - [x] Implement `/resume`.
