@@ -63,6 +63,7 @@ const PLUGINS_COMMAND: &str = "plugins";
 const RENAME_COMMAND: &str = "rename";
 const RESUME_COMMAND: &str = "resume";
 const REVIEW_COMMAND: &str = "review";
+const SKILL_COMMAND: &str = "skill";
 const STATUS_COMMAND: &str = "status";
 const APPROVAL_POLICY_OPTIONS: [(&str, &str, &str); 4] = [
     (
@@ -1892,8 +1893,9 @@ fn parse_builtin_command(text: &str) -> Result<Option<BuiltinCommand>, Error> {
             }
             Ok(Some(BuiltinCommand::Review))
         }
+        SKILL_COMMAND => Ok(None),
         STATUS_COMMAND => parse_no_argument_command(rest, STATUS_COMMAND, BuiltinCommand::Status),
-        _ => Ok(None),
+        _ => Err(Error::invalid_params().data(format!("unsupported slash command `/{command}`"))),
     }
 }
 
@@ -3129,6 +3131,23 @@ mod tests {
                 Some(expected)
             );
         }
+    }
+
+    #[test]
+    fn parse_builtin_command_rejects_unknown_slash_command() {
+        let error = parse_builtin_command("/unknown now").unwrap_err();
+
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("unsupported slash command `/unknown`")
+        );
+    }
+
+    #[test]
+    fn parse_builtin_command_allows_skill_invocation_fallback() {
+        let command = parse_builtin_command("/skill skill-creator Make a test skill").unwrap();
+
+        assert!(command.is_none());
     }
 
     #[test]

@@ -49,7 +49,8 @@ The project currently includes:
   `/plugins`, `/mcp`, `/hooks`, `/model`, `/permissions`, and `/status`,
   mapped to app-server thread, review, catalog, and config endpoints with ACP
   session update, turn-stream, config-option, or agent-message summary
-  projection as appropriate.
+  projection as appropriate. Unsupported leading slash commands return an
+  explicit ACP error instead of being forwarded to the model.
 - Initial command, file-change, and permission-profile approval routing from
   app-server approval requests to ACP `session/request_permission`, with the
   selected decision sent back to app-server in the response shape each

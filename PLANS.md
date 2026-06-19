@@ -223,6 +223,9 @@ The current repository has the first working ACP/app-server bridge in place:
   - `/model` and `/permissions` are intercepted by the adapter, refresh
     app-server-backed config catalogs, publish ACP `config_option_update`, and
     send a short ACP agent-message summary.
+  - Unknown leading slash commands return an explicit ACP error instead of
+    being forwarded to the model; `/skill ...` remains a supported skill
+    invocation fallback.
   - `thread/archived` app-server notifications are projected to ACP
     `session_info_update._meta`.
   - `thread/name/updated` app-server notifications are projected to ACP
@@ -385,8 +388,9 @@ Tasks:
   `/new`, `/permissions`, `/plugins`, `/rename`, `/resume`, `/review`, and
   `/status`. `/fork` is implemented only as an extension command backed by Codex
   `thread/fork`, not as required ACP v1 behavior.
-- Return explicit unsupported-command responses for known UI-only commands that
-  ACP cannot represent.
+- [x] Return explicit unsupported-command responses for slash commands that are
+  not currently handled by the adapter. `/skill ...` remains a supported
+  non-builtin fallback.
 - [x] Add fake app-server coverage for `thread/archive`,
   `thread/compact/start`, `thread/goal/*`, `thread/name/set`, and
   `review/start` plus unit coverage for `/archive`, `/compact`, `/goal`,
@@ -406,6 +410,8 @@ Tasks:
   `/resume` parsing/advertisement.
 - [x] Add unit coverage for `/init` parsing/advertisement and the generated
   AGENTS.md prompt.
+- [x] Add unit coverage proving unknown slash commands return explicit errors
+  while `/skill ...` remains available for skill invocation fallback.
 - [ ] Add serialized ACP coverage proving `/rename` emits
   `session_info_update` and does not call `turn/start`.
 - [ ] Add serialized ACP coverage proving `/archive` emits
@@ -424,7 +430,7 @@ Acceptance criteria:
   sending text to the model.
 - [x] `/apps`, `/plugins`, `/mcp`, `/hooks`, and `/status` call app-server
   catalog/status endpoints instead of becoming model prompts.
-- [ ] Unknown commands never silently become prompts unless explicitly
+- [x] Unknown commands never silently become prompts unless explicitly
   configured.
 
 ### Milestone D: Session History and Replay
