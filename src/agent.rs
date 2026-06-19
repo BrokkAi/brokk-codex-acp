@@ -26,7 +26,7 @@ use agent_client_protocol::{
 };
 use tokio::sync::{Mutex, broadcast, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
-use tracing::debug;
+use tracing::{debug, trace};
 
 use crate::app_server::{
     AppServerActivePermissionProfile, AppServerApprovalDecision, AppServerApprovalOption,
@@ -450,6 +450,7 @@ impl CodexAcpAgent {
         cx: ConnectionTo<Client>,
     ) -> Result<NewSessionResponse, Error> {
         let cwd = request.cwd.to_string_lossy().into_owned();
+        debug!(method = "session/new", %cwd, "handling ACP request");
         let (session_id, config_options) = self.start_thread(cwd, &cx).await?;
 
         Ok(NewSessionResponse::new(session_id).config_options(config_options))
@@ -462,6 +463,12 @@ impl CodexAcpAgent {
     ) -> Result<ForkSessionResponse, Error> {
         let source_thread_id = request.session_id.0.to_string();
         let cwd = request.cwd.to_string_lossy().into_owned();
+        debug!(
+            method = "session/fork",
+            source_thread_id,
+            %cwd,
+            "handling ACP request"
+        );
         let (session_id, config_options) = self.fork_thread(source_thread_id, cwd, &cx).await?;
 
         Ok(ForkSessionResponse::new(session_id).config_options(config_options))
@@ -474,6 +481,7 @@ impl CodexAcpAgent {
     ) -> Result<LoadSessionResponse, Error> {
         let thread_id = request.session_id.0.to_string();
         let cwd = request.cwd.to_string_lossy().into_owned();
+        debug!(method = "session/load", thread_id, %cwd, "handling ACP request");
 
         let thread = self
             .app_server
@@ -547,6 +555,7 @@ impl CodexAcpAgent {
     ) -> Result<ResumeSessionResponse, Error> {
         let thread_id = request.session_id.0.to_string();
         let cwd = request.cwd.to_string_lossy().into_owned();
+        debug!(method = "session/resume", thread_id, %cwd, "handling ACP request");
         let (_, config_options) = self.resume_thread(thread_id, cwd, &cx).await?;
 
         Ok(ResumeSessionResponse::new().config_options(config_options))
@@ -617,6 +626,10 @@ impl CodexAcpAgent {
         let thread_id = session_id.0.to_string();
         let config_id = request.config_id.to_string();
         let value = request.value.to_string();
+        debug!(
+            method = "session/set_config_option",
+            thread_id, config_id, value, "handling ACP request"
+        );
 
         match config_id.as_str() {
             MODEL_CONFIG_ID => {
@@ -733,6 +746,7 @@ impl CodexAcpAgent {
         let text = prompt_text(request.prompt)?;
         let session_id = request.session_id.clone();
         let thread_id = request.session_id.0.to_string();
+        debug!(method = "session/prompt", thread_id, "handling ACP request");
 
         if let Some(command) = parse_builtin_command(&text)? {
             return self
@@ -2430,6 +2444,10 @@ fn send_session_update(
     session_id: SessionId,
     update: SessionUpdate,
 ) -> anyhow::Result<()> {
+    trace!(
+        session_id = session_id.0.as_ref(),
+        "sending ACP session update"
+    );
     cx.send_notification(SessionNotification::new(session_id, update))
         .map_err(|error| anyhow::anyhow!("failed to send ACP session update: {error}"))
 }

@@ -1367,7 +1367,7 @@ Manual flows:
 
 - [ ] Version-gate app-server methods.
 - [ ] Add compatibility handling for older Codex versions.
-- [ ] Add structured logging around app-server requests and ACP dispatch.
+- [x] Add structured logging around app-server requests and ACP dispatch.
 - [ ] Add backpressure for notification bursts.
 - [x] Add shutdown cleanup for app-server child process.
 - [ ] Add real app-server smoke tests.

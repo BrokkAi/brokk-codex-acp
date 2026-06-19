@@ -692,6 +692,7 @@ impl AppServerClient {
             .with_context(|| format!("codex app-server exited before responding to `{method}`"))?;
 
         if let Some(error) = message.get("error") {
+            warn!(method, %error, "codex app-server request failed");
             bail!("codex app-server request `{method}` failed: {error}");
         }
 
@@ -699,6 +700,7 @@ impl AppServerClient {
             .get("result")
             .cloned()
             .context("app-server response did not include `result`")?;
+        trace!(method, "received codex app-server response");
         serde_json::from_value(result)
             .with_context(|| format!("failed to decode app-server `{method}` response"))
     }
@@ -712,6 +714,7 @@ impl AppServerClient {
             "params": params,
         });
 
+        debug!(method, "sending codex app-server notification");
         self.write_message(&notification).await
     }
 
@@ -732,6 +735,7 @@ impl AppServerClient {
         });
         let (response_tx, response_rx) = oneshot::channel();
         self.pending_responses.lock().await.insert(id, response_tx);
+        debug!(request_id = id, method, "sending codex app-server request");
         if let Err(error) = self.write_message(&request).await {
             self.pending_responses.lock().await.remove(&id);
             return Err(error);
@@ -827,6 +831,11 @@ fn spawn_reader(
 
             if let Some(method) = message.get("method").and_then(Value::as_str) {
                 let params = message.get("params").cloned().unwrap_or(Value::Null);
+                trace!(
+                    method,
+                    has_request_id = message.get("id").is_some(),
+                    "received codex app-server message"
+                );
                 let app_server_message = if let Some(id) = message.get("id").cloned() {
                     AppServerMessage::Request {
                         id,
@@ -857,6 +866,7 @@ fn spawn_reader(
                 );
                 continue;
             };
+            trace!(request_id = id, "received codex app-server response");
             let _ = response_tx.send(message);
         }
 
