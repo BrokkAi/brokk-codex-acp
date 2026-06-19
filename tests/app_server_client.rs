@@ -603,7 +603,32 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     let closed = client.thread_unsubscribe("thread-1".to_string()).await?;
     assert_eq!(closed.status, "ok");
 
+    let mut delete_notifications = client.subscribe();
     client.thread_delete("thread-1".to_string()).await?;
+    let mut saw_deleted = false;
+    let mut saw_closed = false;
+    for _ in 0..10 {
+        let message =
+            time::timeout(time::Duration::from_secs(1), delete_notifications.recv()).await??;
+        match message {
+            AppServerMessage::Notification { method, params }
+                if method == "thread/deleted" && params["threadId"] == "thread-1" =>
+            {
+                saw_deleted = true;
+            }
+            AppServerMessage::Notification { method, params }
+                if method == "thread/closed" && params["threadId"] == "thread-1" =>
+            {
+                saw_closed = true;
+            }
+            _ => {}
+        }
+        if saw_deleted && saw_closed {
+            break;
+        }
+    }
+    assert!(saw_deleted, "thread/delete should emit thread/deleted");
+    assert!(saw_closed, "thread/delete should emit thread/closed");
 
     Ok(())
 }
@@ -1934,6 +1959,14 @@ for line in sys.stdin:
     elif method == "thread/delete":
         assert params["threadId"] == "thread-1"
         response(message_id, {})
+        send({
+            "method": "thread/deleted",
+            "params": {"threadId": "thread-1"},
+        })
+        send({
+            "method": "thread/closed",
+            "params": {"threadId": "thread-1"},
+        })
     else:
         send({
             "id": message_id,

@@ -281,9 +281,29 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
                 "command {command} did not publish plan config update; notifications: {notifications:#?}"
             );
         }
+        if command == "/apps" {
+            assert!(
+                notifications
+                    .iter()
+                    .any(|notification| adapter_meta_bool_update(notification, "deleted", true)),
+                "command {command} did not publish deleted metadata update; notifications: {notifications:#?}"
+            );
+            assert!(
+                notifications
+                    .iter()
+                    .any(|notification| adapter_meta_bool_update(notification, "closed", true)),
+                "command {command} did not publish closed metadata update; notifications: {notifications:#?}"
+            );
+        }
     }
 
     Ok(())
+}
+
+fn adapter_meta_bool_update(notification: &Value, key: &str, value: bool) -> bool {
+    notification["method"] == "session/update"
+        && notification["params"]["update"]["sessionUpdate"] == "session_info_update"
+        && notification["params"]["update"]["_meta"]["brokk_codex_acp"][key] == value
 }
 
 fn plan_mode_config_update(notification: &Value) -> bool {
@@ -624,6 +644,14 @@ for line in sys.stdin:
         })
     elif method == "app/list":
         assert params == {}
+        send({
+            "method": "thread/deleted",
+            "params": {"threadId": "thread-serialized"},
+        })
+        send({
+            "method": "thread/closed",
+            "params": {"threadId": "thread-serialized"},
+        })
         response(message_id, {
             "result": {
                 "data": [

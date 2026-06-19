@@ -2032,6 +2032,16 @@ pub struct AppServerThreadUnarchivedUpdate {
 }
 
 #[derive(Debug, Clone)]
+pub struct AppServerThreadDeletedUpdate {
+    pub thread_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppServerThreadClosedUpdate {
+    pub thread_id: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct AppServerThreadStatusUpdate {
     pub thread_id: String,
     pub status: Value,
@@ -2052,6 +2062,18 @@ struct ThreadArchivedNotification {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ThreadUnarchivedNotification {
+    thread_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadDeletedNotification {
+    thread_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadClosedNotification {
     thread_id: String,
 }
 
@@ -2301,6 +2323,20 @@ pub fn decode_thread_archived(params: &Value) -> anyhow::Result<AppServerThreadA
 pub fn decode_thread_unarchived(params: &Value) -> anyhow::Result<AppServerThreadUnarchivedUpdate> {
     let notification: ThreadUnarchivedNotification = serde_json::from_value(params.clone())?;
     Ok(AppServerThreadUnarchivedUpdate {
+        thread_id: notification.thread_id,
+    })
+}
+
+pub fn decode_thread_deleted(params: &Value) -> anyhow::Result<AppServerThreadDeletedUpdate> {
+    let notification: ThreadDeletedNotification = serde_json::from_value(params.clone())?;
+    Ok(AppServerThreadDeletedUpdate {
+        thread_id: notification.thread_id,
+    })
+}
+
+pub fn decode_thread_closed(params: &Value) -> anyhow::Result<AppServerThreadClosedUpdate> {
+    let notification: ThreadClosedNotification = serde_json::from_value(params.clone())?;
+    Ok(AppServerThreadClosedUpdate {
         thread_id: notification.thread_id,
     })
 }

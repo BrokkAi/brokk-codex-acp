@@ -35,10 +35,10 @@ use crate::app_server::{
     AppServerMessage, AppServerModel, AppServerPermissionProfile, AppServerPlanStatus,
     AppServerPromptCompletion, AppServerPromptEvent, AppServerSkill, AppServerThread,
     AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
-    ThreadSettingsUpdateParams, decode_thread_archived, decode_thread_goal_cleared,
-    decode_thread_goal_updated, decode_thread_name_updated, decode_thread_settings_updated,
-    decode_thread_status_changed, decode_thread_unarchived, history_events_for_turns,
-    is_app_server_method_unavailable,
+    ThreadSettingsUpdateParams, decode_thread_archived, decode_thread_closed,
+    decode_thread_deleted, decode_thread_goal_cleared, decode_thread_goal_updated,
+    decode_thread_name_updated, decode_thread_settings_updated, decode_thread_status_changed,
+    decode_thread_unarchived, history_events_for_turns, is_app_server_method_unavailable,
 };
 
 const MODEL_CONFIG_ID: &str = "model";
@@ -465,6 +465,17 @@ impl CodexAcpAgent {
                 let session_id = SessionId::new(update.thread_id);
                 publish_session_archived_update(&session_id, false, cx)
                     .map_err(acp_internal_error)?;
+            }
+            "thread/deleted" => {
+                let update = decode_thread_deleted(&params).map_err(acp_internal_error)?;
+                let session_id = SessionId::new(update.thread_id);
+                publish_session_deleted_update(&session_id, true, cx)
+                    .map_err(acp_internal_error)?;
+            }
+            "thread/closed" => {
+                let update = decode_thread_closed(&params).map_err(acp_internal_error)?;
+                let session_id = SessionId::new(update.thread_id);
+                publish_session_closed_update(&session_id, true, cx).map_err(acp_internal_error)?;
             }
             "thread/status/changed" => {
                 let update = decode_thread_status_changed(&params).map_err(acp_internal_error)?;
@@ -3084,6 +3095,30 @@ fn publish_session_archived_update(
     publish_session_adapter_meta_update(
         session_id,
         [("archived".to_owned(), serde_json::Value::Bool(archived))],
+        cx,
+    )
+}
+
+fn publish_session_deleted_update(
+    session_id: &SessionId,
+    deleted: bool,
+    cx: &ConnectionTo<Client>,
+) -> anyhow::Result<()> {
+    publish_session_adapter_meta_update(
+        session_id,
+        [("deleted".to_owned(), serde_json::Value::Bool(deleted))],
+        cx,
+    )
+}
+
+fn publish_session_closed_update(
+    session_id: &SessionId,
+    closed: bool,
+    cx: &ConnectionTo<Client>,
+) -> anyhow::Result<()> {
+    publish_session_adapter_meta_update(
+        session_id,
+        [("closed".to_owned(), serde_json::Value::Bool(closed))],
         cx,
     )
 }

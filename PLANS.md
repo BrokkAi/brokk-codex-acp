@@ -245,6 +245,8 @@ The current repository has the first working ACP/app-server bridge in place:
     `session_info_update`.
   - `thread/status/changed` app-server notifications are projected to ACP
     `session_info_update._meta`, preserving the full app-server status payload.
+  - `thread/deleted` and `thread/closed` app-server notifications are projected
+    to ACP `session_info_update._meta` as adapter lifecycle metadata.
   - `thread/goal/updated` and `thread/goal/cleared` app-server notifications are
     projected to ACP `session_info_update._meta`.
 
@@ -253,8 +255,7 @@ as input, and advertises stable ACP v1 `sessionCapabilities.list`, `.resume`,
 `.close`, and `.delete`. It also advertises the Rust crate's unstable session
 fork extension. Partial permission grants, rich ACP UI for MCP elicitation,
 dynamic tool callbacks, terminal embedding, exact per-tool diff objects,
-paginated/full-fidelity history replay, ACP-facing skills configuration, and
-remaining slash command routing remain planned work.
+and ACP-facing skills configuration remain planned work.
 
 ## Immediate Roadmap
 
@@ -843,6 +844,7 @@ app-server item id -> ACP tool call id / message stream id
 | `skills/changed` | `available_commands_update` | Implemented through the background app-server notification dispatcher; re-runs app-server `skills/list` with `forceReload`. |
 | `thread/settings/updated` | `config_option_update` | Implemented through the background app-server notification dispatcher; refreshes model, collaboration-mode, and permission catalogs before publishing current options. |
 | `thread/status/changed` | `session_info_update._meta` | Implemented through the background app-server notification dispatcher; preserves the full app-server status payload under adapter metadata. |
+| `thread/deleted` / `thread/closed` | `session_info_update._meta` | Implemented through adapter lifecycle metadata so ACP clients can react to app-server lifecycle events. |
 | `model/rerouted` | `session_info_update` or warning chunk | Prefer non-invasive visibility. |
 | `warning` / `error` | agent message chunk or tool-call error | Keep user-actionable text. |
 
