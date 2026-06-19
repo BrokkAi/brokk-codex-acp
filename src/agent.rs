@@ -64,6 +64,7 @@ const MCP_COMMAND: &str = "mcp";
 const MODEL_COMMAND: &str = "model";
 const NEW_COMMAND: &str = "new";
 const PERMISSIONS_COMMAND: &str = "permissions";
+const PLAN_COMMAND: &str = "plan";
 const PLUGINS_COMMAND: &str = "plugins";
 const PS_COMMAND: &str = "ps";
 const RENAME_COMMAND: &str = "rename";
@@ -1050,6 +1051,29 @@ impl CodexAcpAgent {
                     session_id,
                     config_options,
                     "Permission options refreshed. Use the `permission_profile` and `approval_policy` session config options to change Codex permission behavior.",
+                    cx,
+                )
+            }
+            BuiltinCommand::Plan => {
+                let thread_id = session_id.0.to_string();
+                self.refresh_current_config_options(session_id).await;
+                if !self
+                    .is_known_config_value(&thread_id, COLLABORATION_MODE_CONFIG_ID, PLAN_COMMAND)
+                    .await
+                {
+                    return Err(Error::invalid_request()
+                        .data("Codex collaboration mode `plan` is not available"));
+                }
+                self.set_collaboration_mode_config(session_id, PLAN_COMMAND.to_owned())
+                    .await
+                    .map_err(|error| {
+                        acp_app_server_method_error("thread/settings/update", error)
+                    })?;
+                let config_options = self.config_options_for_session(&thread_id).await;
+                publish_config_options_for_command(
+                    session_id,
+                    config_options,
+                    "Plan mode enabled for subsequent Codex turns.",
                     cx,
                 )
             }
@@ -2215,6 +2239,7 @@ enum BuiltinCommand {
     Model,
     New,
     Permissions,
+    Plan,
     Plugins,
     Ps,
     Rename { title: String },
@@ -2253,6 +2278,7 @@ enum CommandHandler {
     Model,
     New,
     Permissions,
+    Plan,
     Plugins,
     Ps,
     Rename,
@@ -2371,6 +2397,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: None,
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::Permissions,
+    },
+    BuiltinCommandSpec {
+        name: PLAN_COMMAND,
+        aliases: &[],
+        description: "Switch subsequent Codex turns into plan mode",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Plan,
     },
     BuiltinCommandSpec {
         name: PLUGINS_COMMAND,
@@ -2525,6 +2559,7 @@ fn parse_command_from_spec(
         CommandHandler::Permissions => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Permissions)
         }
+        CommandHandler::Plan => parse_no_argument_command(rest, spec.name, BuiltinCommand::Plan),
         CommandHandler::Plugins => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Plugins)
         }
@@ -3859,6 +3894,7 @@ mod tests {
             "/model",
             "/new",
             "/permissions",
+            "/plan",
             "/plugins",
             "/ps",
             "/rollback 2",
@@ -3877,6 +3913,7 @@ mod tests {
                 "/model" => assert!(matches!(command, BuiltinCommand::Model)),
                 "/new" => assert!(matches!(command, BuiltinCommand::New)),
                 "/permissions" => assert!(matches!(command, BuiltinCommand::Permissions)),
+                "/plan" => assert!(matches!(command, BuiltinCommand::Plan)),
                 "/plugins" => assert!(matches!(command, BuiltinCommand::Plugins)),
                 "/ps" => assert!(matches!(command, BuiltinCommand::Ps)),
                 "/rollback 2" => assert!(matches!(
@@ -4070,6 +4107,7 @@ mod tests {
             ("/model now", "/model does not accept arguments"),
             ("/new now", "/new does not accept arguments"),
             ("/permissions now", "/permissions does not accept arguments"),
+            ("/plan now", "/plan does not accept arguments"),
             ("/plugins now", "/plugins does not accept arguments"),
             ("/ps now", "/ps does not accept arguments"),
             ("/status now", "/status does not accept arguments"),
@@ -4152,6 +4190,7 @@ mod tests {
                 "model",
                 "new",
                 "permissions",
+                "plan",
                 "plugins",
                 "ps",
                 "rename",

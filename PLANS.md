@@ -393,8 +393,8 @@ Tasks:
 
 - [x] Add an initial parser for leading slash commands, currently `/archive`,
   `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/kill`, `/mcp`,
-  `/model`, `/new`, `/permissions`, `/plugins`, `/ps`, `/rename`, `/resume`,
-  `/review`, `/rollback`, `/skill-roots`, `/status`, `/stop`, and
+  `/model`, `/new`, `/permissions`, `/plan`, `/plugins`, `/ps`, `/rename`,
+  `/resume`, `/review`, `/rollback`, `/skill-roots`, `/status`, `/stop`, and
   `/unarchive`.
 - [x] Build the full command registry with aliases, availability, required
   active turn state, and handler metadata.
@@ -403,8 +403,8 @@ Tasks:
   `/compact`, `/rename`, `/model`, `/permissions`, `/mcp`, `/apps`,
   `/plugins`, `/hooks`, and `/status`. Implemented so far: `/archive`,
   `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/kill`, `/mcp`,
-  `/model`, `/new`, `/permissions`, `/plugins`, `/ps`, `/rename`, `/resume`,
-  `/review`, `/rollback`, `/skill-roots`, `/status`, `/stop`, and
+  `/model`, `/new`, `/permissions`, `/plan`, `/plugins`, `/ps`, `/rename`,
+  `/resume`, `/review`, `/rollback`, `/skill-roots`, `/status`, `/stop`, and
   `/unarchive`. `/fork` is
   implemented only as an extension command backed by Codex `thread/fork`, not
   as required ACP v1 behavior.
@@ -422,6 +422,9 @@ Tasks:
 - [x] Add unit coverage for `/model` and `/permissions` parsing/advertisement;
   both reuse the existing fake app-server catalog coverage for model and
   permission-profile config option refresh.
+- [x] Add serialized fake app-server coverage for `/plan`, mapped to
+  `thread/settings/update.collaborationMode`, plus unit coverage for parsing and
+  advertisement.
 - [x] Add unit coverage for `/fork` parsing/advertisement; it reuses the
   existing fake app-server `thread/fork` coverage for the backend call.
 - [x] Add unit coverage for `/new` parsing/advertisement; it reuses the
@@ -868,7 +871,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/rollback <num-turns>` | `thread/rollback` `[implemented as status message; ACP v1 cannot delete visible transcript entries]` |
 | `/delete` | `thread/delete` |
 | `/goal ...` | `thread/goal/*` `[implemented for get, clear, and objective updates]` |
-| `/plan` | `thread/settings/update` with collaboration mode |
+| `/plan` | `thread/settings/update` with collaboration mode `[implemented]` |
 | `/model` | `model/list` plus ACP config-option refresh `[implemented]` |
 | `/permissions` | `permissionProfile/list` plus ACP config-option refresh `[implemented]` |
 | `/mcp` | `mcpServerStatus/list` `[implemented as summary]` |
@@ -1344,6 +1347,7 @@ Manual flows:
 - [x] Implement `/goal`.
 - [x] Implement `/model`.
 - [x] Implement `/permissions`.
+- [x] Implement `/plan`.
 - [x] Implement `/mcp`.
 - [x] Implement `/apps`.
 - [x] Implement `/plugins`.

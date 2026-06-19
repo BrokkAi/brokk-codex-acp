@@ -255,6 +255,7 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             "/kill 42",
             &["Terminated background terminal process `42`."],
         ),
+        ("/plan", &["Plan mode enabled for subsequent Codex turns."]),
         (
             "/rollback 2",
             &[
@@ -274,9 +275,28 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
                 "command {command} did not publish {expected:?}; message: {message:?}"
             );
         }
+        if command == "/plan" {
+            assert!(
+                notifications.iter().any(plan_mode_config_update),
+                "command {command} did not publish plan config update; notifications: {notifications:#?}"
+            );
+        }
     }
 
     Ok(())
+}
+
+fn plan_mode_config_update(notification: &Value) -> bool {
+    notification["method"] == "session/update"
+        && notification["params"]["update"]["sessionUpdate"] == "config_option_update"
+        && notification["params"]["update"]
+            .pointer("/configOptions")
+            .and_then(Value::as_array)
+            .is_some_and(|options| {
+                options.iter().any(|option| {
+                    option["id"] == "collaboration_mode" && option["currentValue"] == "plan"
+                })
+            })
 }
 
 fn agent_message_texts(notifications: &[Value]) -> Vec<String> {
@@ -729,9 +749,33 @@ for line in sys.stdin:
     elif method == "model/list":
         response(message_id, {"result": {"data": []}})
     elif method == "collaborationMode/list":
-        response(message_id, {"result": {"data": []}})
+        response(message_id, {
+            "result": {
+                "data": [
+                    {
+                        "name": "Plan",
+                        "mode": "plan",
+                        "model": "gpt-5-codex",
+                        "reasoning_effort": "medium",
+                    },
+                ],
+            },
+        })
     elif method == "permissionProfile/list":
         response(message_id, {"result": {"data": []}})
+    elif method == "thread/settings/update":
+        assert params == {
+            "threadId": "thread-serialized",
+            "collaborationMode": {
+                "mode": "plan",
+                "settings": {
+                    "model": "gpt-5-codex",
+                    "reasoning_effort": "medium",
+                    "developer_instructions": None,
+                },
+            },
+        }
+        response(message_id, {"result": {}})
     elif method == "skills/list":
         response(message_id, {"result": {"data": [{"cwd": thread_cwd, "skills": []}]}})
     elif method == "thread/name/set":
