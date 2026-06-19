@@ -228,6 +228,14 @@ impl AppServerClient {
             .await
     }
 
+    pub async fn thread_unarchive(
+        &mut self,
+        thread_id: String,
+    ) -> anyhow::Result<ThreadUnarchiveResponse> {
+        self.request("thread/unarchive", ThreadUnarchiveParams { thread_id })
+            .await
+    }
+
     pub async fn thread_name_set(
         &mut self,
         thread_id: String,
@@ -1302,6 +1310,18 @@ pub struct ThreadArchiveResponse {}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ThreadUnarchiveParams {
+    thread_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadUnarchiveResponse {
+    pub thread: AppServerThread,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ThreadSetNameParams {
     thread_id: String,
     name: String,
@@ -1911,6 +1931,11 @@ pub struct AppServerThreadArchivedUpdate {
 }
 
 #[derive(Debug, Clone)]
+pub struct AppServerThreadUnarchivedUpdate {
+    pub thread_id: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct AppServerThreadStatusUpdate {
     pub thread_id: String,
     pub status: Value,
@@ -1925,6 +1950,12 @@ pub struct AppServerThreadGoalUpdate {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ThreadArchivedNotification {
+    thread_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadUnarchivedNotification {
     thread_id: String,
 }
 
@@ -2167,6 +2198,13 @@ pub fn decode_thread_name_updated(params: &Value) -> anyhow::Result<AppServerThr
 pub fn decode_thread_archived(params: &Value) -> anyhow::Result<AppServerThreadArchivedUpdate> {
     let notification: ThreadArchivedNotification = serde_json::from_value(params.clone())?;
     Ok(AppServerThreadArchivedUpdate {
+        thread_id: notification.thread_id,
+    })
+}
+
+pub fn decode_thread_unarchived(params: &Value) -> anyhow::Result<AppServerThreadUnarchivedUpdate> {
+    let notification: ThreadUnarchivedNotification = serde_json::from_value(params.clone())?;
+    Ok(AppServerThreadUnarchivedUpdate {
         thread_id: notification.thread_id,
     })
 }

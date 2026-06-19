@@ -185,10 +185,12 @@ The current repository has the first working ACP/app-server bridge in place:
 - Slash commands:
   - built-in `archive`, `apps`, `compact`, `fork`, `goal`, `hooks`, `init`,
     `mcp`, `model`, `new`, `permissions`, `plugins`, `ps`, `rename`, `resume`,
-    `review`, `skill-roots`, `status`, and `stop` commands are published through ACP
-    `available_commands_update` alongside enabled skills.
+    `review`, `skill-roots`, `status`, `stop`, and `unarchive` commands are
+    published through ACP `available_commands_update` alongside enabled skills.
   - `/archive` is intercepted by the adapter, mapped to `thread/archive`, and
     reflected to ACP clients through `session_info_update._meta`.
+  - `/unarchive` is intercepted by the adapter, mapped to `thread/unarchive`,
+    and reflected to ACP clients through `session_info_update._meta`.
   - `/compact` is intercepted by the adapter, mapped to
     `thread/compact/start`, and streamed through the normal ACP turn update
     projection. Because app-server returns `{}` for the start request, the
@@ -382,7 +384,7 @@ Tasks:
 - [x] Add an initial parser for leading slash commands, currently `/archive`,
   `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/mcp`, `/model`,
   `/new`, `/permissions`, `/plugins`, `/ps`, `/rename`, `/resume`, `/review`,
-  `/skill-roots`, `/status`, and `/stop`.
+  `/skill-roots`, `/status`, `/stop`, and `/unarchive`.
 - [x] Build the full command registry with aliases, availability, required
   active turn state, and handler metadata.
 - [x] Publish adapter-owned ACP available commands plus skills.
@@ -391,16 +393,16 @@ Tasks:
   `/plugins`, `/hooks`, and `/status`. Implemented so far: `/archive`,
   `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/mcp`, `/model`,
   `/new`, `/permissions`, `/plugins`, `/ps`, `/rename`, `/resume`, `/review`,
-  `/skill-roots`, `/status`, and `/stop`. `/fork` is implemented only as an
-  extension command backed by Codex `thread/fork`, not as required ACP v1
-  behavior.
+  `/skill-roots`, `/status`, `/stop`, and `/unarchive`. `/fork` is implemented
+  only as an extension command backed by Codex `thread/fork`, not as required
+  ACP v1 behavior.
 - [x] Return explicit unsupported-command responses for slash commands that are
   not currently handled by the adapter. `/skill ...` remains a supported
   non-builtin fallback.
-- [x] Add fake app-server coverage for `thread/archive`,
+- [x] Add fake app-server coverage for `thread/archive`, `thread/unarchive`,
   `thread/compact/start`, `thread/goal/*`, `thread/name/set`, and
   `review/start` plus unit coverage for `/archive`, `/compact`, `/goal`,
-  `/rename`, and `/review` parsing/advertisement.
+  `/rename`, `/review`, and `/unarchive` parsing/advertisement.
 - [x] Add fake app-server coverage for `app/list`, `plugin/list`,
   `plugin/installed`, `mcpServerStatus/list`, `hooks/list`, and
   `thread/loaded/list` plus unit coverage for `/apps`, `/plugins`, `/mcp`,

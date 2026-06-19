@@ -45,6 +45,24 @@ async fn serialized_archive_emits_session_info_meta_without_starting_turn() -> a
 }
 
 #[tokio::test]
+async fn serialized_unarchive_emits_session_info_meta_without_starting_turn() -> anyhow::Result<()>
+{
+    let (prompt, notifications) = run_serialized_prompt("/unarchive").await?;
+
+    assert_eq!(prompt["result"]["stopReason"], "end_turn");
+    assert!(
+        notifications.iter().any(|notification| {
+            notification["method"] == "session/update"
+                && notification["params"]["update"]["sessionUpdate"] == "session_info_update"
+                && notification["params"]["update"]["_meta"]["brokk_codex_acp"]["archived"] == false
+        }),
+        "notifications: {notifications:#?}"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn serialized_goal_emits_session_info_meta_without_starting_turn() -> anyhow::Result<()> {
     let (prompt, notifications) =
         run_serialized_prompt("/goal Improve serialized coverage").await?;
@@ -649,6 +667,17 @@ for line in sys.stdin:
     elif method == "thread/archive":
         assert params["threadId"] == "thread-serialized"
         response(message_id, {"result": {}})
+    elif method == "thread/unarchive":
+        assert params["threadId"] == "thread-serialized"
+        response(message_id, {
+            "result": {
+                "thread": {
+                    "id": "thread-serialized",
+                    "cwd": thread_cwd,
+                    "turns": [],
+                },
+            },
+        })
     elif method == "thread/goal/set":
         assert params["threadId"] == "thread-serialized"
         assert params["objective"] == "Improve serialized coverage"

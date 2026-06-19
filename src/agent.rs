@@ -37,7 +37,8 @@ use crate::app_server::{
     AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
     ThreadSettingsUpdateParams, decode_thread_archived, decode_thread_goal_cleared,
     decode_thread_goal_updated, decode_thread_name_updated, decode_thread_settings_updated,
-    decode_thread_status_changed, history_events_for_turns, is_app_server_method_unavailable,
+    decode_thread_status_changed, decode_thread_unarchived, history_events_for_turns,
+    is_app_server_method_unavailable,
 };
 
 const MODEL_CONFIG_ID: &str = "model";
@@ -71,6 +72,7 @@ const SKILL_COMMAND: &str = "skill";
 const SKILL_ROOTS_COMMAND: &str = "skill-roots";
 const STATUS_COMMAND: &str = "status";
 const STOP_COMMAND: &str = "stop";
+const UNARCHIVE_COMMAND: &str = "unarchive";
 type CancelSignals = Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>;
 const HISTORY_REPLAY_PAGE_SIZE: u32 = 50;
 const APPROVAL_POLICY_OPTIONS: [(&str, &str, &str); 4] = [
@@ -452,7 +454,14 @@ impl CodexAcpAgent {
             "thread/archived" => {
                 let update = decode_thread_archived(&params).map_err(acp_internal_error)?;
                 let session_id = SessionId::new(update.thread_id);
-                publish_session_archived_update(&session_id, cx).map_err(acp_internal_error)?;
+                publish_session_archived_update(&session_id, true, cx)
+                    .map_err(acp_internal_error)?;
+            }
+            "thread/unarchived" => {
+                let update = decode_thread_unarchived(&params).map_err(acp_internal_error)?;
+                let session_id = SessionId::new(update.thread_id);
+                publish_session_archived_update(&session_id, false, cx)
+                    .map_err(acp_internal_error)?;
             }
             "thread/status/changed" => {
                 let update = decode_thread_status_changed(&params).map_err(acp_internal_error)?;
@@ -883,7 +892,8 @@ impl CodexAcpAgent {
                     .thread_archive(thread_id.to_owned())
                     .await
                     .map_err(acp_internal_error)?;
-                publish_session_archived_update(session_id, cx).map_err(acp_internal_error)?;
+                publish_session_archived_update(session_id, true, cx)
+                    .map_err(acp_internal_error)?;
                 Ok(PromptResponse::new(StopReason::EndTurn))
             }
             BuiltinCommand::Apps => {
@@ -1090,6 +1100,22 @@ impl CodexAcpAgent {
                     catalog_summary("Background terminals cleaned", &response),
                     cx,
                 )
+            }
+            BuiltinCommand::Unarchive => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .thread_unarchive(thread_id.to_owned())
+                    .await
+                    .map_err(acp_internal_error)?;
+                if let Some(cwd) = response.thread.cwd {
+                    self.set_session_cwd(session_id, cwd.to_string_lossy().into_owned())
+                        .await;
+                }
+                publish_session_archived_update(session_id, false, cx)
+                    .map_err(acp_internal_error)?;
+                Ok(PromptResponse::new(StopReason::EndTurn))
             }
             BuiltinCommand::Resume { target } => {
                 let cwd = self
@@ -2081,6 +2107,7 @@ enum BuiltinCommand {
     SkillRoots { roots: Vec<String> },
     Status,
     Stop,
+    Unarchive,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2116,6 +2143,7 @@ enum CommandHandler {
     SkillRoots,
     Status,
     Stop,
+    Unarchive,
 }
 
 #[derive(Debug)]
@@ -2281,6 +2309,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::Stop,
     },
+    BuiltinCommandSpec {
+        name: UNARCHIVE_COMMAND,
+        aliases: &[],
+        description: "Unarchive this Codex thread",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Unarchive,
+    },
 ];
 
 fn parse_builtin_command(text: &str) -> Result<Option<BuiltinCommand>, Error> {
@@ -2361,6 +2397,9 @@ fn parse_command_from_spec(
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Status)
         }
         CommandHandler::Stop => parse_no_argument_command(rest, spec.name, BuiltinCommand::Stop),
+        CommandHandler::Unarchive => {
+            parse_no_argument_command(rest, spec.name, BuiltinCommand::Unarchive)
+        }
     }
 }
 
@@ -2829,11 +2868,12 @@ fn publish_session_name_update(
 
 fn publish_session_archived_update(
     session_id: &SessionId,
+    archived: bool,
     cx: &ConnectionTo<Client>,
 ) -> anyhow::Result<()> {
     publish_session_adapter_meta_update(
         session_id,
-        [("archived".to_owned(), serde_json::Value::Bool(true))],
+        [("archived".to_owned(), serde_json::Value::Bool(archived))],
         cx,
     )
 }
@@ -3579,6 +3619,10 @@ mod tests {
         let command = parse_builtin_command("/archive").unwrap().unwrap();
 
         assert!(matches!(command, BuiltinCommand::Archive));
+
+        let command = parse_builtin_command("/unarchive").unwrap().unwrap();
+
+        assert!(matches!(command, BuiltinCommand::Unarchive));
     }
 
     #[test]
@@ -3606,6 +3650,7 @@ mod tests {
             "/skill-roots /repo/.codex/skills,/shared/skills",
             "/status",
             "/stop",
+            "/unarchive",
         ] {
             let command = parse_builtin_command(text).unwrap().unwrap();
             match text {
@@ -3626,6 +3671,7 @@ mod tests {
                 )),
                 "/status" => assert!(matches!(command, BuiltinCommand::Status)),
                 "/stop" => assert!(matches!(command, BuiltinCommand::Stop)),
+                "/unarchive" => assert!(matches!(command, BuiltinCommand::Unarchive)),
                 _ => unreachable!(),
             }
         }
@@ -3739,6 +3785,13 @@ mod tests {
             error.data.as_ref().and_then(serde_json::Value::as_str),
             Some("/archive does not accept arguments")
         );
+
+        let error = parse_builtin_command("/unarchive now").unwrap_err();
+
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("/unarchive does not accept arguments")
+        );
     }
 
     #[test]
@@ -3771,6 +3824,7 @@ mod tests {
             ("/ps now", "/ps does not accept arguments"),
             ("/status now", "/status does not accept arguments"),
             ("/stop now", "/stop does not accept arguments"),
+            ("/unarchive now", "/unarchive does not accept arguments"),
         ] {
             let error = parse_builtin_command(text).unwrap_err();
             assert_eq!(
@@ -3855,6 +3909,7 @@ mod tests {
                 "skill-roots",
                 "status",
                 "stop",
+                "unarchive",
                 "skill:skill-creator"
             ]
         );

@@ -99,6 +99,16 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
                 && params["status"]["type"] == "notLoaded"
     ));
 
+    let unarchived = client.thread_unarchive("thread-1".to_string()).await?;
+    assert_eq!(unarchived.thread.id, "thread-1");
+    let message = time::timeout(time::Duration::from_secs(1), app_server_messages.recv()).await??;
+    assert!(matches!(
+        message,
+        AppServerMessage::Notification { ref method, ref params }
+            if method == "thread/unarchived"
+                && params["threadId"] == "thread-1"
+    ));
+
     let goal = client
         .thread_goal_set(
             "thread-1".to_string(),
@@ -945,6 +955,19 @@ for line in sys.stdin:
                 "threadId": "thread-1",
                 "status": {"type": "notLoaded"},
             },
+        })
+    elif method == "thread/unarchive":
+        assert params == {"threadId": "thread-1"}
+        response(message_id, {
+            "thread": {
+                "id": "thread-1",
+                "cwd": "/repo",
+                "turns": [],
+            },
+        })
+        send({
+            "method": "thread/unarchived",
+            "params": {"threadId": "thread-1"},
         })
     elif method == "thread/goal/set":
         assert params == {
