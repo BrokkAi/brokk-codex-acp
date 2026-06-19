@@ -1372,7 +1372,7 @@ Manual flows:
 - [x] Add shutdown cleanup for app-server child process.
 - [ ] Add real app-server smoke tests.
 - [ ] Add connection-disconnect cleanup for active prompts and approvals.
-- [ ] Add error mapping tests.
+- [x] Add error mapping tests.
 
 ## Open Questions
 

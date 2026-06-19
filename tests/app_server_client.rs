@@ -576,6 +576,24 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     Ok(())
 }
 
+#[tokio::test]
+async fn app_server_client_maps_error_responses() -> anyhow::Result<()> {
+    let fake_codex = fake_codex_app_server_with_script(ERROR_CODEX_APP_SERVER)?;
+    let mut client =
+        AppServerClient::spawn(AppServerCommand::new(fake_codex.path().to_owned())).await?;
+
+    let error = client.app_list().await.unwrap_err();
+    let message = error.to_string();
+    assert!(message.contains("codex app-server request `app/list` failed"));
+    assert!(message.contains("boom"));
+
+    let error = client.thread_start("/repo".to_string()).await.unwrap_err();
+    let message = format!("{error:#}");
+    assert!(message.contains("failed to decode app-server `thread/start` response"));
+
+    Ok(())
+}
+
 async fn run_text_turn_and_collect_messages(
     client: &mut AppServerClient,
     text: &str,
@@ -629,12 +647,16 @@ impl FakeCodex {
 }
 
 fn fake_codex_app_server() -> anyhow::Result<FakeCodex> {
+    fake_codex_app_server_with_script(FAKE_CODEX_APP_SERVER)
+}
+
+fn fake_codex_app_server_with_script(script: &str) -> anyhow::Result<FakeCodex> {
     let temp_dir = tempfile::tempdir()?;
 
     #[cfg(windows)]
     let path = {
         let script_path = temp_dir.path().join("fake_codex_app_server.py");
-        fs::write(&script_path, FAKE_CODEX_APP_SERVER)?;
+        fs::write(&script_path, script)?;
 
         let wrapper_path = temp_dir.path().join("codex.cmd");
         fs::write(
@@ -647,7 +669,7 @@ fn fake_codex_app_server() -> anyhow::Result<FakeCodex> {
     #[cfg(not(windows))]
     let path = {
         let path = temp_dir.path().join("codex");
-        fs::write(&path, FAKE_CODEX_APP_SERVER)?;
+        fs::write(&path, script)?;
         path
     };
 
@@ -664,6 +686,30 @@ fn fake_codex_app_server() -> anyhow::Result<FakeCodex> {
         path,
     })
 }
+
+const ERROR_CODEX_APP_SERVER: &str = r#"#!/usr/bin/env python3
+import json
+import sys
+
+def response(message_id, payload):
+    print(json.dumps({"id": message_id, **payload}), flush=True)
+
+for line in sys.stdin:
+    message = json.loads(line)
+    message_id = message["id"]
+    method = message["method"]
+    if method == "app/list":
+        response(message_id, {
+            "error": {
+                "code": -32000,
+                "message": "boom",
+            },
+        })
+    elif method == "thread/start":
+        response(message_id, {"result": {"thread": {}}})
+    else:
+        response(message_id, {"result": {}})
+"#;
 
 const FAKE_CODEX_APP_SERVER: &str = r#"#!/usr/bin/env python3
 import json
