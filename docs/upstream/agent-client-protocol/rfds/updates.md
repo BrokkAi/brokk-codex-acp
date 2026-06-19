@@ -1,0 +1,319 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://agentclientprotocol.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# RFD Updates
+
+> Lifecycle updates for ACP Requests for Dialog
+
+This page tracks lifecycle changes for ACP Requests for Dialog. For broader ACP announcements, see [Updates](/updates).
+
+<Update label="June 5, 2026" tags={["Completed"]}>
+  ## Message ID RFD moves to Completed
+
+  The RFD for adding agent-generated `messageId` fields to streamed message chunks has been stabilized and is now part of the protocol. In v1, message IDs are optional on message chunks for compatibility; in v2, they are required. Please review the [documentation](/protocol/v1/prompt-turn#message-ids) for more information.
+</Update>
+
+<Update label="June 5, 2026" tags={["Completed"]}>
+  ## Session Context Size and Cost RFD moves to Completed
+
+  The RFD for `usage_update` session notifications has been stabilized and is now a part of the protocol. Agents can report session-level context window size and optional cumulative cost through `session/update`. Please review the [documentation](/protocol/v1/prompt-turn#session-usage-updates) for more information.
+</Update>
+
+<Update label="June 5, 2026" tags={["Completed"]}>
+  ## session/delete RFD moves to Completed
+
+  The RFD for allowing clients to delete a given session has been stabilized and is now a part of the protocol. Please review the [documentation](/protocol/v1/session-delete) for more information.
+</Update>
+
+<Update label="June 3, 2026" tags={["Completed"]}>
+  ## \_meta Propagation RFD moves to Completed
+
+  The RFD for documenting `_meta` propagation conventions for correlation metadata has been completed and is now part of the protocol documentation. Please review the [documentation](/protocol/v1/extensibility#the-_meta-field) for more information.
+</Update>
+
+<Update label="June 3, 2026" tags={["Preview"]}>
+  ## Message ID RFD moves to Preview stage for v1
+
+  The v1 portion of the RFD for adding message IDs to streamed message chunks has been moved to Preview stage. Please review the [RFD](/rfds/message-id) for more information on the current proposal and provide feedback before the v1 behavior is stabilized.
+</Update>
+
+<Update label="June 3, 2026" tags={["Preview"]}>
+  ## Session Usage RFD moves to Preview stage
+
+  The RFD for adding `usage_update` session notifications for context window size and cumulative session cost has been moved to Preview stage. Please review the [RFD](/rfds/session-usage) for more information on the current proposal and provide feedback before the feature is stabilized.
+</Update>
+
+<Update label="June 2, 2026" tags={["Draft"]}>
+  ## v2 Plan Variants RFD moves to Draft stage
+
+  The RFD for making item-based `plan_update` the default v2 plan shape has been moved to Draft stage. Please review the [RFD](/rfds/v2/plan-variants) for more information on replacing the old v1 `plan` update in v2 while the broader Plan Operations RFD continues.
+</Update>
+
+<Update label="June 2, 2026" tags={["Draft"]}>
+  ## End-Turn Token Usage RFD moves to Draft stage
+
+  The end-turn token usage portions of the original Session Usage RFD have been split into a separate Draft RFD for further design work. Please review the [RFD](/rfds/end-turn-token-usage) for more information on the current proposal and provide feedback.
+</Update>
+
+<Update label="June 2, 2026" tags={["Preview"]}>
+  ## session/delete RFD moves to Preview stage
+
+  The RFD for allowing clients to delete a given session has been moved to Preview stage. Please review the [RFD](/rfds/session-delete) for more information on the current proposal and provide feedback before the feature is stabilized.
+</Update>
+
+<Update label="June 1, 2026" tags={["Removed"]}>
+  ## Unstable Session Model API removed
+
+  The never-stabilized `session/set_model` API and related session model response fields have been removed from the protocol artifacts. Agents should continue to expose model selection through [Session Config Options](/rfds/session-config-options).
+</Update>
+
+<Update label="June 1, 2026" tags={["Completed"]}>
+  ## Additional Directories RFD moves to Completed
+
+  The RFD for allowing clients to specify additional workspace roots for session lifecycle requests has been stabilized and is now a part of the protocol. Please review the [documentation](/protocol/v1/session-setup#additional-workspace-roots) for more information.
+</Update>
+
+<Update label="May 27, 2026" tags={["Draft"]}>
+  ## v2 Enum Variant Extension RFD moves to Draft stage
+
+  The RFD for reserving `_`-prefixed enum variants for extensions while preserving non-underscore variants for future ACP versions has been moved to Draft stage. Please review the [RFD](/rfds/v2/enum-variant-extension) for more information on the current proposal and provide feedback as work on v2 continues.
+</Update>
+
+<Update label="May 27, 2026" tags={["Draft"]}>
+  ## Plan Operations Support RFD moves to Draft stage
+
+  The RFD for adding `plan_update` and `plan_removed` session update types has been moved to Draft stage. Please review the [RFD](/rfds/plan-operations) for more information on the current proposal and provide feedback as work on the implementation begins.
+</Update>
+
+<Update label="May 22, 2026" tags={["Completed"]}>
+  ## Logout Method RFD moves to Completed
+
+  The RFD for the `logout` method has been stabilized and is now a part of the protocol. Please review the [documentation](/protocol/v1/authentication#logging-out) for more information.
+</Update>
+
+<Update label="May 21, 2026" tags={["Preview"]}>
+  ## Additional Directories RFD moves to Preview stage
+
+  The RFD for allowing clients to specify additional workspace roots for session lifecycle requests has been moved to Preview stage. Please review the [RFD](/rfds/additional-directories) for more information on the current proposal and provide feedback before the feature is stabilized.
+</Update>
+
+<Update label="May 17, 2026" tags={["Preview"]}>
+  ## Logout Method RFD moves to Preview stage
+
+  The RFD for adding a `logout` method to the protocol has been moved to Preview stage. Please review the [RFD](/rfds/logout-method) for more information on the current proposal and provide feedback before the feature is stabilized.
+</Update>
+
+<Update label="May 12, 2026" tags={["Preview"]}>
+  ## Rust SDK based on SACP RFD moves to Preview stage
+
+  The RFD for basing the Rust SDK on SACP has been moved to Preview stage now that the initial crate import has been upstreamed to [agentclientprotocol/rust-sdk](https://github.com/agentclientprotocol/rust-sdk). Please review the [RFD](/rfds/rust-sdk-v1) for more information on the current proposal and provide feedback before the SDK is stabilized as 1.0.
+</Update>
+
+<Update label="May 7, 2026" tags={["Draft"]}>
+  ## model\_config Category RFD moves to Draft
+
+  The RFD for the `model_config` category been moved to Draft stage. Please review the [RFD](/rfds/model-config-category) for more information on the current proposal and provide feedback before the feature is stabilized.
+</Update>
+
+<Update label="April 23, 2026" tags={["Draft"]}>
+  ## v2 Prompting RFD moves to Draft
+
+  The RFD for how the prompt lifecycle will work in v2 of the protocol been moved to Draft stage. Please review the [RFD](/rfds/v2/prompt) for more information on the current proposal and provide feedback before the feature is stabilized.
+</Update>
+
+<Update label="April 23, 2026" tags={["Completed"]}>
+  ## session/close RFD moves to Completed
+
+  The RFD for the `session/close` method has been stabilized and is now a part of the protocol. Please review the [documentation](/protocol/v1/session-setup#closing-active-sessions) for more information.
+</Update>
+
+<Update label="April 22, 2026" tags={["Completed"]}>
+  ## session/resume RFD moves to Completed
+
+  The RFD for the `session/resume` method has been stabilized and is now a part of the protocol. Please review the [documentation](/protocol/v1/session-setup#resuming-sessions) for more information.
+</Update>
+
+<Update label="April 22, 2026" tags={["Draft"]}>
+  ## Streamable HTTP & WebSocket Transport RFD moves to Draft stage
+
+  The RFD for standardizing a remote ACP transport based on MCP Streamable HTTP with a WebSocket upgrade has been moved to Draft stage. Please review the [RFD](/rfds/streamable-http-websocket-transport) for more information on the current proposal and provide feedback as work on the implementation begins.
+</Update>
+
+<Update label="April 14, 2026" tags={["Preview"]}>
+  ## session/resume RFD moves to Preview stage
+
+  The RFD for adding a `session/resume` method to the protocol has been moved to Preview stage. Please review the [RFD](/rfds/session-resume) for more information on the current proposal and provide feedback before the feature is stabilized.
+</Update>
+
+<Update label="April 14, 2026" tags={["Preview"]}>
+  ## session/close RFD moves to Preview stage
+
+  The RFD for allowing agents to close a given session has been moved to Preview stage. Please review the [RFD](/rfds/session-close) for more information on the current proposal and provide feedback before the feature is stabilized.
+</Update>
+
+<Update label="March 27, 2026" tags={["Draft"]}>
+  ## Custom LLM Endpoint RFD moves to Draft stage
+
+  The RFD for allowing clients to specify custom provider configuration has been moved to Draft stage. Please review the [RFD](/rfds/custom-llm-endpoint) for more information on the current proposal and provide feedback as work on the implementation begins.
+</Update>
+
+<Update label="March 24, 2026" tags={["Draft"]}>
+  ## Additional Directories RFD moves to Draft stage
+
+  The RFD for allowing clients to specify additional directories for the agent to access has been moved to Draft stage. Please review the [RFD](/rfds/additional-directories) for more information on the current proposal and provide feedback as work on the implementation begins.
+</Update>
+
+<Update label="March 9, 2026" tags={["Completed"]}>
+  ## ACP Registry RFD moves to Completed
+
+  The RFD for the initial version of the ACP Registry has been completed. Please review the [documentation](/get-started/registry) for more information.
+
+  ## session\_info\_update Notification RFD moves to Completed
+
+  The RFD for the session\_info\_update notification has been stabilized and is now a part of the protocol. Please review the [documentation](/protocol/v1/session-list#updating-session-metadata) for more information.
+
+  ## session/list RFD moves to Completed
+
+  The RFD for the session/list method has been stabilized and is now a part of the protocol. Please review the [documentation](/protocol/v1/session-list) for more information.
+</Update>
+
+<Update label="February 24, 2026" tags={["Draft"]}>
+  ## Next Edit Suggestions RFD moves to Draft stage
+
+  The RFD for allowing agents to provide next edit suggestions has been moved to Draft stage. Please review the [RFD](/rfds/next-edit-suggestions) for more information on the current proposal and provide feedback as work on the implementation begins.
+
+  ## session/close RFD moves to Draft stage
+
+  The RFD for allowing agents to close a given session has been moved to Draft stage. Please review the [RFD](/rfds/session-close) for more information on the current proposal and provide feedback as work on the implementation begins.
+
+  ## Elicitation RFD moves to Draft stage
+
+  The RFD for allowing agents to elicit user input has been moved to Draft stage. Please review the [RFD](/rfds/elicitation) for more information on the current proposal and provide feedback as work on the implementation begins.
+
+  ## Boolean Config Option RFD moves to Draft stage
+
+  The RFD for adding boolean config options to the protocol has been moved to Draft stage. Please review the [RFD](/rfds/boolean-config-option) for more information on the current proposal and provide feedback as work on the implementation begins.
+</Update>
+
+<Update label="February 20, 2026" tags={["Draft"]}>
+  ## Delete in Diff RFD moves to Draft stage
+
+  The RFD for indicating whether a diff resulted in a file deletion has been moved to Draft stage. Please review the [RFD](/rfds/diff-delete) for more information on the current proposal and provide feedback as work on the implementation begins.
+</Update>
+
+<Update label="February 18, 2026" tags={["Draft"]}>
+  ## Message ID RFD moves to Draft stage
+
+  The RFD for adding message ids to the protocol has been moved to Draft stage. Please review the [RFD](/rfds/message-id) for more information on the current proposal and provide feedback as work on the implementation begins.
+</Update>
+
+<Update label="February 18, 2026" tags={["Preview"]}>
+  ## session/list RFD moves to Preview stage
+
+  The RFD for the session/list method has been moved to Preview stage. Please review the [RFD](/rfds/session-list) for more information on the current proposal and provide feedback before the feature is stabilized.
+
+  ## session\_info\_update RFD moves to Preview stage
+
+  The RFD for the session\_info\_update notification has been moved to Preview stage. Please review the [RFD](/rfds/session-info-update) for more information on the current proposal and provide feedback before the feature is stabilized.
+</Update>
+
+<Update label="February 10, 2026" tags={["Preview"]}>
+  ## ACP Registry RFD moves to Preview stage
+
+  The RFD for the ACP Registry has been moved to Preview stage. Please review the [RFD](/rfds/acp-agent-registry) for more information on the current proposal and provide feedback before the feature is stabilized.
+</Update>
+
+<Update label="February 4, 2026" tags={["Completed"]}>
+  ## Session Config Options RFD moves to Completed
+
+  The RFD for adding more generic Session Config Options to the protocol has been stabilized and is now a part of the protocol. Please review the [documentation](/protocol/v1/session-config-options) for more information.
+</Update>
+
+<Update label="February 4, 2026" tags={["Draft"]}>
+  ## session/delete moves to Draft stage
+
+  The RFD for allowing clients to delete a given session has been moved to Draft stage. Please review the [RFD](/rfds/session-delete) for more information on the current proposal and provide feedback as work on the implementation begins.
+
+  ## Logout method moves to Draft stage
+
+  The RFD for allowing clients to logout from an agent connection has been moved to Draft stage. Please review the [RFD](/rfds/logout-method) for more information on the current proposal and provide feedback as work on the implementation begins.
+</Update>
+
+<Update label="January 15, 2026" tags={["Draft"]}>
+  ## Rust SDK based on SACP RFD moves to Draft stage
+
+  The RFD for basing the Rust SDK on SACP has been moved to Draft stage. Please review the [RFD](/rfds/rust-sdk-v1) for more information on the current proposal and provide feedback as work on the implementation begins.
+</Update>
+
+<Update label="January 15, 2026" tags={["Preview"]}>
+  ## Session Config Options RFD moves to Preview stage
+
+  The RFD for adding more generic Session Config Options to the protocol has been moved to Preview stage. Please review the [RFD](/rfds/session-config-options) for more information on the current proposal and provide feedback before the feature is stabilized.
+</Update>
+
+<Update label="January 14, 2026" tags={["Draft"]}>
+  ## Authentication Methods RFD moves to Draft stage
+
+  The RFD for creating additional types of authentication methods has been moved to Draft stage. Please review the [RFD](/rfds/auth-methods) for more information on the current proposal and provide feedback as work on the implementation begins.
+</Update>
+
+<Update label="January 1, 2026" tags={["Draft"]}>
+  ## Agent Registry RFD moves to Draft stage
+
+  The RFD for creating an Agent Registry has been moved to Draft stage. Please review the [RFD](/rfds/acp-agent-registry) for more information on the current proposal and provide feedback as work on the implementation begins.
+
+  ## Session Usage RFD moves to Draft stage
+
+  The RFD for adding a new usage\_update variant on the session/update notification and usage field on prompt responses in the protocol has been moved to Draft stage. Please review the [RFD](/rfds/session-usage) for more information on the current proposal and provide feedback as work on the implementation begins.
+</Update>
+
+<Update label="December 31, 2025" tags={["Draft"]}>
+  ## Proxy Chains RFD moves to Draft stage
+
+  The RFD for adding proxy chain functionality in the protocol has been moved to Draft stage. Please review the [RFD](/rfds/proxy-chains) for more information on the current proposal and provide feedback as work on the implementation begins.
+</Update>
+
+<Update label="December 11, 2025" tags={["Draft"]}>
+  ## Agent Telemetry Export RFD moves to Draft stage
+
+  The RFD for providing more guidance on how agents should export telemetry has been moved to Draft stage. Please review the [RFD](/rfds/agent-telemetry-export) for more information on the current proposal and provide feedback as work on the implementation begins.
+</Update>
+
+<Update label="December 3, 2025" tags={["Draft"]}>
+  ## session\_info\_update notification RFD moves to Draft stage
+
+  The RFD for adding a new session\_info\_update variant on the session/update notification in the protocol has been moved to Draft stage. Please review the [RFD](/rfds/session-info-update) for more information on the current proposal and provide feedback as work on the implementation begins.
+
+  ## \_meta Propagation RFD moves to Draft stage
+
+  The RFD for providing more guidance on how the \_meta parameter should be used within the protocol has been moved to Draft stage. Please review the [RFD](/rfds/meta-propagation) for more information on the current proposal and provide feedback as work on the implementation begins.
+</Update>
+
+<Update label="November 26, 2025" tags={["Draft"]}>
+  ## session/resume RFD moves to Draft stage
+
+  The RFD for adding a session/resume method to the protocol has been moved to Draft stage. Please review the [RFD](/rfds/session-resume) for more information on the current proposal and provide feedback as work on the implementation begins.
+</Update>
+
+<Update label="November 20, 2025" tags={["Draft"]}>
+  ## \$/cancelRequest RFD moves to Draft stage
+
+  The RFD for adding a \$/cancelRequest method to the protocol has been moved to Draft stage. Please review the [RFD](/rfds/request-cancellation) for more information on the current proposal and provide feedback as work on the implementation begins.
+
+  ## session/fork RFD moves to Draft stage
+
+  The RFD for adding a session/fork method to the protocol has been moved to Draft stage. Please review the [RFD](/rfds/session-fork) for more information on the current proposal and provide feedback as work on the implementation begins.
+</Update>
+
+<Update label="November 3, 2025" tags={["Draft"]}>
+  ## Session Config Options RFD moves to Draft stage
+
+  The RFD for adding more generic Session Config Options to the protocol has been moved to Draft stage. Please review the [RFD](/rfds/session-config-options) for more information on the current proposal and provide feedback as work on the implementation begins.
+</Update>
+
+<Update label="October 31, 2025" tags={["Draft"]}>
+  ## session/list RFD moves to Draft stage
+
+  The RFD for adding a session/list method to the protocol has been moved to Draft stage. Please review the [RFD](/rfds/session-list) for more information on the current proposal and provide feedback as work on the implementation begins.
+</Update>

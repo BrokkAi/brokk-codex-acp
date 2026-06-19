@@ -15,6 +15,14 @@ This repository implements an Agent Client Protocol server for Codex.
 - Keep ACP-specific code in the adapter layer.
 - Prefer small modules with explicit protocol boundary types.
 
+## Agent Client Protocol Reference
+
+- Before implementing or changing ACP behavior, read the relevant downloaded upstream docs under `docs/upstream/agent-client-protocol/`.
+- Use `docs/upstream/agent-client-protocol/llms.txt` to discover the local documentation snapshot.
+- Treat `docs/upstream/agent-client-protocol/protocol/v1/*.md` as the local protocol documentation reference.
+- Treat `docs/upstream/agent-client-protocol/schema.json` as the canonical local ACP schema reference.
+- If local docs appear stale or conflict with implementation requirements, refresh the snapshot from `agentclientprotocol.com` before changing ACP code.
+
 ## Development
 
 - Run `cargo fmt` before finishing Rust changes.

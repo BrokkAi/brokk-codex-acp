@@ -1,0 +1,120 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://agentclientprotocol.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# ACP v2 Proposal
+
+Author(s): [@benbrandt](https://github.com/benbrandt)
+
+This is a tracking RFD for the collection of RFDs that require breaking changes to the protocol and should make up ACP v2.
+
+## Elevator pitch
+
+> What are you proposing to change?
+
+With ACP, we aim to move fast while keeping breaking changes to a minimum. However, we've gotten to a point where there are enough changes we would like to do that would benefit from some core redesigns that will allow for extending the protocol with new features more easily.
+
+We've also managed to add new features that has led to learnings that would benefit from consolidation and alignment in other areas of the protocol to smooth things out and make things more consistent.
+
+## Status quo
+
+> How do things work today and what problems does this cause? Why would we change things?
+
+We have had a fairly successful time adding new features via new capabilities and adding in new features in a non-breaking way. But some of the learnings we have made will require breaking changes, and it feels like there are enough of these built up, or RFDs we are stuck due to required changes that now is a good time to do so.
+
+## What we propose to do about it
+
+> What are you proposing to improve the situation?
+
+### Current Draft RFDs
+
+Current RFDs accepted as Drafts that are targeting v2 release
+
+* [New Prompt Lifecycle](./prompt.md)
+* [Enum Variant Extension](./enum-variant-extension.mdx)
+* [Client Filesystem and Terminal Surface](./client-filesystem-terminal-capabilities.mdx)
+* [Plan Variants](./plan-variants.mdx)
+* [Tool Call Updates](./tool-call-updates.mdx)
+* [Message Updates and Chunks](./message-updates.mdx)
+* [Remote Transports](../streamable-http-websocket-transport.mdx)
+
+Other RFDs will progress separately and are not dependent on breaking changes (specifically the new prompt lifecycle) and can land in either or both v1 and v2.
+
+### v2 Changes
+
+* Remove the dedicated session modes API from v2. This includes the `modes` session response fields, `session/set_mode`, `current_mode_update`, and the `SessionMode*` types.
+* Agents should expose mode-like and model-related state through [Session Config Options](../session-config-options.mdx) instead of dedicated mode or model selector APIs.
+* Remove the v1 Client filesystem and terminal execution surface from v2. This includes `clientCapabilities.fs`, the top-level `clientCapabilities.terminal` field, `fs/*` methods, `terminal/*` methods, and terminal tool-call content. Terminal authentication remains separate under `clientCapabilities.auth.terminal`.
+* Make [plan variants](./plan-variants.mdx) the default v2 plan shape by replacing the old `plan` session update with item-based `plan_update`.
+* Replace the v1 split between `tool_call` and `tool_call_update` with a single [tool-call update](./tool-call-updates.mdx) upsert shape keyed by `toolCallId`.
+* Add [tool-call content chunks](./tool-call-updates.mdx) so Agents can stream individual `ToolCallContent` items that append to a tool call.
+* Add [whole-message updates](./message-updates.mdx) for `user_message`, `agent_message`, and `agent_thought` alongside streamed chunks. Message updates are upserts keyed by `messageId`; their `content` arrays replace current message content, while chunks append to the current content.
+* Require [message IDs](../message-id.mdx) on streamed message chunks.
+* Follow JSON-RPC 2.0 batch request and notification behavior.
+* Clean up capability naming and organization:
+  * Use a single `capabilities` field in both `initialize` params and results, replacing the v1-style `clientCapabilities` and `agentCapabilities` fields.
+  * Use concise capability group names such as `session` and `auth`, replacing names like `sessionCapabilities`.
+  * Make `session` optional so non-session agents, such as NES-only agents, can omit it.
+  * Move session-scoped capability groups under `session`, including `prompt`, `mcp`, and `loadSession` as `session.prompt`, `session.mcp`, and `session.load`.
+  * Represent support markers as capability objects instead of booleans. Supplying `{}` means supported, while omission or `null` means unsupported. Booleans remain appropriate for actual data or configuration inside an already-advertised capability.
+* Align MCP server transports with the current MCP transport model:
+  * Remove the deprecated HTTP+SSE MCP transport from v2.
+  * Make stdio an explicit `session.mcp.stdio` capability so Agents that cannot launch local subprocesses can opt out.
+  * Require MCP server configurations to include a `type` discriminator, including `type: "stdio"`, so unknown future transports can be preserved as extension/future variants.
+  * Keep HTTP as the remote MCP server transport capability.
+
+### RFDs to be Written
+
+Changes under consideration that still need to be drafted or moved to draft:
+
+* Capabilities: decide whether any additional capability groups should become required.
+* Streaming/Non-streaming consistency follow-ups:
+  * Terminal Output type for streaming terminal output from an agent
+  * Expand diff types (delete, move)
+* session/new changes:
+  * Providing starting message history
+  * Response can provide available commands
+  * Potentially config options
+    * Get config options outside of a session (take a cwd?)
+* MCP: tool timeouts, more lifecycle methods
+
+## Shiny future
+
+> How will things will play out once this feature exists?
+
+There is a lof of work to do, especially on the SDK side, to support both versions, but it is likely that we should be able to allow Agents specifically to target v2 apis and gracefully fallback to v1 messages for v1 clients, to avoid huge support issues.
+
+However, once all of this work is in place, it should be much easier to make additional breaking changes in the future when necessary, we've been kind of letting this build up given the effort required for the entire ecosystem, but the ACP maintainers will be charting a course forward to make this as smooth as possible!
+
+## Implementation details and plan
+
+> Tell me more about your implementation. What is your detailed implementation plan?
+
+### v2 + v1 Schema publishing
+
+I have created a [draft of the v2 schema](https://github.com/agentclientprotocol/agent-client-protocol/pull/1099), which is currently a direct duplicate of v1.
+
+This also has the necessary conversion types that are needed for Rust at least to convert between the two. But this has a nice side-effect of a clear diff of how the schema will change and also what conversion is necessary. So the plan is to start proposing draft RFDs with the relevant schema changes where possible for approval.
+
+Once we have more pieces in place, we can start publishing both schemas to assist SDK developers to start figuring out how to support this. **This should be done in an opt-in, off by default, clearly labeled unstable way for SDK consumers**. There will likely be bumps as we figure out the necessary plumbing and we shouldn't be shipping v2 in production without feature flags prior to a more stable release as we align all of the necessary pieces.
+
+### SDK Support
+
+With the needed breaking changes, as much as possible I am targeting having a consistent API surface for Agents, since they will want to target v2 apis but still support v1 clients. Because of how the version negotiation works, if we can achieve the same thing for clients that will be great, but if not, they will at least be provided clear version entrypoints.
+
+## Frequently asked questions
+
+> What questions have arisen over the course of authoring this document or during subsequent discussions?
+
+## Revision history
+
+* 2026-06-09: Added tool-call content chunks for streaming individual `ToolCallContent` items.
+* 2026-06-09: Added the v2 Message Updates and Chunks RFD to define whole-message upserts alongside streamed message chunks.
+* 2026-06-08: Added the v2 Tool Call Updates RFD to make `tool_call_update` the single upsert-style tool-call session update.
+* 2026-06-05: Recorded the v2 capability cleanup: unified initialize capability fields, optional `session` support for NES-only agents, session-scoped `prompt`, `mcp`, and `loadSession` capabilities, object-shaped support markers, explicit `session.mcp.stdio`, removal of deprecated MCP SSE transport, and tagged MCP server transport configs.
+* 2026-06-02: Recorded the v2 decision to follow JSON-RPC 2.0 batch request and notification behavior.
+* 2026-06-02: Recorded the v2 decision to remove Client filesystem and terminal execution capabilities, methods, and terminal tool-call content.
+* 2026-06-02: Added the v2 Plan Variants RFD to make item-based `plan_update` the default v2 plan shape.
+* 2026-06-01: Recorded that model selection should remain represented by session config options instead of a dedicated selector API.
+* 2026-05-28: Recorded the v2 decision to remove session modes in favor of session config options
+* 2026-05-06: Initial draft

@@ -1,0 +1,119 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://agentclientprotocol.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# v2 Tool Call Updates
+
+Author(s): [@benbrandt](https://github.com/benbrandt)
+
+## Elevator pitch
+
+> What are you proposing to change?
+
+ACP v2 should use a single `sessionUpdate: "tool_call_update"` notification for both creating and updating tool calls. The payload is an upsert keyed by `toolCallId`: if the Client has not seen the ID before, it creates a new displayed tool call; otherwise, it patches the existing tool call.
+
+ACP v2 should also add `sessionUpdate: "tool_call_content_chunk"` for streaming tool-call content. Chunks are keyed by `toolCallId` and append one `ToolCallContent` item to the current content for that tool call.
+
+## Status quo
+
+> How do things work today and what problems does this cause? Why would we change things?
+
+ACP v1 has two related tool-call session updates:
+
+```json theme={null}
+{
+  "sessionUpdate": "tool_call",
+  "toolCallId": "call_001",
+  "title": "Reading configuration file",
+  "kind": "read",
+  "status": "pending"
+}
+```
+
+```json theme={null}
+{
+  "sessionUpdate": "tool_call_update",
+  "toolCallId": "call_001",
+  "status": "completed"
+}
+```
+
+In practice, many agents end up sending just the updates anyway, because the notifications are functionally equivalent. So, many clients already support handling just `tool_call_update` notifications if that is all they receive. There also wasn't a way to handle unsetting values, which we established with `session_info_update`.
+
+## What we propose to do about it
+
+> What are you proposing to improve the situation?
+
+ACP v2 should remove `sessionUpdate: "tool_call"` and make `sessionUpdate: "tool_call_update"` the only tool-call session update.
+
+The v2 `ToolCallUpdate` payload has the following semantics:
+
+* `toolCallId` is required.
+* `title`, `kind`, `status`, `content`, `locations`, `rawInput`, and `rawOutput` are patch fields.
+* An omitted patch field leaves the previous value unchanged.
+* `null` explicitly clears or unsets the field.
+* Any concrete value replaces the previous value.
+* `content` and `locations` are replaced as whole arrays, not appended.
+* `[]` and `null` both clear a collection field.
+* For a new `toolCallId`, omitted fields use Client defaults.
+* Agents **SHOULD** include `title` the first time they report a `toolCallId`.
+
+The `session/request_permission` method should also carry this same `ToolCallUpdate` shape in its `toolCall` field, so the permission UI receives the same patch/upsert payload shape as session updates.
+
+ACP v2 should define a matching streaming update:
+
+* `tool_call_content_chunk`
+
+Each content chunk has the following semantics:
+
+* `toolCallId` is required.
+* `content` is required and contains one `ToolCallContent` item.
+* Clients append the chunk's `content` item to the current content for that `toolCallId`.
+* Clients apply `tool_call_update` and `tool_call_content_chunk` notifications in the order they are received for each `toolCallId`.
+* If a `tool_call_update` includes `content`, that array replaces all content currently stored for the tool call, including content accumulated from earlier chunks.
+* Later `tool_call_content_chunk` notifications append to the replacement content.
+* `content: []` or `content: null` on `tool_call_update` clears tool-call content.
+
+## Shiny future
+
+> How will things play out once this feature exists?
+
+There is a single way to update a tool call, removing lots of confusion from how v1 operated. Agents can stream long-running tool output without repeatedly resending the whole content array, while still retaining a replacement update for replay, correction, and redaction.
+
+## Implementation details and plan
+
+> Tell me more about your implementation. What is your detailed implementation plan?
+
+1. Remove the v2 `sessionUpdate: "tool_call"` variant from the schema.
+2. Represent patch fields with a three-state type so implementations can distinguish omitted, `null`, and concrete values.
+3. Add the v2 `sessionUpdate: "tool_call_content_chunk"` variant with required `toolCallId` and required single `content` item.
+4. Document ordering between full replacement content on `tool_call_update` and appended content chunks.
+
+### Compatibility
+
+When converting v1 to v2, both v1 `tool_call` and v1 `tool_call_update` should map to v2 `tool_call_update`.
+
+When converting v2 back to v1, adapters can represent a v2 update as a v1 `ToolCallUpdate`. This is lossy for some explicit clear operations because v1 update fields cannot represent every distinction between omitted and `null`. Collection clears can be represented as empty arrays, but scalar/raw-field clears may have to be omitted when targeting v1. This will be a best-effort conversion.
+
+`tool_call_content_chunk` cannot be represented by the stateless v2-to-v1 conversion helper because v1 tool-call content updates replace the whole content array rather than appending one item. A stateful bridge can choose to accumulate chunks and emit replacement arrays to v1 clients.
+
+## Frequently asked questions
+
+> What questions have arisen over the course of authoring this document or during subsequent discussions?
+
+### Why keep the `tool_call_update` name instead of `tool_call`?
+
+Most of the other notification names end in "update", and this was by far the most used, so it should help with the migration hopefully.
+
+### Why make `null` different from omission?
+
+Tool-call updates need both operations. Omission means "I am not changing this field"; `null` means "clear the value." Without the distinction, Agents cannot unset a previously supplied field without resending a full replacement object.
+
+### Why add chunks instead of making `tool_call_update.content` append?
+
+`tool_call_update.content` needs replacement semantics for replay, correction, and redaction. A separate chunk variant gives streaming a distinct append operation without making replacement updates ambiguous.
+
+## Revision history
+
+* 2026-06-09: Added `tool_call_content_chunk` for streaming tool-call content.
+* 2026-06-08: Initial draft
