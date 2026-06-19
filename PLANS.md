@@ -183,10 +183,10 @@ The current repository has the first working ACP/app-server bridge in place:
     ACP permission options and preserves app-server's blocking request
     semantics while awaiting the ACP client.
 - Slash commands:
-  - built-in `archive`, `apps`, `compact`, `fork`, `goal`, `hooks`, `mcp`,
-    `model`, `new`, `permissions`, `plugins`, `rename`, `resume`, `review`,
-    and `status` commands are published through ACP `available_commands_update`
-    alongside enabled skills.
+  - built-in `archive`, `apps`, `compact`, `fork`, `goal`, `hooks`, `init`,
+    `mcp`, `model`, `new`, `permissions`, `plugins`, `rename`, `resume`,
+    `review`, and `status` commands are published through ACP
+    `available_commands_update` alongside enabled skills.
   - `/archive` is intercepted by the adapter, mapped to `thread/archive`, and
     reflected to ACP clients through `session_info_update._meta`.
   - `/compact` is intercepted by the adapter, mapped to
@@ -204,6 +204,9 @@ The current repository has the first working ACP/app-server bridge in place:
     intercepted by the adapter, mapped to `thread/goal/get`,
     `thread/goal/clear`, and `thread/goal/set`, then reflected through
     `session_info_update._meta`.
+  - `/init` is intercepted by the adapter, transformed into the AGENTS.md
+    generation prompt, and streamed through the normal ACP turn update
+    projection.
   - `/rename <title>` is intercepted by the adapter, mapped to
     `thread/name/set`, and reflected to ACP clients through
     `session_info_update`.
@@ -369,7 +372,7 @@ client behavior, not model prompts.
 Tasks:
 
 - [x] Add an initial parser for leading slash commands, currently `/archive`,
-  `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/mcp`, `/model`,
+  `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/mcp`, `/model`,
   `/new`, `/permissions`, `/plugins`, `/rename`, `/resume`, `/review`, and
   `/status`.
 - [ ] Build the full command registry with aliases, availability, required
@@ -378,7 +381,7 @@ Tasks:
 - Implement backend commands first: `/new`, `/resume`, `/review`,
   `/compact`, `/rename`, `/model`, `/permissions`, `/mcp`, `/apps`,
   `/plugins`, `/hooks`, and `/status`. Implemented so far: `/archive`,
-  `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/mcp`, `/model`,
+  `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/mcp`, `/model`,
   `/new`, `/permissions`, `/plugins`, `/rename`, `/resume`, `/review`, and
   `/status`. `/fork` is implemented only as an extension command backed by Codex
   `thread/fork`, not as required ACP v1 behavior.
@@ -401,6 +404,8 @@ Tasks:
   existing fake app-server `thread/start` coverage for the backend call.
 - [x] Add fake app-server coverage for `thread/resume` plus unit coverage for
   `/resume` parsing/advertisement.
+- [x] Add unit coverage for `/init` parsing/advertisement and the generated
+  AGENTS.md prompt.
 - [ ] Add serialized ACP coverage proving `/rename` emits
   `session_info_update` and does not call `turn/start`.
 - [ ] Add serialized ACP coverage proving `/archive` emits
@@ -816,7 +821,7 @@ These map cleanly to app-server APIs and should be supported early:
 | --- | --- |
 | `/review` | `review/start` `[implemented]` |
 | `/compact` | `thread/compact/start` `[implemented]` |
-| `/init` | transform into the AGENTS.md generation prompt |
+| `/init` | transform into the AGENTS.md generation prompt `[implemented]` |
 | `/rename <name>` | `thread/name/set` `[implemented]` |
 | `/new` | `thread/start` `[implemented]` |
 | `/resume <id-or-name>` | `thread/resume` after exact id/name/preview lookup `[implemented]` |
@@ -1289,7 +1294,7 @@ Manual flows:
 - [x] Implement `/fork`.
 - [x] Implement `/review`.
 - [x] Implement `/compact`.
-- [ ] Implement `/init`.
+- [x] Implement `/init`.
 - [x] Implement `/rename`.
 - [x] Implement `/archive`.
 - [x] Implement `/goal`.

@@ -45,11 +45,11 @@ The project currently includes:
   returns a skill path, with plain-text fallback otherwise.
 - App-server `skills/config/write` mapping for skill enable/disable state.
 - Initial slash-command routing for `/rename <title>`, `/archive`, `/goal`,
-  `/compact`, `/review`, `/new`, `/resume`, `/fork`, `/apps`, `/plugins`,
-  `/mcp`, `/hooks`, `/model`, `/permissions`, and `/status`, mapped to
-  app-server thread, review, catalog, and config endpoints with ACP session
-  update, turn-stream, config-option, or agent-message summary projection as
-  appropriate.
+  `/compact`, `/review`, `/init`, `/new`, `/resume`, `/fork`, `/apps`,
+  `/plugins`, `/mcp`, `/hooks`, `/model`, `/permissions`, and `/status`,
+  mapped to app-server thread, review, catalog, and config endpoints with ACP
+  session update, turn-stream, config-option, or agent-message summary
+  projection as appropriate.
 - Initial command, file-change, and permission-profile approval routing from
   app-server approval requests to ACP `session/request_permission`, with the
   selected decision sent back to app-server in the response shape each

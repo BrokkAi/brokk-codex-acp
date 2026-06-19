@@ -54,6 +54,7 @@ const COMPACT_COMMAND: &str = "compact";
 const FORK_COMMAND: &str = "fork";
 const GOAL_COMMAND: &str = "goal";
 const HOOKS_COMMAND: &str = "hooks";
+const INIT_COMMAND: &str = "init";
 const MCP_COMMAND: &str = "mcp";
 const MODEL_COMMAND: &str = "model";
 const NEW_COMMAND: &str = "new";
@@ -717,15 +718,26 @@ impl CodexAcpAgent {
         }
 
         let input = self.prompt_input(&request.session_id, text).await;
-        let (cancel_tx, cancel_rx) = oneshot::channel();
-        if self
-            .active_prompts
-            .lock()
+        self.run_turn_inputs(&session_id, &thread_id, input, &cx)
             .await
-            .insert(thread_id.clone(), cancel_tx)
-            .is_some()
+    }
+
+    async fn run_turn_inputs(
+        &self,
+        session_id: &SessionId,
+        thread_id: &str,
+        input: Vec<AppServerTurnInput>,
+        cx: &ConnectionTo<Client>,
+    ) -> Result<PromptResponse, Error> {
+        let (cancel_tx, cancel_rx) = oneshot::channel();
         {
-            return Err(Error::invalid_request().data("session already has an active prompt turn"));
+            let mut active_prompts = self.active_prompts.lock().await;
+            if active_prompts.contains_key(thread_id) {
+                return Err(
+                    Error::invalid_request().data("session already has an active prompt turn")
+                );
+            }
+            active_prompts.insert(thread_id.to_owned(), cancel_tx);
         }
 
         let mut event_state = AcpEventState::default();
@@ -735,31 +747,31 @@ impl CodexAcpAgent {
             .lock()
             .await
             .turn_start_until_complete(
-                thread_id.clone(),
+                thread_id.to_owned(),
                 input,
                 Some(cancel_rx),
                 |event| {
                     handle_app_server_event(
                         &cx,
-                        session_id.clone(),
+                        session_id.to_owned(),
                         event,
                         &mut event_state,
                         &mut pending_updates,
                     )
                 },
-                |approval| request_permission(&cx, session_id.clone(), approval),
+                |approval| request_permission(&cx, session_id.to_owned(), approval),
             )
             .await
             .map_err(acp_internal_error);
 
-        self.active_prompts.lock().await.remove(&thread_id);
+        self.active_prompts.lock().await.remove(thread_id);
 
         let stop_reason = match completion? {
             AppServerPromptCompletion::EndTurn => StopReason::EndTurn,
             AppServerPromptCompletion::Cancelled => StopReason::Cancelled,
         };
 
-        self.publish_pending_updates(&session_id, pending_updates, &cx)
+        self.publish_pending_updates(session_id, pending_updates, cx)
             .await?;
 
         Ok(PromptResponse::new(stop_reason))
@@ -879,6 +891,12 @@ impl CodexAcpAgent {
                     catalog_summary("Hooks", &response),
                     cx,
                 )
+            }
+            BuiltinCommand::Init => {
+                let input = vec![AppServerTurnInput::Text {
+                    text: init_prompt(),
+                }];
+                self.run_turn_inputs(session_id, thread_id, input, cx).await
             }
             BuiltinCommand::Mcp => {
                 let response = self
@@ -1796,6 +1814,7 @@ enum BuiltinCommand {
     GoalGet,
     GoalClear,
     Hooks,
+    Init,
     Mcp,
     Model,
     New,
@@ -1839,6 +1858,7 @@ fn parse_builtin_command(text: &str) -> Result<Option<BuiltinCommand>, Error> {
         FORK_COMMAND => parse_no_argument_command(rest, FORK_COMMAND, BuiltinCommand::Fork),
         GOAL_COMMAND => parse_goal_command(rest),
         HOOKS_COMMAND => parse_no_argument_command(rest, HOOKS_COMMAND, BuiltinCommand::Hooks),
+        INIT_COMMAND => parse_no_argument_command(rest, INIT_COMMAND, BuiltinCommand::Init),
         MCP_COMMAND => parse_no_argument_command(rest, MCP_COMMAND, BuiltinCommand::Mcp),
         MODEL_COMMAND => parse_no_argument_command(rest, MODEL_COMMAND, BuiltinCommand::Model),
         NEW_COMMAND => parse_no_argument_command(rest, NEW_COMMAND, BuiltinCommand::New),
@@ -1904,6 +1924,15 @@ fn parse_goal_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
     Ok(Some(BuiltinCommand::GoalSet {
         objective: rest.to_owned(),
     }))
+}
+
+fn init_prompt() -> String {
+    [
+        "Create or update AGENTS.md for this repository.",
+        "",
+        "Inspect the repository structure, build and test commands, style conventions, architecture notes, and any existing contributor guidance. Preserve useful existing instructions. Keep the file concise, accurate, and actionable for coding agents working in this repository. Write repository instructions in English.",
+    ]
+    .join("\n")
 }
 
 fn parse_skill_invocation(text: &str) -> Option<SkillInvocation> {
@@ -2753,6 +2782,7 @@ fn builtin_commands() -> Vec<AvailableCommand> {
             )),
         ),
         AvailableCommand::new("hooks", "List configured Codex hooks"),
+        AvailableCommand::new("init", "Create or update AGENTS.md"),
         AvailableCommand::new("mcp", "List configured MCP servers"),
         AvailableCommand::new("model", "Refresh Codex model options"),
         AvailableCommand::new("new", "Start a new Codex session"),
@@ -2989,6 +3019,7 @@ mod tests {
             "/apps",
             "/fork",
             "/hooks",
+            "/init",
             "/mcp",
             "/model",
             "/new",
@@ -3001,6 +3032,7 @@ mod tests {
                 "/apps" => assert!(matches!(command, BuiltinCommand::Apps)),
                 "/fork" => assert!(matches!(command, BuiltinCommand::Fork)),
                 "/hooks" => assert!(matches!(command, BuiltinCommand::Hooks)),
+                "/init" => assert!(matches!(command, BuiltinCommand::Init)),
                 "/mcp" => assert!(matches!(command, BuiltinCommand::Mcp)),
                 "/model" => assert!(matches!(command, BuiltinCommand::Model)),
                 "/new" => assert!(matches!(command, BuiltinCommand::New)),
@@ -3083,6 +3115,7 @@ mod tests {
             ("/apps now", "/apps does not accept arguments"),
             ("/fork now", "/fork does not accept arguments"),
             ("/hooks now", "/hooks does not accept arguments"),
+            ("/init now", "/init does not accept arguments"),
             ("/mcp now", "/mcp does not accept arguments"),
             ("/model now", "/model does not accept arguments"),
             ("/new now", "/new does not accept arguments"),
@@ -3121,6 +3154,7 @@ mod tests {
                 "fork",
                 "goal",
                 "hooks",
+                "init",
                 "mcp",
                 "model",
                 "new",
@@ -3133,6 +3167,14 @@ mod tests {
                 "skill:skill-creator"
             ]
         );
+    }
+
+    #[test]
+    fn init_prompt_requests_agents_file_update() {
+        let prompt = init_prompt();
+
+        assert!(prompt.contains("Create or update AGENTS.md"));
+        assert!(prompt.contains("Write repository instructions in English"));
     }
 
     #[test]
