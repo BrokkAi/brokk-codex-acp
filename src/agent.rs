@@ -46,8 +46,11 @@ const SERVICE_TIER_CONFIG_ID: &str = "service_tier";
 const APPROVAL_POLICY_CONFIG_ID: &str = "approval_policy";
 const COLLABORATION_MODE_CONFIG_ID: &str = "collaboration_mode";
 const PERMISSION_PROFILE_CONFIG_ID: &str = "permission_profile";
+const SKILL_CONFIG_PREFIX: &str = "skill:";
 const DEFAULT_SERVICE_TIER_VALUE: &str = "__codex_default_service_tier";
 const DEFAULT_APPROVAL_POLICY: &str = "on-request";
+const SKILL_ENABLED_VALUE: &str = "enabled";
+const SKILL_DISABLED_VALUE: &str = "disabled";
 const ARCHIVE_COMMAND: &str = "archive";
 const APPS_COMMAND: &str = "apps";
 const COMPACT_COMMAND: &str = "compact";
@@ -507,7 +510,7 @@ impl CodexAcpAgent {
             }
         }
 
-        let config_options = self
+        let mut config_options = self
             .refresh_config_options(
                 &request.session_id,
                 resume_response
@@ -529,6 +532,9 @@ impl CodexAcpAgent {
             self.set_session_cwd(&request.session_id, cwd.clone()).await;
             self.refresh_and_publish_skills(cwd, &request.session_id, &cx, false)
                 .await?;
+            config_options = self
+                .config_options_for_session(request.session_id.0.as_ref())
+                .await;
         }
 
         Ok(LoadSessionResponse::new().config_options(config_options))
@@ -687,9 +693,23 @@ impl CodexAcpAgent {
                     .await
                     .map_err(acp_internal_error)?
             }
+            _ if config_id.starts_with(SKILL_CONFIG_PREFIX) => {
+                let skill_name = config_id.trim_start_matches(SKILL_CONFIG_PREFIX);
+                let enabled = match value.as_str() {
+                    SKILL_ENABLED_VALUE => true,
+                    SKILL_DISABLED_VALUE => false,
+                    _ => {
+                        return Err(Error::invalid_params().data(format!(
+                            "unknown skill config value `{value}`; expected `{SKILL_ENABLED_VALUE}` or `{SKILL_DISABLED_VALUE}`"
+                        )));
+                    }
+                };
+                self.set_skill_config(&session_id, skill_name, enabled, &cx)
+                    .await?
+            }
             _ => {
                 return Err(Error::invalid_params().data(format!(
-                    "unknown config option `{config_id}`; supported options are `{MODEL_CONFIG_ID}`, `{REASONING_EFFORT_CONFIG_ID}`, `{SERVICE_TIER_CONFIG_ID}`, `{APPROVAL_POLICY_CONFIG_ID}`, `{COLLABORATION_MODE_CONFIG_ID}`, and `{PERMISSION_PROFILE_CONFIG_ID}`"
+                    "unknown config option `{config_id}`; supported options are `{MODEL_CONFIG_ID}`, `{REASONING_EFFORT_CONFIG_ID}`, `{SERVICE_TIER_CONFIG_ID}`, `{APPROVAL_POLICY_CONFIG_ID}`, `{COLLABORATION_MODE_CONFIG_ID}`, `{PERMISSION_PROFILE_CONFIG_ID}`, and `{SKILL_CONFIG_PREFIX}<skill-name>`"
                 )));
             }
         }
@@ -1089,7 +1109,7 @@ impl CodexAcpAgent {
             .map_err(acp_internal_error)?;
 
         let session_id = SessionId::new(response.thread.id);
-        let config_options = self
+        let mut config_options = self
             .refresh_config_options(
                 &session_id,
                 response
@@ -1110,6 +1130,7 @@ impl CodexAcpAgent {
             self.set_session_cwd(&session_id, cwd.clone()).await;
             self.refresh_and_publish_skills(cwd, &session_id, cx, false)
                 .await?;
+            config_options = self.config_options_for_session(session_id.0.as_ref()).await;
         }
 
         Ok((session_id, config_options))
@@ -1130,7 +1151,7 @@ impl CodexAcpAgent {
             .map_err(acp_internal_error)?;
 
         let session_id = SessionId::new(response.thread.id);
-        let config_options = self
+        let mut config_options = self
             .refresh_config_options(
                 &session_id,
                 response
@@ -1151,6 +1172,7 @@ impl CodexAcpAgent {
             self.set_session_cwd(&session_id, cwd.clone()).await;
             self.refresh_and_publish_skills(cwd, &session_id, cx, false)
                 .await?;
+            config_options = self.config_options_for_session(session_id.0.as_ref()).await;
         }
 
         Ok((session_id, config_options))
@@ -1171,7 +1193,7 @@ impl CodexAcpAgent {
             .map_err(acp_internal_error)?;
 
         let session_id = SessionId::new(response.thread.id);
-        let config_options = self
+        let mut config_options = self
             .refresh_config_options(
                 &session_id,
                 response
@@ -1192,6 +1214,7 @@ impl CodexAcpAgent {
             self.set_session_cwd(&session_id, cwd.clone()).await;
             self.refresh_and_publish_skills(cwd, &session_id, cx, false)
                 .await?;
+            config_options = self.config_options_for_session(session_id.0.as_ref()).await;
         }
 
         Ok((session_id, config_options))
@@ -1383,7 +1406,14 @@ impl CodexAcpAgent {
 
         self.skills_by_cwd.lock().await.insert(cwd, skills.clone());
 
-        send_available_commands_update(cx, session_id.clone(), available_commands(skills))
+        send_available_commands_update(cx, session_id.clone(), available_commands(skills))?;
+        let config_options = self.config_options_for_session(session_id.0.as_ref()).await;
+        send_session_update(
+            cx,
+            session_id.clone(),
+            SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(config_options)),
+        )
+        .map_err(acp_internal_error)
     }
 
     async fn publish_pending_updates(
@@ -1703,13 +1733,59 @@ impl CodexAcpAgent {
         Ok(())
     }
 
+    async fn set_skill_config(
+        &self,
+        session_id: &SessionId,
+        skill_name: &str,
+        enabled: bool,
+        cx: &ConnectionTo<Client>,
+    ) -> Result<(), Error> {
+        let cwd = self
+            .session_cwd(session_id)
+            .await
+            .ok_or_else(|| Error::invalid_request().data("session cwd is not known yet"))?;
+        let skill = self
+            .skills_by_cwd
+            .lock()
+            .await
+            .get(&cwd)
+            .and_then(|skills| {
+                skills
+                    .iter()
+                    .find(|skill| skill.name == skill_name)
+                    .cloned()
+            })
+            .ok_or_else(|| Error::invalid_params().data(format!("unknown skill `{skill_name}`")))?;
+
+        self.app_server
+            .lock()
+            .await
+            .skills_config_write(Some(skill.name), skill.path, enabled)
+            .await
+            .map_err(acp_internal_error)?;
+        self.refresh_and_publish_skills(cwd, session_id, cx, true)
+            .await
+    }
+
     async fn config_options_for_session(&self, thread_id: &str) -> Vec<SessionConfigOption> {
-        self.config_by_session
+        let mut options = self
+            .config_by_session
             .lock()
             .await
             .get(thread_id)
             .map(config_options)
-            .unwrap_or_default()
+            .unwrap_or_default();
+        if let Some(cwd) = self.session_cwds.lock().await.get(thread_id).cloned() {
+            let skills = self
+                .skills_by_cwd
+                .lock()
+                .await
+                .get(&cwd)
+                .cloned()
+                .unwrap_or_default();
+            options.extend(skill_config_options(&skills));
+        }
+        options
     }
 
     async fn is_known_config_value(&self, thread_id: &str, config_id: &str, value: &str) -> bool {
@@ -2165,6 +2241,47 @@ fn config_options(state: &AcpConfigState) -> Vec<SessionConfigOption> {
     }
 
     options
+}
+
+fn skill_config_options(skills: &[AppServerSkill]) -> Vec<SessionConfigOption> {
+    let mut seen = HashSet::new();
+    skills
+        .iter()
+        .filter(|skill| !skill.name.is_empty())
+        .filter(|skill| seen.insert(skill.name.clone()))
+        .map(|skill| {
+            let description = skill
+                .interface
+                .as_ref()
+                .and_then(|interface| interface.short_description.clone())
+                .or_else(|| skill.description.clone())
+                .or_else(|| skill.path.clone());
+            let display_name = skill
+                .interface
+                .as_ref()
+                .and_then(|interface| interface.display_name.clone())
+                .unwrap_or_else(|| skill.name.clone());
+            SessionConfigOption::select(
+                skill_config_id(&skill.name),
+                format!("Skill: {display_name}"),
+                if skill.enabled {
+                    SKILL_ENABLED_VALUE
+                } else {
+                    SKILL_DISABLED_VALUE
+                },
+                vec![
+                    SessionConfigSelectOption::new(SKILL_ENABLED_VALUE, "Enabled"),
+                    SessionConfigSelectOption::new(SKILL_DISABLED_VALUE, "Disabled"),
+                ],
+            )
+            .description(description)
+            .category(SessionConfigOptionCategory::Other("skills".to_owned()))
+        })
+        .collect()
+}
+
+fn skill_config_id(skill_name: &str) -> String {
+    format!("{SKILL_CONFIG_PREFIX}{skill_name}")
 }
 
 fn default_model_id(models: &[AppServerModel]) -> Option<String> {
@@ -3337,5 +3454,27 @@ mod tests {
         assert_eq!(serialized[4]["options"][1]["name"], "Plan");
         assert_eq!(serialized[5]["currentValue"], ":workspace");
         assert_eq!(serialized[5]["options"][1]["name"], "Workspace");
+    }
+
+    #[test]
+    fn skill_config_options_expose_enabled_state() {
+        let options = skill_config_options(&[
+            skill(
+                "skill-creator",
+                Some("/skills/skill-creator/SKILL.md"),
+                true,
+            ),
+            skill("disabled-skill", Some("/skills/disabled/SKILL.md"), false),
+            skill("skill-creator", Some("/duplicate/SKILL.md"), false),
+        ]);
+
+        assert_eq!(options.len(), 2);
+        assert_eq!(options[0].id.to_string(), "skill:skill-creator");
+        assert_eq!(options[1].id.to_string(), "skill:disabled-skill");
+        let serialized = serde_json::to_value(&options).unwrap();
+        assert_eq!(serialized[0]["currentValue"], SKILL_ENABLED_VALUE);
+        assert_eq!(serialized[0]["options"][0]["value"], SKILL_ENABLED_VALUE);
+        assert_eq!(serialized[0]["options"][1]["value"], SKILL_DISABLED_VALUE);
+        assert_eq!(serialized[1]["currentValue"], SKILL_DISABLED_VALUE);
     }
 }

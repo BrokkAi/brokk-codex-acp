@@ -359,7 +359,7 @@ Tasks:
   `UserInput::Skill` when the skill path is known.
 - [x] Fall back to plain text when a skill cannot be resolved.
 - [x] Add app-server `skills/config/write` request support.
-- [ ] Expose skill enable/disable through ACP session config options.
+- [x] Expose skill enable/disable through ACP session config options.
 
 Acceptance criteria:
 
@@ -948,7 +948,7 @@ Expose skills to ACP clients as:
 
 - [x] available commands if ACP only supports slash commands
 - [ ] mention completions if ACP supports mentions
-- [ ] config options if ACP supports enable/disable toggles
+- [x] config options using select controls for enable/disable toggles
 
 The app-server shape to use is:
 
@@ -1018,7 +1018,7 @@ Inputs:
 After write:
 
 - [x] call `skills/list` with `forceReload: true`
-- [ ] publish updated available commands/config options from an ACP
+- [x] publish updated available commands/config options from an ACP
   `session/set_config_option` handler
 
 ### Extra Roots
@@ -1107,7 +1107,7 @@ ACP config option IDs should be stable and adapter-owned:
 | `permission_profile` | `permissionProfile/list` | `thread/settings/update.permissions` |
 | `approval_policy` | config/read or thread settings | `thread/settings/update.approvalPolicy` |
 | `collaboration_mode` | `collaborationMode/list` | `thread/settings/update.collaborationMode` |
-| `skills.enabled` | `skills/list` | `skills/config/write` |
+| `skill:<name>` | `skills/list` | `skills/config/write` |
 
 Implemented config option baseline:
 
@@ -1130,12 +1130,10 @@ Implemented config option baseline:
 - `permission_profile` is populated from `permissionProfile/list`, seeded from
   app-server `activePermissionProfile` when present, and written with
   `thread/settings/update.permissions`.
+- `skill:<name>` options are populated from `skills/list`, exposed as
+  enable/disable select controls, and written with `skills/config/write`.
 - `session/set_config_option` returns the complete current config option list
   and sends a `config_option_update` notification after successful writes.
-
-Remaining config option work:
-
-- Add skill enable/disable selectors backed by `skills/config/write`.
 
 ## Approval Flow
 
@@ -1331,7 +1329,7 @@ Manual flows:
 - [x] Support `$skill-name` invocation.
 - [x] Support `/skill skill-name` invocation.
 - [x] Implement app-server `skills/config/write` mapping.
-- [ ] Expose enable/disable through ACP session config options.
+- [x] Expose enable/disable through ACP session config options.
 - [ ] Support `skills/extraRoots/set`.
 - [x] Add fake app-server tests for discovery.
 - [x] Add fake app-server tests for invocation.

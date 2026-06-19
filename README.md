@@ -45,7 +45,8 @@ The project currently includes:
   available commands for enabled skills alongside adapter-owned commands.
 - Structured `$skill-name` and `/skill skill-name` invocation when app-server
   returns a skill path, with plain-text fallback otherwise.
-- App-server `skills/config/write` mapping for skill enable/disable state.
+- App-server `skills/config/write` mapping for skill enable/disable state,
+  exposed through ACP session config options named `skill:<name>`.
 - Initial slash-command routing for `/rename <title>`, `/archive`, `/goal`,
   `/compact`, `/review`, `/init`, `/new`, `/resume`, `/fork`, `/apps`,
   `/plugins`, `/mcp`, `/hooks`, `/model`, `/permissions`, `/ps`, `/stop`,
@@ -71,8 +72,8 @@ The project currently includes:
 The adapter is not complete yet. Rich ACP UI for MCP elicitations, dynamic tool
 callbacks, and user-input requests, exact terminal embedding, remaining slash
 command routing, plugin install/read actions, direct MCP resource/tool UI,
-fine-grained partial permission grants, skill enable/disable config options,
-and paginated/full-fidelity history replay are still planned work.
+fine-grained partial permission grants, and paginated/full-fidelity history
+replay are still planned work.
 
 ## Usage
 
