@@ -63,6 +63,35 @@ async fn serialized_goal_emits_session_info_meta_without_starting_turn() -> anyh
     Ok(())
 }
 
+#[tokio::test]
+async fn serialized_load_replays_history_before_response() -> anyhow::Result<()> {
+    let (load, notifications) = run_serialized_load("thread-serialized").await?;
+
+    assert!(load.get("error").is_none(), "load response: {load:#?}");
+
+    let replay_updates = notifications
+        .iter()
+        .filter(|notification| notification["method"] == "session/update")
+        .filter_map(|notification| {
+            let update = &notification["params"]["update"];
+            let kind = update["sessionUpdate"].as_str()?;
+            let text = update["content"]["text"].as_str()?;
+            Some(format!("{kind}:{text}"))
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        replay_updates,
+        [
+            "user_message_chunk:loaded hello",
+            "agent_message_chunk:loaded response"
+        ],
+        "notifications before session/load response: {notifications:#?}"
+    );
+
+    Ok(())
+}
+
 async fn run_serialized_prompt(prompt_text: &str) -> anyhow::Result<(Value, Vec<Value>)> {
     let fake_codex = fake_codex_app_server(SERIALIZED_RENAME_CODEX_APP_SERVER)?;
     let mut app_server =
@@ -143,6 +172,65 @@ async fn run_serialized_prompt(prompt_text: &str) -> anyhow::Result<(Value, Vec<
     drop(client_write);
     agent_task.abort();
     Ok((prompt, notifications))
+}
+
+async fn run_serialized_load(session_id: &str) -> anyhow::Result<(Value, Vec<Value>)> {
+    let fake_codex = fake_codex_app_server(SERIALIZED_RENAME_CODEX_APP_SERVER)?;
+    let mut app_server =
+        AppServerClient::spawn(AppServerCommand::new(fake_codex.path().to_owned())).await?;
+    app_server
+        .initialize(
+            "brokk_codex_acp_test",
+            "Brokk Codex ACP Test",
+            env!("CARGO_PKG_VERSION"),
+        )
+        .await?;
+
+    let (agent_side, client_side) = tokio::io::duplex(64 * 1024);
+    let (agent_read, agent_write) = split(agent_side);
+    let agent_transport = ByteStreams::new(agent_write.compat_write(), agent_read.compat());
+    let agent_task = tokio::spawn(CodexAcpAgent::new(app_server).serve(agent_transport));
+
+    let (client_read, mut client_write) = split(client_side);
+    let mut client_read = BufReader::new(client_read);
+    let mut notifications = Vec::new();
+
+    write_json(
+        &mut client_write,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": 1,
+                "clientCapabilities": {},
+            },
+        }),
+    )
+    .await?;
+    let initialize = read_response(&mut client_read, 1, &mut notifications).await?;
+    assert_eq!(initialize["result"]["protocolVersion"], 1);
+
+    let cwd = tempfile::tempdir()?;
+    write_json(
+        &mut client_write,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "session/load",
+            "params": {
+                "sessionId": session_id,
+                "cwd": cwd.path(),
+                "mcpServers": [],
+            },
+        }),
+    )
+    .await?;
+    let load = read_response(&mut client_read, 2, &mut notifications).await?;
+
+    drop(client_write);
+    agent_task.abort();
+    Ok((load, notifications))
 }
 
 async fn write_json(writer: &mut (impl AsyncWrite + Unpin), message: Value) -> anyhow::Result<()> {
@@ -243,6 +331,70 @@ for line in sys.stdin:
                     "cwd": thread_cwd,
                     "turns": [],
                 },
+            },
+        })
+    elif method == "thread/resume":
+        assert params["threadId"] == "thread-serialized"
+        thread_cwd = params.get("cwd")
+        response(message_id, {
+            "result": {
+                "thread": {
+                    "id": "thread-serialized",
+                    "cwd": thread_cwd,
+                    "turns": [],
+                },
+            },
+        })
+    elif method == "thread/turns/list":
+        assert params["threadId"] == "thread-serialized"
+        assert params.get("limit") == 50
+        assert params.get("sortDirection") == "asc"
+        assert params.get("itemsView") == "full"
+        cursor = params.get("cursor")
+        if cursor is None:
+            response(message_id, {
+                "result": {
+                    "data": [
+                        {
+                            "id": "load-turn-1",
+                            "items": [
+                                {
+                                    "type": "userMessage",
+                                    "content": [
+                                        {"type": "text", "text": "loaded hello"},
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                    "nextCursor": "load-cursor-2",
+                    "backwardsCursor": None,
+                },
+            })
+        else:
+            assert cursor == "load-cursor-2"
+            response(message_id, {
+                "result": {
+                    "data": [
+                        {
+                            "id": "load-turn-2",
+                            "items": [
+                                {
+                                    "type": "agentMessage",
+                                    "text": "loaded response",
+                                },
+                            ],
+                        },
+                    ],
+                    "nextCursor": None,
+                    "backwardsCursor": None,
+                },
+            })
+    elif method == "thread/read":
+        response(message_id, {
+            "error": {
+                "code": -32000,
+                "message": "thread/read should not be called when paginated turns are available",
             },
         })
     elif method == "model/list":

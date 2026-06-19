@@ -458,7 +458,7 @@ Tasks:
 - [x] Add pagination and size limits for large histories through
   `thread/turns/list`, with `thread/read` fallback for older Codex versions.
 - [x] Add fake app-server tests for replay ordering.
-- [ ] Add ACP client tests for replay notification ordering before the
+- [x] Add ACP client tests for replay notification ordering before the
   `session/load` response and partial history behavior.
 
 Acceptance criteria:
