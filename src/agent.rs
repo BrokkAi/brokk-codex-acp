@@ -60,11 +60,13 @@ const MODEL_COMMAND: &str = "model";
 const NEW_COMMAND: &str = "new";
 const PERMISSIONS_COMMAND: &str = "permissions";
 const PLUGINS_COMMAND: &str = "plugins";
+const PS_COMMAND: &str = "ps";
 const RENAME_COMMAND: &str = "rename";
 const RESUME_COMMAND: &str = "resume";
 const REVIEW_COMMAND: &str = "review";
 const SKILL_COMMAND: &str = "skill";
 const STATUS_COMMAND: &str = "status";
+const STOP_COMMAND: &str = "stop";
 const APPROVAL_POLICY_OPTIONS: [(&str, &str, &str); 4] = [
     (
         "untrusted",
@@ -975,6 +977,21 @@ impl CodexAcpAgent {
                 );
                 publish_catalog_message(session_id, "Plugins", message, cx)
             }
+            BuiltinCommand::Ps => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .thread_background_terminals_list(thread_id.to_owned())
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(
+                    session_id,
+                    "Background terminals",
+                    catalog_summary("Background terminals", &response),
+                    cx,
+                )
+            }
             BuiltinCommand::Rename { title } => {
                 self.app_server
                     .lock()
@@ -985,6 +1002,21 @@ impl CodexAcpAgent {
                 publish_session_name_update(session_id, Some(title), cx)
                     .map_err(acp_internal_error)?;
                 Ok(PromptResponse::new(StopReason::EndTurn))
+            }
+            BuiltinCommand::Stop => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .thread_background_terminals_clean(thread_id.to_owned())
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(
+                    session_id,
+                    "Background terminals",
+                    catalog_summary("Background terminals cleaned", &response),
+                    cx,
+                )
             }
             BuiltinCommand::Resume { target } => {
                 let cwd = self
@@ -1823,10 +1855,12 @@ enum BuiltinCommand {
     New,
     Permissions,
     Plugins,
+    Ps,
     Rename { title: String },
     Resume { target: String },
     Review,
     Status,
+    Stop,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1871,6 +1905,7 @@ fn parse_builtin_command(text: &str) -> Result<Option<BuiltinCommand>, Error> {
         PLUGINS_COMMAND => {
             parse_no_argument_command(rest, PLUGINS_COMMAND, BuiltinCommand::Plugins)
         }
+        PS_COMMAND => parse_no_argument_command(rest, PS_COMMAND, BuiltinCommand::Ps),
         RENAME_COMMAND => {
             let title = rest.trim();
             if title.is_empty() {
@@ -1897,6 +1932,7 @@ fn parse_builtin_command(text: &str) -> Result<Option<BuiltinCommand>, Error> {
         }
         SKILL_COMMAND => Ok(None),
         STATUS_COMMAND => parse_no_argument_command(rest, STATUS_COMMAND, BuiltinCommand::Status),
+        STOP_COMMAND => parse_no_argument_command(rest, STOP_COMMAND, BuiltinCommand::Stop),
         _ => Err(Error::invalid_params().data(format!("unsupported slash command `/{command}`"))),
     }
 }
@@ -2792,6 +2828,7 @@ fn builtin_commands() -> Vec<AvailableCommand> {
         AvailableCommand::new("new", "Start a new Codex session"),
         AvailableCommand::new("permissions", "Refresh Codex permission options"),
         AvailableCommand::new("plugins", "List available and installed Codex plugins"),
+        AvailableCommand::new("ps", "List Codex background terminals"),
         AvailableCommand::new("rename", "Rename this Codex thread").input(
             AvailableCommandInput::Unstructured(UnstructuredCommandInput::new("new thread title")),
         ),
@@ -2800,6 +2837,7 @@ fn builtin_commands() -> Vec<AvailableCommand> {
         ),
         AvailableCommand::new("review", "Run Codex review for this thread"),
         AvailableCommand::new("status", "Show Codex thread status"),
+        AvailableCommand::new("stop", "Clean Codex background terminals"),
     ]
 }
 
@@ -3029,7 +3067,9 @@ mod tests {
             "/new",
             "/permissions",
             "/plugins",
+            "/ps",
             "/status",
+            "/stop",
         ] {
             let command = parse_builtin_command(text).unwrap().unwrap();
             match text {
@@ -3042,7 +3082,9 @@ mod tests {
                 "/new" => assert!(matches!(command, BuiltinCommand::New)),
                 "/permissions" => assert!(matches!(command, BuiltinCommand::Permissions)),
                 "/plugins" => assert!(matches!(command, BuiltinCommand::Plugins)),
+                "/ps" => assert!(matches!(command, BuiltinCommand::Ps)),
                 "/status" => assert!(matches!(command, BuiltinCommand::Status)),
+                "/stop" => assert!(matches!(command, BuiltinCommand::Stop)),
                 _ => unreachable!(),
             }
         }
@@ -3125,7 +3167,9 @@ mod tests {
             ("/new now", "/new does not accept arguments"),
             ("/permissions now", "/permissions does not accept arguments"),
             ("/plugins now", "/plugins does not accept arguments"),
+            ("/ps now", "/ps does not accept arguments"),
             ("/status now", "/status does not accept arguments"),
+            ("/stop now", "/stop does not accept arguments"),
         ] {
             let error = parse_builtin_command(text).unwrap_err();
             assert_eq!(
@@ -3181,10 +3225,12 @@ mod tests {
                 "new",
                 "permissions",
                 "plugins",
+                "ps",
                 "rename",
                 "resume",
                 "review",
                 "status",
+                "stop",
                 "skill:skill-creator"
             ]
         );

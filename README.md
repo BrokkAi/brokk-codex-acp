@@ -48,11 +48,11 @@ The project currently includes:
 - App-server `skills/config/write` mapping for skill enable/disable state.
 - Initial slash-command routing for `/rename <title>`, `/archive`, `/goal`,
   `/compact`, `/review`, `/init`, `/new`, `/resume`, `/fork`, `/apps`,
-  `/plugins`, `/mcp`, `/hooks`, `/model`, `/permissions`, and `/status`,
-  mapped to app-server thread, review, catalog, and config endpoints with ACP
-  session update, turn-stream, config-option, or agent-message summary
-  projection as appropriate. Unsupported leading slash commands return an
-  explicit ACP error instead of being forwarded to the model.
+  `/plugins`, `/mcp`, `/hooks`, `/model`, `/permissions`, `/ps`, `/stop`,
+  and `/status`, mapped to app-server thread, review, catalog, and config
+  endpoints with ACP session update, turn-stream, config-option, or
+  agent-message summary projection as appropriate. Unsupported leading slash
+  commands return an explicit ACP error instead of being forwarded to the model.
 - Initial command, file-change, and permission-profile approval routing from
   app-server approval requests to ACP `session/request_permission`, with the
   selected decision sent back to app-server in the response shape each

@@ -184,8 +184,8 @@ The current repository has the first working ACP/app-server bridge in place:
     semantics while awaiting the ACP client.
 - Slash commands:
   - built-in `archive`, `apps`, `compact`, `fork`, `goal`, `hooks`, `init`,
-    `mcp`, `model`, `new`, `permissions`, `plugins`, `rename`, `resume`,
-    `review`, and `status` commands are published through ACP
+    `mcp`, `model`, `new`, `permissions`, `plugins`, `ps`, `rename`, `resume`,
+    `review`, `status`, and `stop` commands are published through ACP
     `available_commands_update` alongside enabled skills.
   - `/archive` is intercepted by the adapter, mapped to `thread/archive`, and
     reflected to ACP clients through `session_info_update._meta`.
@@ -220,6 +220,9 @@ The current repository has the first working ACP/app-server bridge in place:
   - `/apps`, `/plugins`, `/mcp`, `/hooks`, and `/status` are intercepted by the
     adapter, mapped to app-server catalog/status endpoints, and reflected as
     short ACP agent-message summaries.
+  - `/ps` and `/stop` are intercepted by the adapter, mapped to
+    `thread/backgroundTerminals/list` and `thread/backgroundTerminals/clean`,
+    and reflected as short ACP agent-message summaries.
   - `/model` and `/permissions` are intercepted by the adapter, refresh
     app-server-backed config catalogs, publish ACP `config_option_update`, and
     send a short ACP agent-message summary.
@@ -376,8 +379,8 @@ Tasks:
 
 - [x] Add an initial parser for leading slash commands, currently `/archive`,
   `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/mcp`, `/model`,
-  `/new`, `/permissions`, `/plugins`, `/rename`, `/resume`, `/review`, and
-  `/status`.
+  `/new`, `/permissions`, `/plugins`, `/ps`, `/rename`, `/resume`, `/review`,
+  `/status`, and `/stop`.
 - [ ] Build the full command registry with aliases, availability, required
   active turn state, and handler metadata.
 - [x] Publish adapter-owned ACP available commands plus skills.
@@ -385,9 +388,9 @@ Tasks:
   `/compact`, `/rename`, `/model`, `/permissions`, `/mcp`, `/apps`,
   `/plugins`, `/hooks`, and `/status`. Implemented so far: `/archive`,
   `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/mcp`, `/model`,
-  `/new`, `/permissions`, `/plugins`, `/rename`, `/resume`, `/review`, and
-  `/status`. `/fork` is implemented only as an extension command backed by Codex
-  `thread/fork`, not as required ACP v1 behavior.
+  `/new`, `/permissions`, `/plugins`, `/ps`, `/rename`, `/resume`, `/review`,
+  `/status`, and `/stop`. `/fork` is implemented only as an extension command
+  backed by Codex `thread/fork`, not as required ACP v1 behavior.
 - [x] Return explicit unsupported-command responses for slash commands that are
   not currently handled by the adapter. `/skill ...` remains a supported
   non-builtin fallback.
@@ -412,6 +415,9 @@ Tasks:
   AGENTS.md prompt.
 - [x] Add unit coverage proving unknown slash commands return explicit errors
   while `/skill ...` remains available for skill invocation fallback.
+- [x] Add fake app-server coverage for `thread/backgroundTerminals/list` and
+  `thread/backgroundTerminals/clean` plus unit coverage for `/ps` and `/stop`
+  parsing/advertisement.
 - [ ] Add serialized ACP coverage proving `/rename` emits
   `session_info_update` and does not call `turn/start`.
 - [ ] Add serialized ACP coverage proving `/archive` emits
@@ -842,8 +848,8 @@ These map cleanly to app-server APIs and should be supported early:
 | `/apps` | `app/list` `[implemented as summary]` |
 | `/plugins` | `plugin/list` and `plugin/installed` `[implemented as summary]` |
 | `/hooks` | `hooks/list` `[implemented as summary]` |
-| `/ps` | `thread/backgroundTerminals/list` |
-| `/stop` | `thread/backgroundTerminals/clean` |
+| `/ps` | `thread/backgroundTerminals/list` `[implemented as summary]` |
+| `/stop` | `thread/backgroundTerminals/clean` `[implemented as summary]` |
 | `/status` | local summary plus app-server status/config reads `[implemented as initial loaded-thread summary]` |
 
 ### Command Parser Rules
@@ -1311,6 +1317,8 @@ Manual flows:
 - [x] Implement `/plugins`.
 - [x] Implement `/hooks`.
 - [x] Implement `/status`.
+- [x] Implement `/ps`.
+- [x] Implement `/stop`.
 
 ### Phase 4: Skills
 
@@ -1355,7 +1363,7 @@ Manual flows:
 - [x] Add collaboration mode config options.
 - [x] Add apps/plugins/MCP commands.
 - [x] Add initial hooks display.
-- [ ] Add background terminal list/clean.
+- [x] Add background terminal list/clean.
 
 ### Phase 7: Hardening
 

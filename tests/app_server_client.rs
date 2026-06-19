@@ -535,6 +535,16 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     let loaded_threads = client.thread_loaded_list().await?;
     assert_eq!(loaded_threads["data"][0], "thread-1");
 
+    let background_terminals = client
+        .thread_background_terminals_list("thread-1".to_string())
+        .await?;
+    assert_eq!(background_terminals["data"][0]["command"], "cargo test");
+
+    let cleaned_terminals = client
+        .thread_background_terminals_clean("thread-1".to_string())
+        .await?;
+    assert_eq!(cleaned_terminals["data"][0]["terminalId"], "terminal-1");
+
     let user_input_summaries =
         run_text_turn_and_collect_messages(&mut client, "user input callback").await?;
     assert_eq!(user_input_summaries, vec!["message:empty user input"]);
@@ -976,6 +986,27 @@ for line in sys.stdin:
     elif method == "thread/loaded/list":
         assert params == {}
         response(message_id, {"data": ["thread-1"]})
+    elif method == "thread/backgroundTerminals/list":
+        assert params == {"threadId": "thread-1"}
+        response(message_id, {
+            "data": [
+                {
+                    "terminalId": "terminal-1",
+                    "command": "cargo test",
+                    "status": "running",
+                },
+            ],
+        })
+    elif method == "thread/backgroundTerminals/clean":
+        assert params == {"threadId": "thread-1"}
+        response(message_id, {
+            "data": [
+                {
+                    "terminalId": "terminal-1",
+                    "status": "cleaned",
+                },
+            ],
+        })
     elif method == "skills/list":
         assert params["cwds"] == ["/repo"]
         assert params["forceReload"] in (False, True)

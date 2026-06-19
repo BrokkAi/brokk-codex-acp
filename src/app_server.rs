@@ -302,6 +302,28 @@ impl AppServerClient {
         self.request("thread/loaded/list", EmptyParams {}).await
     }
 
+    pub async fn thread_background_terminals_list(
+        &mut self,
+        thread_id: String,
+    ) -> anyhow::Result<Value> {
+        self.request(
+            "thread/backgroundTerminals/list",
+            ThreadScopedParams { thread_id },
+        )
+        .await
+    }
+
+    pub async fn thread_background_terminals_clean(
+        &mut self,
+        thread_id: String,
+    ) -> anyhow::Result<Value> {
+        self.request(
+            "thread/backgroundTerminals/clean",
+            ThreadScopedParams { thread_id },
+        )
+        .await
+    }
+
     pub async fn model_list(&mut self) -> anyhow::Result<ModelListResponse> {
         self.request(
             "model/list",
@@ -1141,6 +1163,12 @@ struct ThreadGoalClearParams {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadGoalClearResponse {
     pub cleared: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadScopedParams {
+    thread_id: String,
 }
 
 #[derive(Debug, Serialize)]
