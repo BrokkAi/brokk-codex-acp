@@ -33,6 +33,8 @@ The project currently includes:
 - ACP handlers for `initialize`, `session/new`, `session/load`,
   `session/resume`, `session/list`, `session/close`, `session/delete`,
   `session/fork`, `session/prompt`, and `session/cancel`.
+- `session/fork` is exposed through the ACP Rust crate's unstable RFD/extension
+  feature, not as stable ACP v1 behavior.
 - `session/list` preserves app-server thread preview, status, recency, model
   provider, agent, and parent-thread metadata under `_meta.brokk_codex_acp`.
 - Initial prompt streaming from Codex `item/agentMessage/delta` notifications to

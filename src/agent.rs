@@ -1728,6 +1728,8 @@ impl CodexAcpAgent {
             .load_session(true)
             .prompt_capabilities(PromptCapabilities::new())
             .session_capabilities(
+                // Fork is exposed by the Rust ACP crate behind its unstable
+                // RFD/extension feature; it is not stable ACP v1 behavior.
                 SessionCapabilities::new()
                     .list(SessionListCapabilities::new())
                     .resume(SessionResumeCapabilities::new())

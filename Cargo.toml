@@ -17,6 +17,8 @@ name = "brokk_codex_acp"
 path = "src/lib.rs"
 
 [dependencies]
+# `unstable_session_fork` exposes the ACP crate's RFD/extension fork surface.
+# Keep the adapter's fork behavior documented as non-stable ACP v1 behavior.
 agent-client-protocol = { version = "0.13.1", features = ["unstable_session_delete", "unstable_session_fork", "unstable_session_usage"] }
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }

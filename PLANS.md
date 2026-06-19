@@ -1342,7 +1342,7 @@ Manual flows:
 - [x] Add `session/fork` extension handler exposed by the current Rust crate.
 - [x] Map to app-server `thread/fork`.
 - [x] Return the returned thread as a new ACP session.
-- [ ] Mark `session/fork` as extension/RFD behavior in code and docs.
+- [x] Mark `session/fork` as extension/RFD behavior in code and docs.
 - [ ] Replay fork history when requested.
 - [x] Route `/fork` through the same extension code path.
 - [ ] Add tests for persistent and ephemeral forks.
