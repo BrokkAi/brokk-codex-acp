@@ -102,7 +102,15 @@ cargo run -- serve
 
 ```shell
 cargo fmt
-cargo check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+```
+
+Run the opt-in smoke test against a real local Codex app-server:
+
+```shell
+BROKK_CODEX_ACP_SMOKE_CODEX_BIN=/path/to/codex \
+  cargo test --test real_app_server_smoke -- --ignored
 ```
 
 ## Release Strategy

@@ -3,8 +3,8 @@ use std::fs;
 use brokk_codex_acp::app_server::{
     AppServerApprovalDecision, AppServerClient, AppServerCollaborationMode, AppServerCommand,
     AppServerHistoryEvent, AppServerMessage, AppServerPromptCompletion, AppServerPromptEvent,
-    AppServerTurnHistory, AppServerTurnInput, history_events, history_events_for_turns,
-    is_app_server_method_unavailable,
+    AppServerTurnHistory, AppServerTurnInput, ThreadSettingsUpdateParams, history_events,
+    history_events_for_turns, is_app_server_method_unavailable,
 };
 use tempfile::TempDir;
 use tokio::{sync::oneshot, time};
@@ -191,84 +191,48 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
 
     client
         .thread_settings_update(
-            "thread-1".to_string(),
-            Some("gpt-5-codex".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
+            ThreadSettingsUpdateParams::new("thread-1".to_string())
+                .with_model("gpt-5-codex".to_string()),
         )
         .await?;
     client
         .thread_settings_update(
-            "thread-1".to_string(),
-            None,
-            Some(":danger-full-access".to_string()),
-            None,
-            None,
-            None,
-            None,
+            ThreadSettingsUpdateParams::new("thread-1".to_string())
+                .with_permissions(":danger-full-access".to_string()),
         )
         .await?;
     client
         .thread_settings_update(
-            "thread-1".to_string(),
-            None,
-            None,
-            Some("high".to_string()),
-            None,
-            None,
-            None,
+            ThreadSettingsUpdateParams::new("thread-1".to_string()).with_effort("high".to_string()),
         )
         .await?;
     client
         .thread_settings_update(
-            "thread-1".to_string(),
-            None,
-            None,
-            None,
-            Some(Some("priority".to_string())),
-            None,
-            None,
+            ThreadSettingsUpdateParams::new("thread-1".to_string())
+                .with_service_tier(Some("priority".to_string())),
         )
         .await?;
     client
         .thread_settings_update(
-            "thread-1".to_string(),
-            None,
-            None,
-            None,
-            Some(None),
-            None,
-            None,
+            ThreadSettingsUpdateParams::new("thread-1".to_string()).with_service_tier(None),
         )
         .await?;
     client
         .thread_settings_update(
-            "thread-1".to_string(),
-            None,
-            None,
-            None,
-            None,
-            Some("never".to_string()),
-            None,
+            ThreadSettingsUpdateParams::new("thread-1".to_string())
+                .with_approval_policy("never".to_string()),
         )
         .await?;
     client
         .thread_settings_update(
-            "thread-1".to_string(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(AppServerCollaborationMode::new(
-                "plan".to_string(),
-                "gpt-5-codex".to_string(),
-                Some("medium".to_string()),
-                None,
-            )),
+            ThreadSettingsUpdateParams::new("thread-1".to_string()).with_collaboration_mode(
+                AppServerCollaborationMode::new(
+                    "plan".to_string(),
+                    "gpt-5-codex".to_string(),
+                    Some("medium".to_string()),
+                    None,
+                ),
+            ),
         )
         .await?;
 
@@ -635,7 +599,7 @@ async fn run_text_turn_and_collect_messages(
 fn summarize_history_event(event: AppServerHistoryEvent) -> String {
     match event {
         AppServerHistoryEvent::UserMessage(text) => format!("user:{text}"),
-        AppServerHistoryEvent::PromptEvent(event) => summarize_prompt_event(event),
+        AppServerHistoryEvent::PromptEvent(event) => summarize_prompt_event(*event),
     }
 }
 

@@ -1377,7 +1377,7 @@ Manual flows:
 - [x] Add structured logging around app-server requests and ACP dispatch.
 - [ ] Add backpressure for notification bursts.
 - [x] Add shutdown cleanup for app-server child process.
-- [ ] Add real app-server smoke tests.
+- [x] Add real app-server smoke tests.
 - [ ] Add connection-disconnect cleanup for active prompts and approvals.
 - [x] Add error mapping tests.
 

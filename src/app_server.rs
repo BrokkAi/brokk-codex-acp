@@ -381,37 +381,13 @@ impl AppServerClient {
 
     pub async fn thread_settings_update(
         &mut self,
-        thread_id: String,
-        model: Option<String>,
-        permissions: Option<String>,
-        effort: Option<String>,
-        service_tier: Option<Option<String>>,
-        approval_policy: Option<String>,
-        collaboration_mode: Option<AppServerCollaborationMode>,
+        params: ThreadSettingsUpdateParams,
     ) -> anyhow::Result<ThreadSettingsUpdateResponse> {
-        if model.is_none()
-            && permissions.is_none()
-            && effort.is_none()
-            && service_tier.is_none()
-            && approval_policy.is_none()
-            && collaboration_mode.is_none()
-        {
+        if !params.has_settings() {
             bail!("thread/settings/update requires at least one setting");
         }
 
-        self.request(
-            "thread/settings/update",
-            ThreadSettingsUpdateParams {
-                thread_id,
-                model,
-                permissions,
-                effort,
-                service_tier,
-                approval_policy,
-                collaboration_mode,
-            },
-        )
-        .await
+        self.request("thread/settings/update", params).await
     }
 
     pub async fn turn_start_text_until_complete(
@@ -1450,20 +1426,76 @@ pub struct AppServerPermissionProfile {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ThreadSettingsUpdateParams {
-    thread_id: String,
+pub struct ThreadSettingsUpdateParams {
+    pub thread_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    model: Option<String>,
+    pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    permissions: Option<String>,
+    pub permissions: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    effort: Option<String>,
+    pub effort: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    service_tier: Option<Option<String>>,
+    pub service_tier: Option<Option<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    approval_policy: Option<String>,
+    pub approval_policy: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    collaboration_mode: Option<AppServerCollaborationMode>,
+    pub collaboration_mode: Option<AppServerCollaborationMode>,
+}
+
+impl ThreadSettingsUpdateParams {
+    pub fn new(thread_id: String) -> Self {
+        Self {
+            thread_id,
+            model: None,
+            permissions: None,
+            effort: None,
+            service_tier: None,
+            approval_policy: None,
+            collaboration_mode: None,
+        }
+    }
+
+    pub fn with_model(mut self, model: String) -> Self {
+        self.model = Some(model);
+        self
+    }
+
+    pub fn with_permissions(mut self, permissions: String) -> Self {
+        self.permissions = Some(permissions);
+        self
+    }
+
+    pub fn with_effort(mut self, effort: String) -> Self {
+        self.effort = Some(effort);
+        self
+    }
+
+    pub fn with_service_tier(mut self, service_tier: Option<String>) -> Self {
+        self.service_tier = Some(service_tier);
+        self
+    }
+
+    pub fn with_approval_policy(mut self, approval_policy: String) -> Self {
+        self.approval_policy = Some(approval_policy);
+        self
+    }
+
+    pub fn with_collaboration_mode(
+        mut self,
+        collaboration_mode: AppServerCollaborationMode,
+    ) -> Self {
+        self.collaboration_mode = Some(collaboration_mode);
+        self
+    }
+
+    fn has_settings(&self) -> bool {
+        self.model.is_some()
+            || self.permissions.is_some()
+            || self.effort.is_some()
+            || self.service_tier.is_some()
+            || self.approval_policy.is_some()
+            || self.collaboration_mode.is_some()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1598,7 +1630,7 @@ pub enum AppServerPromptEvent {
 
 pub enum AppServerHistoryEvent {
     UserMessage(String),
-    PromptEvent(AppServerPromptEvent),
+    PromptEvent(Box<AppServerPromptEvent>),
 }
 
 pub enum AppServerPromptCompletion {
@@ -2154,11 +2186,13 @@ fn history_events_for_item(turn_id: &str, item: &Value) -> Vec<AppServerHistoryE
             .collect(),
         "agentMessage" => string_field(item, "text")
             .map(AppServerPromptEvent::AgentMessageDelta)
+            .map(Box::new)
             .map(AppServerHistoryEvent::PromptEvent)
             .into_iter()
             .collect(),
         "reasoning" => reasoning_text(item)
             .map(AppServerPromptEvent::AgentThoughtDelta)
+            .map(Box::new)
             .map(AppServerHistoryEvent::PromptEvent)
             .into_iter()
             .collect(),
@@ -2169,6 +2203,7 @@ fn history_events_for_item(turn_id: &str, item: &Value) -> Vec<AppServerHistoryE
                     status: AppServerPlanStatus::Completed,
                 }])
             })
+            .map(Box::new)
             .map(AppServerHistoryEvent::PromptEvent)
             .into_iter()
             .collect(),
@@ -2182,6 +2217,7 @@ fn history_events_for_item(turn_id: &str, item: &Value) -> Vec<AppServerHistoryE
             }
             events
                 .into_iter()
+                .map(Box::new)
                 .map(AppServerHistoryEvent::PromptEvent)
                 .collect()
         }
@@ -2189,6 +2225,7 @@ fn history_events_for_item(turn_id: &str, item: &Value) -> Vec<AppServerHistoryE
         | "imageView" | "sleep" | "contextCompaction" | "enteredReviewMode"
         | "exitedReviewMode" => tool_history_events(item)
             .into_iter()
+            .map(Box::new)
             .map(AppServerHistoryEvent::PromptEvent)
             .collect(),
         _ => Vec::new(),

@@ -35,9 +35,10 @@ use crate::app_server::{
     AppServerMessage, AppServerModel, AppServerPermissionProfile, AppServerPlanStatus,
     AppServerPromptCompletion, AppServerPromptEvent, AppServerSkill, AppServerThread,
     AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
-    decode_thread_archived, decode_thread_goal_cleared, decode_thread_goal_updated,
-    decode_thread_name_updated, decode_thread_settings_updated, decode_thread_status_changed,
-    history_events, history_events_for_turns, is_app_server_method_unavailable,
+    ThreadSettingsUpdateParams, decode_thread_archived, decode_thread_goal_cleared,
+    decode_thread_goal_updated, decode_thread_name_updated, decode_thread_settings_updated,
+    decode_thread_status_changed, history_events, history_events_for_turns,
+    is_app_server_method_unavailable,
 };
 
 const MODEL_CONFIG_ID: &str = "model";
@@ -115,6 +116,17 @@ struct AcpConfigState {
     models: Vec<AppServerModel>,
     collaboration_modes: Vec<AppServerCollaborationModeMask>,
     permission_profiles: Vec<AppServerPermissionProfile>,
+}
+
+#[derive(Debug, Default)]
+struct CurrentConfigSelections {
+    cwd: Option<String>,
+    model: Option<String>,
+    reasoning_effort: Option<String>,
+    service_tier: Option<String>,
+    approval_policy: Option<String>,
+    collaboration_mode: Option<AppServerCollaborationMode>,
+    active_permission_profile: Option<AppServerActivePermissionProfile>,
 }
 
 #[derive(Default)]
@@ -513,7 +525,7 @@ impl CodexAcpAgent {
                     .map_err(acp_internal_error)?;
                 }
                 AppServerHistoryEvent::PromptEvent(event) => {
-                    send_prompt_event(&cx, request.session_id.clone(), event, &mut event_state)
+                    send_prompt_event(&cx, request.session_id.clone(), *event, &mut event_state)
                         .map_err(acp_internal_error)?;
                 }
             }
@@ -522,17 +534,19 @@ impl CodexAcpAgent {
         let mut config_options = self
             .refresh_config_options(
                 &request.session_id,
-                resume_response
-                    .thread
-                    .cwd
-                    .as_ref()
-                    .map(|cwd| cwd.to_string_lossy().into_owned()),
-                resume_response.model,
-                resume_response.reasoning_effort,
-                resume_response.service_tier,
-                resume_response.approval_policy,
-                resume_response.collaboration_mode,
-                resume_response.active_permission_profile,
+                CurrentConfigSelections {
+                    cwd: resume_response
+                        .thread
+                        .cwd
+                        .as_ref()
+                        .map(|cwd| cwd.to_string_lossy().into_owned()),
+                    model: resume_response.model,
+                    reasoning_effort: resume_response.reasoning_effort,
+                    service_tier: resume_response.service_tier,
+                    approval_policy: resume_response.approval_policy,
+                    collaboration_mode: resume_response.collaboration_mode,
+                    active_permission_profile: resume_response.active_permission_profile,
+                },
             )
             .await;
 
@@ -790,14 +804,14 @@ impl CodexAcpAgent {
                 Some(cancel_rx),
                 |event| {
                     handle_app_server_event(
-                        &cx,
+                        cx,
                         session_id.to_owned(),
                         event,
                         &mut event_state,
                         &mut pending_updates,
                     )
                 },
-                |approval| request_permission(&cx, session_id.to_owned(), approval),
+                |approval| request_permission(cx, session_id.to_owned(), approval),
             )
             .await
             .map_err(acp_internal_error);
@@ -1146,17 +1160,19 @@ impl CodexAcpAgent {
         let mut config_options = self
             .refresh_config_options(
                 &session_id,
-                response
-                    .thread
-                    .cwd
-                    .as_ref()
-                    .map(|cwd| cwd.to_string_lossy().into_owned()),
-                response.model,
-                response.reasoning_effort,
-                response.service_tier,
-                response.approval_policy,
-                response.collaboration_mode,
-                response.active_permission_profile,
+                CurrentConfigSelections {
+                    cwd: response
+                        .thread
+                        .cwd
+                        .as_ref()
+                        .map(|cwd| cwd.to_string_lossy().into_owned()),
+                    model: response.model,
+                    reasoning_effort: response.reasoning_effort,
+                    service_tier: response.service_tier,
+                    approval_policy: response.approval_policy,
+                    collaboration_mode: response.collaboration_mode,
+                    active_permission_profile: response.active_permission_profile,
+                },
             )
             .await;
         self.replay_thread_turns(&session_id, &response.thread.turns, cx)?;
@@ -1189,17 +1205,19 @@ impl CodexAcpAgent {
         let mut config_options = self
             .refresh_config_options(
                 &session_id,
-                response
-                    .thread
-                    .cwd
-                    .as_ref()
-                    .map(|cwd| cwd.to_string_lossy().into_owned()),
-                response.model,
-                response.reasoning_effort,
-                response.service_tier,
-                response.approval_policy,
-                response.collaboration_mode,
-                response.active_permission_profile,
+                CurrentConfigSelections {
+                    cwd: response
+                        .thread
+                        .cwd
+                        .as_ref()
+                        .map(|cwd| cwd.to_string_lossy().into_owned()),
+                    model: response.model,
+                    reasoning_effort: response.reasoning_effort,
+                    service_tier: response.service_tier,
+                    approval_policy: response.approval_policy,
+                    collaboration_mode: response.collaboration_mode,
+                    active_permission_profile: response.active_permission_profile,
+                },
             )
             .await;
         if let Some(cwd) = response.thread.cwd {
@@ -1231,7 +1249,7 @@ impl CodexAcpAgent {
                     .map_err(acp_internal_error)?;
                 }
                 AppServerHistoryEvent::PromptEvent(event) => {
-                    send_prompt_event(cx, session_id.clone(), event, &mut event_state)
+                    send_prompt_event(cx, session_id.clone(), *event, &mut event_state)
                         .map_err(acp_internal_error)?;
                 }
             }
@@ -1257,17 +1275,19 @@ impl CodexAcpAgent {
         let mut config_options = self
             .refresh_config_options(
                 &session_id,
-                response
-                    .thread
-                    .cwd
-                    .as_ref()
-                    .map(|cwd| cwd.to_string_lossy().into_owned()),
-                response.model,
-                response.reasoning_effort,
-                response.service_tier,
-                response.approval_policy,
-                response.collaboration_mode,
-                response.active_permission_profile,
+                CurrentConfigSelections {
+                    cwd: response
+                        .thread
+                        .cwd
+                        .as_ref()
+                        .map(|cwd| cwd.to_string_lossy().into_owned()),
+                    model: response.model,
+                    reasoning_effort: response.reasoning_effort,
+                    service_tier: response.service_tier,
+                    approval_policy: response.approval_policy,
+                    collaboration_mode: response.collaboration_mode,
+                    active_permission_profile: response.active_permission_profile,
+                },
             )
             .await;
         if let Some(cwd) = response.thread.cwd {
@@ -1340,15 +1360,17 @@ impl CodexAcpAgent {
 
         self.refresh_config_options(
             session_id,
-            cwd,
-            state.current_model,
-            state.current_reasoning_effort,
-            state
-                .current_service_tier
-                .filter(|tier| tier != DEFAULT_SERVICE_TIER_VALUE),
-            state.current_approval_policy,
-            current_collaboration_mode,
-            active_permission_profile,
+            CurrentConfigSelections {
+                cwd,
+                model: state.current_model,
+                reasoning_effort: state.current_reasoning_effort,
+                service_tier: state
+                    .current_service_tier
+                    .filter(|tier| tier != DEFAULT_SERVICE_TIER_VALUE),
+                approval_policy: state.current_approval_policy,
+                collaboration_mode: current_collaboration_mode,
+                active_permission_profile,
+            },
         )
         .await
     }
@@ -1515,13 +1537,15 @@ impl CodexAcpAgent {
         let config_options = self
             .refresh_config_options(
                 session_id,
-                settings.cwd,
-                settings.model,
-                settings.reasoning_effort,
-                settings.service_tier,
-                settings.approval_policy,
-                settings.collaboration_mode,
-                settings.active_permission_profile,
+                CurrentConfigSelections {
+                    cwd: settings.cwd,
+                    model: settings.model,
+                    reasoning_effort: settings.reasoning_effort,
+                    service_tier: settings.service_tier,
+                    approval_policy: settings.approval_policy,
+                    collaboration_mode: settings.collaboration_mode,
+                    active_permission_profile: settings.active_permission_profile,
+                },
             )
             .await;
         send_session_update(
@@ -1535,13 +1559,7 @@ impl CodexAcpAgent {
     async fn refresh_config_options(
         &self,
         session_id: &SessionId,
-        cwd: Option<String>,
-        current_model: Option<String>,
-        current_reasoning_effort: Option<String>,
-        current_service_tier: Option<String>,
-        current_approval_policy: Option<String>,
-        current_collaboration_mode: Option<AppServerCollaborationMode>,
-        active_permission_profile: Option<AppServerActivePermissionProfile>,
+        current: CurrentConfigSelections,
     ) -> Vec<SessionConfigOption> {
         let (models, collaboration_modes, permission_profiles) = {
             let mut app_server = self.app_server.lock().await;
@@ -1559,7 +1577,7 @@ impl CodexAcpAgent {
                     Vec::new()
                 }
             };
-            let permission_profiles = match app_server.permission_profile_list(cwd).await {
+            let permission_profiles = match app_server.permission_profile_list(current.cwd).await {
                 Ok(response) => response.data,
                 Err(error) => {
                     debug!(%error, "failed to refresh Codex permission profile catalog");
@@ -1569,22 +1587,27 @@ impl CodexAcpAgent {
             (models, collaboration_modes, permission_profiles)
         };
 
-        let selected_model = current_model.or_else(|| default_model_id(&models));
+        let selected_model = current.model.or_else(|| default_model_id(&models));
         let selected_model_catalog = selected_model
             .as_deref()
             .and_then(|model_id| models.iter().find(|model| model.id == model_id));
         let state = AcpConfigState {
             current_model: selected_model,
-            current_reasoning_effort: current_reasoning_effort
+            current_reasoning_effort: current
+                .reasoning_effort
                 .or_else(|| selected_model_catalog.and_then(default_reasoning_effort_id)),
-            current_service_tier: current_service_tier
+            current_service_tier: current
+                .service_tier
                 .or_else(|| Some(DEFAULT_SERVICE_TIER_VALUE.to_owned())),
-            current_approval_policy: current_approval_policy
+            current_approval_policy: current
+                .approval_policy
                 .or_else(|| Some(DEFAULT_APPROVAL_POLICY.to_owned())),
-            current_collaboration_mode: current_collaboration_mode
+            current_collaboration_mode: current
+                .collaboration_mode
                 .map(|mode| mode.mode)
                 .or_else(|| default_collaboration_mode_id(&collaboration_modes)),
-            current_permission_profile: active_permission_profile
+            current_permission_profile: current
+                .active_permission_profile
                 .map(|profile| profile.id)
                 .or_else(|| default_permission_profile_id(&permission_profiles)),
             models,
@@ -1613,13 +1636,7 @@ impl CodexAcpAgent {
             .lock()
             .await
             .thread_settings_update(
-                thread_id.clone(),
-                Some(model.clone()),
-                None,
-                None,
-                None,
-                None,
-                None,
+                ThreadSettingsUpdateParams::new(thread_id.clone()).with_model(model.clone()),
             )
             .await?;
 
@@ -1650,13 +1667,7 @@ impl CodexAcpAgent {
             .lock()
             .await
             .thread_settings_update(
-                thread_id.clone(),
-                None,
-                None,
-                Some(effort.clone()),
-                None,
-                None,
-                None,
+                ThreadSettingsUpdateParams::new(thread_id.clone()).with_effort(effort.clone()),
             )
             .await?;
 
@@ -1684,13 +1695,8 @@ impl CodexAcpAgent {
             .lock()
             .await
             .thread_settings_update(
-                thread_id.clone(),
-                None,
-                None,
-                None,
-                Some(selected.clone()),
-                None,
-                None,
+                ThreadSettingsUpdateParams::new(thread_id.clone())
+                    .with_service_tier(selected.clone()),
             )
             .await?;
 
@@ -1717,13 +1723,8 @@ impl CodexAcpAgent {
             .lock()
             .await
             .thread_settings_update(
-                thread_id.clone(),
-                None,
-                None,
-                None,
-                None,
-                Some(approval_policy.clone()),
-                None,
+                ThreadSettingsUpdateParams::new(thread_id.clone())
+                    .with_approval_policy(approval_policy.clone()),
             )
             .await?;
 
@@ -1753,7 +1754,9 @@ impl CodexAcpAgent {
         self.app_server
             .lock()
             .await
-            .thread_settings_update(thread_id.clone(), None, None, None, None, None, Some(mode))
+            .thread_settings_update(
+                ThreadSettingsUpdateParams::new(thread_id.clone()).with_collaboration_mode(mode),
+            )
             .await?;
 
         state.current_collaboration_mode = Some(collaboration_mode);
@@ -1779,13 +1782,8 @@ impl CodexAcpAgent {
             .lock()
             .await
             .thread_settings_update(
-                thread_id.clone(),
-                None,
-                Some(permission_profile.clone()),
-                None,
-                None,
-                None,
-                None,
+                ThreadSettingsUpdateParams::new(thread_id.clone())
+                    .with_permissions(permission_profile.clone()),
             )
             .await?;
 
@@ -3166,10 +3164,10 @@ fn catalog_entry_label(entry: &serde_json::Value) -> String {
         }
     }
 
-    if let Some(object) = entry.as_object() {
-        if let Some((key, value)) = object.iter().next() {
-            return format!("{key}: {}", compact_json(value));
-        }
+    if let Some(object) = entry.as_object()
+        && let Some((key, value)) = object.iter().next()
+    {
+        return format!("{key}: {}", compact_json(value));
     }
 
     compact_json(entry)
@@ -3180,7 +3178,7 @@ fn status_summary(thread_id: &str, cwd: &str, loaded_threads: &serde_json::Value
         .into_iter()
         .filter_map(serde_json::Value::as_str)
         .collect::<Vec<_>>();
-    let loaded_state = if loaded.iter().any(|loaded_id| *loaded_id == thread_id) {
+    let loaded_state = if loaded.contains(&thread_id) {
         "loaded"
     } else {
         "not reported as loaded"
