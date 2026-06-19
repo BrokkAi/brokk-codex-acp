@@ -12,7 +12,12 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{Mutex, broadcast, oneshot};
 use tokio::task::JoinHandle;
+use tokio::time::{Duration, sleep};
 use tracing::{debug, trace, warn};
+
+const APP_SERVER_OVERLOADED_CODE: i64 = -32001;
+const APP_SERVER_OVERLOAD_MAX_RETRIES: usize = 3;
+const APP_SERVER_OVERLOAD_INITIAL_RETRY_DELAY: Duration = Duration::from_millis(25);
 
 #[derive(Debug, Clone)]
 pub struct AppServerCommand {
@@ -683,30 +688,57 @@ impl AppServerClient {
         P: Serialize,
         R: DeserializeOwned,
     {
-        let response_rx = self.send_request(method, params).await?;
-        let message = response_rx
-            .await
-            .with_context(|| format!("codex app-server exited before responding to `{method}`"))?;
+        let params = serde_json::to_value(params)
+            .with_context(|| format!("failed to encode app-server `{method}` request params"))?;
 
-        if let Some(error) = message.get("error") {
-            warn!(method, %error, "codex app-server request failed");
-            if app_server_method_unavailable(error) {
-                return Err(AppServerMethodUnavailable {
-                    method: method.to_owned(),
-                    error: error.clone(),
+        let mut overload_retry = 0;
+        loop {
+            let response_rx = self.send_request(method, &params).await?;
+            let message = response_rx.await.with_context(|| {
+                format!("codex app-server exited before responding to `{method}`")
+            })?;
+
+            if let Some(error) = message.get("error") {
+                warn!(method, %error, "codex app-server request failed");
+                if app_server_request_overloaded(error)
+                    && overload_retry < APP_SERVER_OVERLOAD_MAX_RETRIES
+                {
+                    overload_retry += 1;
+                    let retry_delay = overload_retry_delay(overload_retry);
+                    warn!(
+                        method,
+                        overload_retry,
+                        ?retry_delay,
+                        "retrying overloaded codex app-server request"
+                    );
+                    sleep(retry_delay).await;
+                    continue;
                 }
-                .into());
+                if app_server_method_unavailable(error) {
+                    return Err(AppServerMethodUnavailable {
+                        method: method.to_owned(),
+                        error: error.clone(),
+                    }
+                    .into());
+                }
+                if app_server_request_overloaded(error) {
+                    return Err(AppServerOverloaded {
+                        method: method.to_owned(),
+                        error: error.clone(),
+                    }
+                    .into());
+                }
+                bail!("codex app-server request `{method}` failed: {error}");
             }
-            bail!("codex app-server request `{method}` failed: {error}");
-        }
 
-        let result = message
-            .get("result")
-            .cloned()
-            .context("app-server response did not include `result`")?;
-        trace!(method, "received codex app-server response");
-        serde_json::from_value(result)
-            .with_context(|| format!("failed to decode app-server `{method}` response"))
+            let result = message
+                .get("result")
+                .cloned()
+                .context("app-server response did not include `result`")?;
+            trace!(method, "received codex app-server response");
+            return serde_json::from_value(result)
+                .with_context(|| format!("failed to decode app-server `{method}` response"));
+        }
     }
 
     pub async fn notify<P>(&mut self, method: &str, params: P) -> anyhow::Result<()>
@@ -809,10 +841,40 @@ impl fmt::Display for AppServerMethodUnavailable {
 
 impl std::error::Error for AppServerMethodUnavailable {}
 
+#[derive(Debug)]
+pub struct AppServerOverloaded {
+    method: String,
+    error: Value,
+}
+
+impl AppServerOverloaded {
+    pub fn method(&self) -> &str {
+        &self.method
+    }
+}
+
+impl fmt::Display for AppServerOverloaded {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "codex app-server request `{}` was rejected as overloaded after retries: {}",
+            self.method, self.error
+        )
+    }
+}
+
+impl std::error::Error for AppServerOverloaded {}
+
 pub fn is_app_server_method_unavailable(error: &anyhow::Error) -> Option<&str> {
     error
         .downcast_ref::<AppServerMethodUnavailable>()
         .map(AppServerMethodUnavailable::method)
+}
+
+pub fn is_app_server_overloaded(error: &anyhow::Error) -> Option<&str> {
+    error
+        .downcast_ref::<AppServerOverloaded>()
+        .map(AppServerOverloaded::method)
 }
 
 fn app_server_method_unavailable(error: &Value) -> bool {
@@ -826,6 +888,14 @@ fn app_server_method_unavailable(error: &Value) -> bool {
     message.contains("method not found")
         || message.contains("unknown method")
         || message.contains("unsupported method")
+}
+
+fn app_server_request_overloaded(error: &Value) -> bool {
+    error.get("code").and_then(Value::as_i64) == Some(APP_SERVER_OVERLOADED_CODE)
+}
+
+fn overload_retry_delay(retry: usize) -> Duration {
+    APP_SERVER_OVERLOAD_INITIAL_RETRY_DELAY * (1 << (retry.saturating_sub(1) as u32))
 }
 
 impl Drop for AppServerClient {

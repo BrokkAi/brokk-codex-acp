@@ -1375,6 +1375,7 @@ Manual flows:
   experimental adapter surfaces.
 - [ ] Add compatibility handling for older Codex versions.
 - [x] Add structured logging around app-server requests and ACP dispatch.
+- [x] Add retry handling for app-server overload backpressure.
 - [ ] Add backpressure for notification bursts.
 - [x] Add shutdown cleanup for app-server child process.
 - [x] Add real app-server smoke tests.

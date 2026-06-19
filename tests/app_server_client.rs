@@ -4,7 +4,7 @@ use brokk_codex_acp::app_server::{
     AppServerApprovalDecision, AppServerClient, AppServerCollaborationMode, AppServerCommand,
     AppServerHistoryEvent, AppServerMessage, AppServerPromptCompletion, AppServerPromptEvent,
     AppServerTurnHistory, AppServerTurnInput, ThreadSettingsUpdateParams, history_events,
-    history_events_for_turns, is_app_server_method_unavailable,
+    history_events_for_turns, is_app_server_method_unavailable, is_app_server_overloaded,
 };
 use tempfile::TempDir;
 use tokio::{sync::oneshot, time};
@@ -577,6 +577,12 @@ async fn app_server_client_maps_error_responses() -> anyhow::Result<()> {
         Some("plugin/list")
     );
 
+    let models = client.model_list().await?;
+    assert_eq!(models.data[0].id, "gpt-5");
+
+    let error = client.thread_loaded_list().await.unwrap_err();
+    assert_eq!(is_app_server_overloaded(&error), Some("thread/loaded/list"));
+
     Ok(())
 }
 
@@ -684,6 +690,8 @@ const ERROR_CODEX_APP_SERVER: &str = r#"#!/usr/bin/env python3
 import json
 import sys
 
+model_list_attempts = 0
+
 def response(message_id, payload):
     print(json.dumps({"id": message_id, **payload}), flush=True)
 
@@ -707,6 +715,32 @@ for line in sys.stdin:
         })
     elif method == "thread/start":
         response(message_id, {"result": {"thread": {}}})
+    elif method == "model/list":
+        model_list_attempts += 1
+        if model_list_attempts == 1:
+            response(message_id, {
+                "error": {
+                    "code": -32001,
+                    "message": "Server overloaded; retry later.",
+                },
+            })
+        else:
+            response(message_id, {
+                "result": {
+                    "data": [{
+                        "id": "gpt-5",
+                        "displayName": "GPT-5",
+                        "description": "Test model",
+                    }],
+                },
+            })
+    elif method == "thread/loaded/list":
+        response(message_id, {
+            "error": {
+                "code": -32001,
+                "message": "Server overloaded; retry later.",
+            },
+        })
     else:
         response(message_id, {"result": {}})
 "#;
