@@ -72,6 +72,7 @@ const SKILL_COMMAND: &str = "skill";
 const SKILL_ROOTS_COMMAND: &str = "skill-roots";
 const STATUS_COMMAND: &str = "status";
 const STOP_COMMAND: &str = "stop";
+type CancelSignals = Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>;
 const APPROVAL_POLICY_OPTIONS: [(&str, &str, &str); 4] = [
     (
         "untrusted",
@@ -98,7 +99,8 @@ const APPROVAL_POLICY_OPTIONS: [(&str, &str, &str); 4] = [
 #[derive(Clone)]
 pub struct CodexAcpAgent {
     app_server: Arc<Mutex<AppServerClient>>,
-    active_prompts: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
+    active_prompts: CancelSignals,
+    outstanding_approvals: CancelSignals,
     skills_by_cwd: Arc<Mutex<HashMap<String, Vec<AppServerSkill>>>>,
     session_cwds: Arc<Mutex<HashMap<String, String>>>,
     config_by_session: Arc<Mutex<HashMap<String, AcpConfigState>>>,
@@ -140,6 +142,7 @@ impl CodexAcpAgent {
         Self {
             app_server: Arc::new(Mutex::new(app_server)),
             active_prompts: Arc::new(Mutex::new(HashMap::new())),
+            outstanding_approvals: Arc::new(Mutex::new(HashMap::new())),
             skills_by_cwd: Arc::new(Mutex::new(HashMap::new())),
             session_cwds: Arc::new(Mutex::new(HashMap::new())),
             config_by_session: Arc::new(Mutex::new(HashMap::new())),
@@ -323,6 +326,14 @@ impl CodexAcpAgent {
             )
             .connect_to(transport)
             .await;
+
+        let cancelled_approvals = cancel_outstanding_approvals(&agent.outstanding_approvals).await;
+        if cancelled_approvals > 0 {
+            debug!(
+                cancelled_approvals,
+                "cancelled outstanding approvals after ACP transport disconnect"
+            );
+        }
 
         let cancelled_prompts = cancel_active_prompts(&agent.active_prompts).await;
         if cancelled_prompts > 0 {
@@ -804,6 +815,7 @@ impl CodexAcpAgent {
 
         let mut event_state = AcpEventState::default();
         let mut pending_updates = PendingAppServerUpdates::default();
+        let outstanding_approvals = self.outstanding_approvals.clone();
         let completion = self
             .app_server
             .lock()
@@ -821,7 +833,14 @@ impl CodexAcpAgent {
                         &mut pending_updates,
                     )
                 },
-                |approval| request_permission(cx, session_id.to_owned(), approval),
+                |approval| {
+                    request_permission(
+                        cx,
+                        session_id.to_owned(),
+                        approval,
+                        outstanding_approvals.clone(),
+                    )
+                },
             )
             .await
             .map_err(acp_internal_error);
@@ -1405,6 +1424,7 @@ impl CodexAcpAgent {
 
         let mut event_state = AcpEventState::default();
         let mut pending_updates = PendingAppServerUpdates::default();
+        let outstanding_approvals = self.outstanding_approvals.clone();
         let completion = match command {
             BuiltinTurnCommand::Compact => {
                 self.app_server
@@ -1422,7 +1442,14 @@ impl CodexAcpAgent {
                                 &mut pending_updates,
                             )
                         },
-                        |approval| request_permission(cx, session_id.clone(), approval),
+                        |approval| {
+                            request_permission(
+                                cx,
+                                session_id.clone(),
+                                approval,
+                                outstanding_approvals.clone(),
+                            )
+                        },
                     )
                     .await
             }
@@ -1442,7 +1469,14 @@ impl CodexAcpAgent {
                                 &mut pending_updates,
                             )
                         },
-                        |approval| request_permission(cx, session_id.clone(), approval),
+                        |approval| {
+                            request_permission(
+                                cx,
+                                session_id.clone(),
+                                approval,
+                                outstanding_approvals.clone(),
+                            )
+                        },
                     )
                     .await
             }
@@ -3016,7 +3050,18 @@ async fn request_permission(
     cx: &ConnectionTo<Client>,
     session_id: SessionId,
     approval: AppServerApprovalRequest,
+    outstanding_approvals: CancelSignals,
 ) -> anyhow::Result<AppServerApprovalDecision> {
+    let approval_key = approval_cancel_key(&session_id, &approval.item_id);
+    let (cancel_tx, cancel_rx) = oneshot::channel();
+    if let Some(previous_cancel) = outstanding_approvals
+        .lock()
+        .await
+        .insert(approval_key.clone(), cancel_tx)
+    {
+        let _ = previous_cancel.send(());
+    }
+
     let mut fields = ToolCallUpdateFields::new();
     fields.title = Some(approval.title);
     fields.kind = Some(tool_kind(approval.kind));
@@ -3036,41 +3081,63 @@ async fn request_permission(
 
     let request = RequestPermissionRequest::new(
         session_id,
-        ToolCallUpdate::new(approval.item_id, fields),
+        ToolCallUpdate::new(approval.item_id.clone(), fields),
         options,
     );
 
-    let response = cx
-        .send_request(request)
-        .block_task()
-        .await
-        .map_err(|error| anyhow::anyhow!("ACP permission request failed: {error}"))?;
+    let decision = tokio::select! {
+        response = cx.send_request(request).block_task() => {
+            let response = match response {
+                Ok(response) => response,
+                Err(error) => {
+                    outstanding_approvals.lock().await.remove(&approval_key);
+                    return Err(anyhow::anyhow!("ACP permission request failed: {error}"));
+                }
+            };
 
-    let decision = match response.outcome {
-        RequestPermissionOutcome::Selected(selected) => {
-            let option_id = selected.option_id.0.as_ref();
-            if known_option_ids.contains(option_id) {
-                approval_decision_from_option_id(option_id)
-            } else {
-                AppServerApprovalDecision::Cancel
+            match response.outcome {
+                RequestPermissionOutcome::Selected(selected) => {
+                    let option_id = selected.option_id.0.as_ref();
+                    if known_option_ids.contains(option_id) {
+                        approval_decision_from_option_id(option_id)
+                    } else {
+                        AppServerApprovalDecision::Cancel
+                    }
+                }
+                RequestPermissionOutcome::Cancelled => AppServerApprovalDecision::Cancel,
+                _ => AppServerApprovalDecision::Cancel,
             }
         }
-        RequestPermissionOutcome::Cancelled => AppServerApprovalDecision::Cancel,
-        _ => AppServerApprovalDecision::Cancel,
+        _ = cancel_rx => AppServerApprovalDecision::Cancel,
     };
 
+    outstanding_approvals.lock().await.remove(&approval_key);
     Ok(decision)
 }
 
-async fn cancel_active_prompts(
-    active_prompts: &Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
-) -> usize {
+fn approval_cancel_key(session_id: &SessionId, item_id: &str) -> String {
+    format!("{}:{item_id}", session_id.0.as_ref())
+}
+
+async fn cancel_active_prompts(active_prompts: &CancelSignals) -> usize {
     let prompts = {
         let mut active_prompts = active_prompts.lock().await;
         active_prompts.drain().collect::<Vec<_>>()
     };
     let count = prompts.len();
     for (_, cancel) in prompts {
+        let _ = cancel.send(());
+    }
+    count
+}
+
+async fn cancel_outstanding_approvals(outstanding_approvals: &CancelSignals) -> usize {
+    let approvals = {
+        let mut outstanding_approvals = outstanding_approvals.lock().await;
+        outstanding_approvals.drain().collect::<Vec<_>>()
+    };
+    let count = approvals.len();
+    for (_, cancel) in approvals {
         let _ = cancel.send(());
     }
     count
@@ -3579,6 +3646,25 @@ mod tests {
 
         assert_eq!(cancelled, 2);
         assert!(active_prompts.lock().await.is_empty());
+        assert!(first_rx.await.is_ok());
+        assert!(second_rx.await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn cancel_outstanding_approvals_drains_and_signals_all_approvals() {
+        let outstanding_approvals = Arc::new(Mutex::new(HashMap::new()));
+        let (first_tx, first_rx) = oneshot::channel();
+        let (second_tx, second_rx) = oneshot::channel();
+        {
+            let mut outstanding_approvals = outstanding_approvals.lock().await;
+            outstanding_approvals.insert("thread-1:item-1".to_owned(), first_tx);
+            outstanding_approvals.insert("thread-2:item-2".to_owned(), second_tx);
+        }
+
+        let cancelled = cancel_outstanding_approvals(&outstanding_approvals).await;
+
+        assert_eq!(cancelled, 2);
+        assert!(outstanding_approvals.lock().await.is_empty());
         assert!(first_rx.await.is_ok());
         assert!(second_rx.await.is_ok());
     }
