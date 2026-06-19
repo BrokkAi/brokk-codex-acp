@@ -1378,7 +1378,8 @@ Manual flows:
 - [ ] Add backpressure for notification bursts.
 - [x] Add shutdown cleanup for app-server child process.
 - [x] Add real app-server smoke tests.
-- [ ] Add connection-disconnect cleanup for active prompts and approvals.
+- [x] Add connection-disconnect cleanup for active prompts.
+- [ ] Add connection-disconnect cleanup for outstanding approvals.
 - [x] Add error mapping tests.
 
 ## Open Questions

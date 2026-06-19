@@ -159,7 +159,7 @@ impl CodexAcpAgent {
     ) -> agent_client_protocol::Result<()> {
         let agent = Arc::new(self);
 
-        Agent
+        let result = Agent
             .builder()
             .name("brokk-codex-acp")
             .on_receive_request(
@@ -322,7 +322,17 @@ impl CodexAcpAgent {
                 on_receive_notification!(),
             )
             .connect_to(transport)
-            .await
+            .await;
+
+        let cancelled_prompts = cancel_active_prompts(&agent.active_prompts).await;
+        if cancelled_prompts > 0 {
+            debug!(
+                cancelled_prompts,
+                "cancelled active prompts after ACP transport disconnect"
+            );
+        }
+
+        result
     }
 
     async fn initialize(&self, request: InitializeRequest) -> Result<InitializeResponse, Error> {
@@ -3052,6 +3062,20 @@ async fn request_permission(
     Ok(decision)
 }
 
+async fn cancel_active_prompts(
+    active_prompts: &Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
+) -> usize {
+    let prompts = {
+        let mut active_prompts = active_prompts.lock().await;
+        active_prompts.drain().collect::<Vec<_>>()
+    };
+    let count = prompts.len();
+    for (_, cancel) in prompts {
+        let _ = cancel.send(());
+    }
+    count
+}
+
 fn permission_option(option: AppServerApprovalOption) -> PermissionOption {
     PermissionOption::new(
         PermissionOptionId::new(option.id()),
@@ -3538,6 +3562,25 @@ mod tests {
             error.data.as_ref().and_then(serde_json::Value::as_str),
             Some("/rename requires a title")
         );
+    }
+
+    #[tokio::test]
+    async fn cancel_active_prompts_drains_and_signals_all_prompts() {
+        let active_prompts = Arc::new(Mutex::new(HashMap::new()));
+        let (first_tx, first_rx) = oneshot::channel();
+        let (second_tx, second_rx) = oneshot::channel();
+        {
+            let mut active_prompts = active_prompts.lock().await;
+            active_prompts.insert("thread-1".to_owned(), first_tx);
+            active_prompts.insert("thread-2".to_owned(), second_tx);
+        }
+
+        let cancelled = cancel_active_prompts(&active_prompts).await;
+
+        assert_eq!(cancelled, 2);
+        assert!(active_prompts.lock().await.is_empty());
+        assert!(first_rx.await.is_ok());
+        assert!(second_rx.await.is_ok());
     }
 
     #[test]
