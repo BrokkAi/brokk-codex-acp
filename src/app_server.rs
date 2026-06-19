@@ -1128,6 +1128,8 @@ pub struct AppServerThread {
     #[serde(default)]
     pub cwd: Option<PathBuf>,
     #[serde(default)]
+    pub turns: Vec<AppServerTurnHistory>,
+    #[serde(default)]
     pub name: Option<String>,
     #[serde(default)]
     pub preview: Option<String>,
@@ -2113,8 +2115,11 @@ fn fallback_interactive_request_response(method: &str, _params: &Value) -> Optio
 }
 
 pub fn history_events(thread: &AppServerThreadHistory) -> Vec<AppServerHistoryEvent> {
-    thread
-        .turns
+    history_events_for_turns(&thread.turns)
+}
+
+pub fn history_events_for_turns(turns: &[AppServerTurnHistory]) -> Vec<AppServerHistoryEvent> {
+    turns
         .iter()
         .flat_map(|turn| {
             turn.items

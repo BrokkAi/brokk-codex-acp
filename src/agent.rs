@@ -37,7 +37,7 @@ use crate::app_server::{
     AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
     decode_thread_archived, decode_thread_goal_cleared, decode_thread_goal_updated,
     decode_thread_name_updated, decode_thread_settings_updated, decode_thread_status_changed,
-    history_events, is_app_server_method_unavailable,
+    history_events, history_events_for_turns, is_app_server_method_unavailable,
 };
 
 const MODEL_CONFIG_ID: &str = "model";
@@ -1159,6 +1159,7 @@ impl CodexAcpAgent {
                 response.active_permission_profile,
             )
             .await;
+        self.replay_thread_turns(&session_id, &response.thread.turns, cx)?;
         if let Some(cwd) = response.thread.cwd {
             let cwd = cwd.to_string_lossy().into_owned();
             self.set_session_cwd(&session_id, cwd.clone()).await;
@@ -1210,6 +1211,32 @@ impl CodexAcpAgent {
         }
 
         Ok((session_id, config_options))
+    }
+
+    fn replay_thread_turns(
+        &self,
+        session_id: &SessionId,
+        turns: &[crate::app_server::AppServerTurnHistory],
+        cx: &ConnectionTo<Client>,
+    ) -> Result<(), Error> {
+        let mut event_state = AcpEventState::default();
+        for event in history_events_for_turns(turns) {
+            match event {
+                AppServerHistoryEvent::UserMessage(text) => {
+                    send_session_update(
+                        cx,
+                        session_id.clone(),
+                        SessionUpdate::UserMessageChunk(text_chunk(text)),
+                    )
+                    .map_err(acp_internal_error)?;
+                }
+                AppServerHistoryEvent::PromptEvent(event) => {
+                    send_prompt_event(cx, session_id.clone(), event, &mut event_state)
+                        .map_err(acp_internal_error)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     async fn resume_thread(
@@ -3478,6 +3505,7 @@ mod tests {
         let session = session_info_from_app_server_thread(AppServerThread {
             id: "thread-1".to_owned(),
             cwd: Some(std::path::PathBuf::from("/repo")),
+            turns: Vec::new(),
             name: None,
             preview: Some("Recent work summary".to_owned()),
             status: Some(serde_json::json!({"type": "notLoaded"})),

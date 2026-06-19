@@ -3,7 +3,8 @@ use std::fs;
 use brokk_codex_acp::app_server::{
     AppServerApprovalDecision, AppServerClient, AppServerCollaborationMode, AppServerCommand,
     AppServerHistoryEvent, AppServerMessage, AppServerPromptCompletion, AppServerPromptEvent,
-    AppServerTurnInput, history_events, is_app_server_method_unavailable,
+    AppServerTurnHistory, AppServerTurnInput, history_events, history_events_for_turns,
+    is_app_server_method_unavailable,
 };
 use tempfile::TempDir;
 use tokio::{sync::oneshot, time};
@@ -36,6 +37,8 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         .thread_fork("thread-1".to_string(), "/repo-fork".to_string())
         .await?;
     assert_eq!(forked.thread.id, "thread-2");
+    let fork_events = history_events_for_thread_turns(&forked.thread.turns);
+    assert_eq!(fork_events, vec!["user:forked hello"]);
 
     let resumed = client
         .thread_resume("thread-1".to_string(), "/repo".to_string())
@@ -630,6 +633,13 @@ fn summarize_history_event(event: AppServerHistoryEvent) -> String {
     }
 }
 
+fn history_events_for_thread_turns(turns: &[AppServerTurnHistory]) -> Vec<String> {
+    history_events_for_turns(turns)
+        .into_iter()
+        .map(summarize_history_event)
+        .collect()
+}
+
 fn summarize_prompt_event(event: AppServerPromptEvent) -> String {
     match event {
         AppServerPromptEvent::AgentMessageDelta(delta) => format!("message:{delta}"),
@@ -808,6 +818,19 @@ for line in sys.stdin:
                 "id": "thread-2",
                 "cwd": params["cwd"],
                 "name": "Forked Thread",
+                "turns": [
+                    {
+                        "id": "turn-fork-history",
+                        "items": [
+                            {
+                                "type": "userMessage",
+                                "content": [
+                                    {"type": "text", "text": "forked hello"},
+                                ],
+                            },
+                        ],
+                    },
+                ],
             },
             "model": "gpt-5-codex",
             "reasoningEffort": "high",

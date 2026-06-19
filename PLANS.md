@@ -1355,7 +1355,7 @@ Manual flows:
 - [x] Map to app-server `thread/fork`.
 - [x] Return the returned thread as a new ACP session.
 - [x] Mark `session/fork` as extension/RFD behavior in code and docs.
-- [ ] Replay fork history when requested.
+- [x] Replay fork history when app-server returns copied turns.
 - [x] Route `/fork` through the same extension code path.
 - [ ] Add tests for persistent and ephemeral forks.
 
