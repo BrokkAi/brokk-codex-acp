@@ -14,7 +14,9 @@ users expect from the Codex CLI and desktop/editor integrations:
 - Shell command output and terminal interaction.
 - Slash commands where they map to real backend capabilities.
 - Skills discovery, invocation, and enable/disable management.
-- Session lifecycle, including resume, list, close, and fork.
+- Session lifecycle, including load, resume, list, close, and delete. Forking is
+  useful for Codex, but is not part of the stable ACP v1 surface in the local
+  upstream snapshot and must be treated as an extension/RFD-backed feature.
 - Models, reasoning effort, permission profiles, MCP, apps, plugins, hooks, and
   other catalog-backed surfaces where ACP can represent them.
 
@@ -114,27 +116,34 @@ The current repository has the first working ACP/app-server bridge in place:
 - ACP protocol handling:
   - `initialize`
   - `session/new`
+  - `session/load` is not implemented yet because `loadSession` is currently
+    advertised as false.
   - `session/resume`
   - `session/list`
   - `session/close`
-  - `session/fork`
+  - `session/fork` through the Rust crate extension, not stable ACP v1.
+  - `session/delete` is not implemented yet.
   - `session/prompt`
   - `session/cancel`
 - App-server mappings:
   - `session/new` -> `thread/start`
+  - `session/load` -> planned `thread/read`/`thread/resume` history replay
   - `session/resume` -> `thread/resume`
   - `session/list` -> `thread/list`
   - `session/close` -> `thread/unsubscribe`
-  - `session/fork` -> `thread/fork`
+  - `session/fork` -> `thread/fork` extension
+  - `session/delete` -> planned `thread/delete`
   - `session/prompt` -> `turn/start`
   - `session/cancel` -> `turn/interrupt`
 - Event translation:
   - `item/agentMessage/delta` -> ACP agent message chunks
   - `turn/completed` -> ACP prompt response completion
 
-This baseline intentionally supports only text and resource-link prompt blocks.
-Tool calls, command output, approval requests, reasoning chunks, history replay,
-skills catalogs, and slash command routing remain planned work.
+This baseline intentionally supports only text and resource-link prompt blocks,
+and advertises stable ACP v1 `sessionCapabilities.list`, `.resume`, and `.close`.
+Tool calls, command output, approval requests, reasoning chunks, `session/load`
+history replay, `session/delete`, skills catalogs, and slash command routing
+remain planned work.
 
 ## Immediate Roadmap
 
@@ -215,9 +224,10 @@ unstructured text.
 
 Tasks:
 
-- Add `skills/list` request support.
-- Refresh skills on `session/new`, `session/resume`, `session/fork`, and
-  `skills/changed`.
+- Add app-server `skills/list` request support in the adapter.
+- Refresh skills on `session/new`, `session/load`, `session/resume`, and
+  `skills/changed`. Also refresh after `session/fork` only when the fork
+  extension is enabled.
 - Cache skills by cwd and invalidate on `skills/changed`.
 - Publish skills through ACP available commands and, where supported, mention
   metadata.
@@ -228,7 +238,9 @@ Tasks:
 
 Acceptance criteria:
 
-- A client can list available skills for a session cwd.
+- A client can discover available skills for a session cwd through ACP-supported
+  projection surfaces, initially `available_commands_update` and config
+  options.
 - `$skill-name do work` reaches Codex with structured skill metadata when
   possible.
 - Disabled skills disappear from the published list after refresh.
@@ -246,16 +258,18 @@ Tasks:
 - Build a command registry with name, aliases, availability, required active
   turn state, and handler.
 - Publish ACP available commands from that registry plus skills.
-- Implement backend commands first: `/new`, `/resume`, `/fork`, `/review`,
+- Implement backend commands first: `/new`, `/resume`, `/review`,
   `/compact`, `/rename`, `/model`, `/permissions`, `/mcp`, `/apps`,
-  `/plugins`, `/hooks`, and `/status`.
+  `/plugins`, `/hooks`, and `/status`. Implement `/fork` only as an extension
+  command backed by Codex `thread/fork`, not as required ACP v1 behavior.
 - Return explicit unsupported-command responses for known UI-only commands that
   ACP cannot represent.
 - Add fake app-server tests for each backend command mapping.
 
 Acceptance criteria:
 
-- `/fork` creates a new ACP session via `thread/fork`.
+- `/fork`, when the extension is enabled, creates a new session via
+  `thread/fork`.
 - `/review` calls `review/start`.
 - `/compact` calls the app-server compaction API when available.
 - `/model` and `/permissions` expose pickers/config updates rather than sending
@@ -270,8 +284,8 @@ hydration.
 Tasks:
 
 - Add `thread/read` support.
-- Decide when `session/resume` should replay history versus only attach to the
-  active app-server thread.
+- Implement `session/load` as the stable ACP v1 history-replay path.
+- Keep `session/resume` as a no-replay reconnect path, as required by ACP v1.
 - Convert stored user messages, agent messages, reasoning, command executions,
   MCP tool calls, and file changes into ACP updates.
 - Add pagination and size limits for large histories.
@@ -281,7 +295,7 @@ Acceptance criteria:
 
 - `session/list` plus `session/resume` can reopen a useful prior conversation.
 - Large histories do not require loading all turns into memory.
-- Fork replay behavior is explicit and tested.
+- Fork replay behavior is explicit and tested for the extension path.
 
 ## Core Session Mapping
 
@@ -291,8 +305,8 @@ ACP sessions should map directly to app-server threads.
 ACP SessionId == app-server thread.id
 ```
 
-That keeps resume, fork, list, archive, and delete behavior simple and avoids a
-second identifier namespace.
+That keeps load, resume, list, close, delete, and Codex extension forking simple
+and avoids a second identifier namespace.
 
 If ACP requires an opaque session ID that cannot be the app-server thread ID,
 store a local mapping:
@@ -304,7 +318,7 @@ ThreadId -> SessionId
 
 The first implementation should avoid that unless required by the ACP crate.
 
-## Required ACP Methods
+## ACP Surface and Capabilities
 
 ### initialize
 
@@ -314,18 +328,27 @@ Return capabilities based on:
 - App-server feature availability.
 - ACP client capabilities.
 
-Advertise at least:
+Stable ACP v1 methods and capabilities:
 
-- `session/new`
-- `session/load`
-- `session/resume`
-- `session/list`
-- `session/close`
-- `session/fork`
-- `prompt`
-- `cancel`
-- session config options
-- available commands
+- `session/new` is baseline and does not have a capability flag.
+- `session/prompt` is baseline and uses `promptCapabilities` for optional
+  content block types. All agents must support text and resource links.
+- `session/cancel` is a notification, not a request-response method.
+- `session/load` is enabled by `agentCapabilities.loadSession`.
+- `session/resume` is enabled by `agentCapabilities.sessionCapabilities.resume`.
+- `session/list` is enabled by `agentCapabilities.sessionCapabilities.list`.
+- `session/close` is enabled by `agentCapabilities.sessionCapabilities.close`.
+- `session/delete` is enabled by `agentCapabilities.sessionCapabilities.delete`.
+- `additionalDirectories` is enabled by
+  `agentCapabilities.sessionCapabilities.additionalDirectories`.
+- session config options are returned in session lifecycle responses and updated
+  through `session/set_config_option`.
+- slash commands are advertised through `available_commands_update` and invoked
+  as regular `session/prompt` text.
+
+Do not advertise `session/fork` as stable ACP v1. Keep Codex forking behind a
+clearly identified extension path until the local upstream docs include it in
+`protocol/v1/schema.md`.
 
 ### session/new
 
@@ -360,12 +383,13 @@ thread/read
 thread/resume
 ```
 
-Use `thread/read` for history replay when the ACP client wants a passive load.
-Use `thread/resume` when the ACP client wants an active thread that can accept
-turns immediately.
+Only implement and advertise this when `loadSession` can be true. ACP v1
+requires `session/load` to replay the entire conversation history as
+`session/update` notifications before sending the `session/load` response. After
+the response, the session must be ready for new prompts.
 
-The adapter should replay stored thread items into ACP updates only when the
-ACP client expects history replay.
+Use `thread/read` or `thread/resume` with history included, depending on the
+app-server API that provides ordered history without losing live subscriptions.
 
 ### session/resume
 
@@ -374,6 +398,9 @@ Map to:
 ```text
 thread/resume
 ```
+
+ACP v1 requires this to reconnect without replaying prior messages. Use it for
+active session attachment, not transcript hydration.
 
 After resume:
 
@@ -396,9 +423,12 @@ Return:
 
 - session ID
 - cwd
+- additional directories when `sessionCapabilities.additionalDirectories` is
+  supported and app-server provides them
 - title/name if available
-- updated time if ACP supports it
-- archived state if ACP supports it
+- updated time if available
+- adapter-specific archived/deleted metadata only under `_meta`; stable
+  `SessionInfo` has no first-class archive field.
 
 ### session/close
 
@@ -408,12 +438,30 @@ Preferred mapping:
 thread/unsubscribe
 ```
 
-If the ACP request means "archive" or "delete", expose those as explicit slash
-commands or future ACP methods, not as close.
+ACP v1 says close applies to an active session: cancel ongoing work as if
+`session/cancel` were called, then free resources. If `thread/unsubscribe` does
+not cancel active work by itself, interrupt the active turn before unsubscribing.
+
+Do not use close for archive or delete.
+
+### session/delete
+
+Map to:
+
+```text
+thread/delete
+```
+
+Only advertise `sessionCapabilities.delete` when app-server can remove the
+session from future `session/list` results. ACP v1 allows soft or hard delete
+and says deleting an unknown or already-deleted session should succeed silently
+where practical.
 
 ### session/fork
 
-Add first-class support.
+Keep as an extension/RFD-backed feature, not a required stable ACP v1 method.
+The local upstream docs include `rfds/session-fork.md`, but
+`protocol/v1/schema.md` does not define `session/fork`.
 
 Map to:
 
@@ -474,11 +522,11 @@ Slash command alias:
 /fork
 ```
 
-Map `/fork` to `session/fork` for the current session. If the command includes
-text, create an ephemeral side fork and immediately start a turn with that text
-only if the client UX wants Codex TUI-like `/side` behavior.
+Map `/fork` to the extension handler for the current session. If the command
+includes text, create an ephemeral side fork and immediately start a turn with
+that text only if the client UX wants Codex TUI-like `/side` behavior.
 
-### prompt
+### session/prompt
 
 For normal user input, map to:
 
@@ -500,7 +548,7 @@ The adapter should choose `turn/steer` only when:
 
 Otherwise start a new turn.
 
-### cancel
+### session/cancel
 
 Map to:
 
@@ -534,15 +582,18 @@ Primary notification families:
 
 Mapping rules:
 
-- Agent message deltas -> ACP agent message chunks.
-- Reasoning deltas -> ACP thought chunks when the client supports them.
-- Command execution begin/end -> ACP tool call and tool call update.
-- Command output deltas -> terminal output if supported, otherwise buffered
-  tool call output.
-- File edits -> ACP edit/tool call updates.
-- Approval requests -> ACP permission requests.
-- Tool user-input requests -> ACP user-input requests if supported, otherwise
-  a clear error message.
+- Agent message deltas -> `session/update` with `agent_message_chunk`.
+- Reasoning deltas -> `session/update` with `agent_thought_chunk`.
+- Command execution begin/end -> `session/update` with `tool_call` and
+  `tool_call_update`, using `ToolKind::execute` where appropriate.
+- Command output deltas -> `tool_call_update` content. Use ACP terminal methods
+  only when Codex delegates execution to the client terminal capability.
+- File edits -> `tool_call`/`tool_call_update` with diff content and locations.
+- Plan changes -> `session/update` with `plan`; each update must include the
+  complete plan entry list because ACP clients replace the plan wholesale.
+- Approval requests -> client `session/request_permission` requests.
+- Tool user-input requests -> defer until ACP has a stable elicitation surface,
+  or expose a clear error message.
 - Turn completion -> ACP prompt response stop reason.
 
 The adapter should keep a per-session active item map:
@@ -557,19 +608,23 @@ app-server item id -> ACP tool call id / message stream id
 | --- | --- | --- |
 | `turn/started` | internal active-turn state | Store `turn.id`; do not need a visible update by default. |
 | `turn/completed` | `PromptResponse.stopReason` | Already handled for the active prompt path. |
-| `item/agentMessage/delta` | `AgentMessageChunk` | Already handled for the active prompt path. |
-| `item/reasoning/delta` | `AgentThoughtChunk` | Gate on client support where needed. |
-| `item/started` | `ToolCall` or internal item state | Depends on item subtype. |
-| `item/completed` | `ToolCallUpdate` | Mark final status and attach final content. |
-| `item/commandExecution/outputDelta` | `ToolCallUpdate` with terminal/output content | Preserve stdout/stderr boundaries if present. |
-| `turn/diff/updated` | `ToolCallUpdate` or diff content | Useful for file edit previews. |
-| `turn/plan/updated` | `Plan` or `PlanUpdate` | Use stable `Plan` first; use unstable operations only deliberately. |
+| `item/agentMessage/delta` | `agent_message_chunk` | Already handled for the active prompt path. |
+| `item/reasoning/delta` | `agent_thought_chunk` | Stable ACP v1 supports thought chunks. |
+| `item/started` | `tool_call` or internal item state | Depends on item subtype. |
+| `item/completed` | `tool_call_update` | Mark final status and attach final content. |
+| `item/commandExecution/outputDelta` | `tool_call_update` content | Preserve stdout/stderr boundaries if present. |
+| `turn/diff/updated` | `tool_call_update` with diff content | Useful for file edit previews. |
+| `turn/plan/updated` | `plan` | Send the full plan every time. |
 | `permissions/requestApproval` | `session/request_permission` | Must block app-server until the ACP client answers. |
-| `skills/changed` | `AvailableCommandsUpdate` and `ConfigOptionUpdate` | Re-run `skills/list` first. |
-| `model/rerouted` | `SessionInfoUpdate` or warning chunk | Prefer non-invasive visibility. |
+| `skills/changed` | `available_commands_update` and `config_option_update` | Re-run app-server `skills/list` first. |
+| `model/rerouted` | `session_info_update` or warning chunk | Prefer non-invasive visibility. |
 | `warning` / `error` | agent message chunk or tool-call error | Keep user-actionable text. |
 
 ## Slash Commands
+
+ACP v1 has no separate slash-command execution method. Commands are advertised
+with `available_commands_update`, then invoked as regular `session/prompt` text
+whose first text block starts with `/`.
 
 Commands should be divided into three categories.
 
@@ -585,7 +640,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/rename <name>` | `thread/name/set` |
 | `/new` | `thread/start` |
 | `/resume <id-or-name>` | `thread/resume` after lookup |
-| `/fork` | `thread/fork` |
+| `/fork` | `thread/fork` extension only |
 | `/archive` | `thread/archive` |
 | `/delete` | `thread/delete` |
 | `/goal ...` | `thread/goal/*` |
@@ -640,6 +695,9 @@ enum CommandAvailability {
 Do not hardcode a separate available-commands list; derive it from the registry
 plus the current session state and app-server capability probes.
 
+Published command names should omit the leading `/`, matching ACP
+`AvailableCommand.name` examples.
+
 ### Client/UI Commands
 
 These should be advertised only when the ACP client can represent them:
@@ -671,9 +729,15 @@ has a real mapping:
 
 Skills are a first-class requirement.
 
+ACP v1 does not define `skills/list` as an ACP method. `skills/list` below is an
+app-server API used by the adapter, and the ACP-facing projection should be
+available commands, config options, or future mention support depending on what
+clients can render.
+
 ### Discovery
 
-On session start, resume, fork, and `skills/changed`, call:
+On `session/new`, `session/load`, `session/resume`, extension `session/fork`,
+and `skills/changed`, call:
 
 ```text
 skills/list
@@ -807,6 +871,12 @@ Recommended options:
 - collaboration mode
 - enabled skills
 
+ACP v1 config options currently support `select` controls. Use semantic
+categories `model`, `mode`, and `thought_level` where they fit, but do not rely
+on categories for correctness. Prefer config options over dedicated session
+modes; ACP marks `session/set_mode` and `modes` as compatibility surfaces that
+will be removed in a future protocol version.
+
 Mappings:
 
 - `model/list` -> model picker
@@ -833,8 +903,9 @@ When app-server emits a command approval request:
 
 - translate it to an ACP permission request
 - include command, cwd, reason, affected paths, and suggested actions
-- preserve any "approve for session" or "remember this pattern" options when
-  ACP can represent them
+- preserve any "approve for session" or "remember this pattern" options by
+  mapping them to ACP permission options with stable `optionId`s and the closest
+  `kind` (`allow_once`, `allow_always`, `reject_once`, or `reject_always`)
 - send the user's decision back to app-server through the matching response
   method
 
@@ -847,24 +918,25 @@ Codex config, app-server thread settings, or explicit ACP session options.
 - Store pending app-server request IDs by ACP permission request ID.
 - Include command argv, cwd, sandbox profile, affected paths, and any app-server
   rationale.
-- Map ACP `Allowed` to the app-server approval response shape.
-- Map ACP `Rejected` and `Cancelled` distinctly.
+- Map ACP `selected` outcomes by `optionId` to the app-server approval response
+  shape.
+- Map ACP `cancelled` distinctly.
 - When the ACP client disconnects, reject outstanding approval requests with a
   cancellation outcome.
 
 ## History and Replay
 
-For session load/resume/fork, decide whether to replay history based on the ACP
-method and client capabilities.
+For session load/resume/fork, replay history according to the stable ACP method
+semantics first, then extension semantics.
 
 Rules:
 
-- `session/resume` should usually return an active session without replaying
-  every event unless the client requests transcript hydration.
-- `session/load` may replay stored items for clients that need to render an
-  existing transcript.
-- `session/fork` should replay returned fork history unless `excludeTurns` is
-  set.
+- `session/load` must replay stored conversation entries as `session/update`
+  notifications before responding.
+- `session/resume` must return an active session without replaying prior
+  messages.
+- `session/fork` extension behavior should replay returned fork history unless
+  `excludeTurns` is set.
 - Large histories should use app-server pagination when available instead of
   loading all items into memory.
 
@@ -880,7 +952,7 @@ Use explicit, user-actionable errors:
 - feature unavailable in current Codex version
 - auth required
 - invalid permission profile
-- fork source session not loaded or not found
+- fork source session not loaded or not found when the fork extension is enabled
 
 Prefer graceful degradation:
 
@@ -896,7 +968,8 @@ Prefer graceful degradation:
 - App-server notification to ACP update mapping.
 - Slash command parser and router.
 - Skills list cache invalidation.
-- `session/fork` request and response mapping.
+- `session/delete` request and response mapping.
+- `session/fork` extension request and response mapping.
 - Approval option mapping.
 - Prompt cancellation state cleanup.
 - Active item mapping for command execution and MCP calls.
@@ -914,7 +987,8 @@ Scenarios:
 - approval request and approval response
 - skills list and changed notification
 - enable/disable skill
-- fork session and prompt in fork `[partial: fork mapping covered]`
+- delete listed session
+- fork session and prompt in fork extension `[partial: fork mapping covered]`
 - cancel active turn `[done at app-server client level]`
 
 Then add smoke tests against a real local `codex app-server --stdio` when the
@@ -933,7 +1007,8 @@ Manual flows:
 - run `/compact`
 - invoke `$skill-name`
 - disable and re-enable a skill
-- fork session and continue independently
+- delete a listed session
+- fork session and continue independently when the extension is enabled
 - list and resume sessions
 - trigger a command approval
 
@@ -947,10 +1022,12 @@ Manual flows:
 - [x] Implement ACP initialize.
 - [x] Implement `session/new`, `session/resume`, `session/list`, and
   `session/close`.
-- [x] Implement `session/fork` via `thread/fork`.
+- [x] Implement `session/fork` via `thread/fork` extension.
 - [x] Implement basic text `prompt` via `turn/start`.
 - [x] Add fake app-server integration tests for thread and prompt mappings.
 - [x] Implement cancellation via `turn/interrupt`.
+- [ ] Implement stable `session/load` and advertise `loadSession`.
+- [ ] Implement stable `session/delete` and advertise `sessionCapabilities.delete`.
 
 ### Phase 2: Event Translation
 
@@ -999,14 +1076,20 @@ Manual flows:
 - [ ] Support `skills/extraRoots/set`.
 - [ ] Add fake app-server tests for discovery, invocation, and invalidation.
 
-### Phase 5: session/fork
+### Phase 5: Session Delete and Fork Extension
 
-- [x] Add ACP `session/fork` handler.
+- [ ] Add stable ACP `session/delete` handler.
+- [ ] Map `session/delete` to app-server session removal.
+- [ ] Hide `sessionCapabilities.delete` until the mapping removes sessions from
+  future `session/list` results.
+
+- [x] Add `session/fork` extension handler exposed by the current Rust crate.
 - [x] Map to app-server `thread/fork`.
 - [x] Return the returned thread as a new ACP session.
-- Replay fork history when requested.
-- Route `/fork` through the same code path.
-- Add tests for persistent and ephemeral forks.
+- [ ] Mark `session/fork` as extension/RFD behavior in code and docs.
+- [ ] Replay fork history when requested.
+- [ ] Route `/fork` through the same extension code path.
+- [ ] Add tests for persistent and ephemeral forks.
 
 ### Phase 6: Catalogs and Advanced Surfaces
 
@@ -1031,7 +1114,9 @@ Manual flows:
 
 ## Open Questions
 
-- Should `session/close` mean unsubscribe, archive, or no-op for Codex?
+- Does `thread/unsubscribe` fully satisfy ACP `session/close`, including
+  cancelling ongoing work and freeing active resources, or must the adapter
+  explicitly interrupt first?
 - Should `/fork <prompt>` create a persistent fork, or should that behavior be
   reserved for `/side <prompt>` as an ephemeral fork?
 - How should skills appear in ACP clients that do not support mention
@@ -1052,7 +1137,7 @@ Keep PRs small enough to review against fake app-server tests.
 
 2. Command execution streaming:
    - decode command execution start/output/completion notifications
-   - map them to ACP `ToolCall` and `ToolCallUpdate`
+   - map them to ACP `tool_call` and `tool_call_update` session updates
    - add fake app-server tests
 
 3. Skills discovery:
@@ -1062,7 +1147,7 @@ Keep PRs small enough to review against fake app-server tests.
 
 4. Slash command parser and `/fork`:
    - add parser and registry
-   - route `/fork` through existing session fork logic
+   - route `/fork` through existing fork extension logic
    - publish `/fork` as an ACP available command
 
 5. Config options:
