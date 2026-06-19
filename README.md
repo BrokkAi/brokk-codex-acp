@@ -30,15 +30,46 @@ The project currently includes:
 - A CLI with `probe` and `serve` commands.
 - A JSON-RPC client that can spawn and initialize `codex app-server --stdio`.
 - An ACP serving loop backed by `agent-client-protocol`.
-- ACP handlers for `initialize`, `session/new`, `session/resume`,
-  `session/list`, `session/close`, `session/fork`, `session/prompt`, and
-  `session/cancel`.
+- ACP handlers for `initialize`, `session/new`, `session/load`,
+  `session/resume`, `session/list`, `session/close`, `session/delete`,
+  `session/fork`, `session/prompt`, and `session/cancel`.
+- `session/list` preserves app-server thread preview, status, recency, model
+  provider, agent, and parent-thread metadata under `_meta.brokk_codex_acp`.
 - Initial prompt streaming from Codex `item/agentMessage/delta` notifications to
   ACP agent message chunks.
+- Initial turn event projection for reasoning chunks, command/file/tool item
+  lifecycles, command output, plan updates, turn diffs, and usage updates.
+- Initial skills discovery through app-server `skills/list`, projected as ACP
+  available commands for enabled skills alongside adapter-owned commands.
+- Structured `$skill-name` and `/skill skill-name` invocation when app-server
+  returns a skill path, with plain-text fallback otherwise.
+- App-server `skills/config/write` mapping for skill enable/disable state.
+- Initial slash-command routing for `/rename <title>`, `/archive`, `/goal`,
+  `/compact`, `/review`, `/new`, `/resume`, `/fork`, `/apps`, `/plugins`,
+  `/mcp`, `/hooks`, `/model`, `/permissions`, and `/status`, mapped to
+  app-server thread, review, catalog, and config endpoints with ACP session
+  update, turn-stream, config-option, or agent-message summary projection as
+  appropriate.
+- Initial command, file-change, and permission-profile approval routing from
+  app-server approval requests to ACP `session/request_permission`, with the
+  selected decision sent back to app-server in the response shape each
+  app-server request expects.
+- Initial ACP session config options for `model`, `reasoning_effort`,
+  `service_tier`, `approval_policy`, `collaboration_mode`, and
+  `permission_profile`, populated from app-server `model/list`,
+  `collaborationMode/list`, and `permissionProfile/list`, with writes routed
+  through `thread/settings/update`.
+- Background app-server response/notification dispatch, including refresh of
+  skill commands, session titles, and session config options when
+  `skills/changed`, `thread/name/updated`, `thread/archived`,
+  `thread/status/changed`, `thread/goal/updated`, `thread/goal/cleared`, or
+  `thread/settings/updated` notifications are observed.
 
-The adapter is not complete yet. Tool calls, approvals, command output,
-reasoning chunks, slash command routing, skills catalogs, and history replay are
-still planned work.
+The adapter is not complete yet. Rich ACP UI for MCP elicitations, dynamic tool
+callbacks, and user-input requests, exact terminal embedding, remaining slash
+command routing, plugin install/read actions, direct MCP resource/tool UI,
+fine-grained partial permission grants, skill enable/disable config options,
+and paginated/full-fidelity history replay are still planned work.
 
 ## Usage
 

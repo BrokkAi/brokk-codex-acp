@@ -17,7 +17,7 @@ name = "brokk_codex_acp"
 path = "src/lib.rs"
 
 [dependencies]
-agent-client-protocol = { version = "0.13.1", features = ["unstable_session_fork"] }
+agent-client-protocol = { version = "0.13.1", features = ["unstable_session_delete", "unstable_session_fork", "unstable_session_usage"] }
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }

@@ -116,34 +116,126 @@ The current repository has the first working ACP/app-server bridge in place:
 - ACP protocol handling:
   - `initialize`
   - `session/new`
-  - `session/load` is not implemented yet because `loadSession` is currently
-    advertised as false.
+  - `session/load` with initial history replay through `thread/read` followed
+    by `thread/resume`.
   - `session/resume`
-  - `session/list`
+  - `session/list`, including preservation of app-server thread preview,
+    status, recency, model-provider, agent, and parent-thread metadata under
+    `_meta.brokk_codex_acp`.
   - `session/close`
   - `session/fork` through the Rust crate extension, not stable ACP v1.
-  - `session/delete` is not implemented yet.
+  - `session/delete` through the Rust crate's `unstable_session_delete` feature,
+    matching the local stable ACP v1 documentation surface.
+  - `session/set_config_option` for model, reasoning-effort, service-tier,
+    approval-policy, collaboration-mode, and permission-profile selectors.
   - `session/prompt`
   - `session/cancel`
 - App-server mappings:
   - `session/new` -> `thread/start`
-  - `session/load` -> planned `thread/read`/`thread/resume` history replay
+  - `session/load` -> `thread/read`/`thread/resume` history replay
   - `session/resume` -> `thread/resume`
   - `session/list` -> `thread/list`
   - `session/close` -> `thread/unsubscribe`
   - `session/fork` -> `thread/fork` extension
-  - `session/delete` -> planned `thread/delete`
+  - `session/delete` -> `thread/delete`
+  - `session/set_config_option(model)` -> `thread/settings/update.model`
+  - `session/set_config_option(reasoning_effort)` ->
+    `thread/settings/update.effort`
+  - `session/set_config_option(service_tier)` ->
+    `thread/settings/update.serviceTier`
+  - `session/set_config_option(approval_policy)` ->
+    `thread/settings/update.approvalPolicy`
+  - `session/set_config_option(collaboration_mode)` ->
+    `thread/settings/update.collaborationMode`
+  - `session/set_config_option(permission_profile)` ->
+    `thread/settings/update.permissions`
   - `session/prompt` -> `turn/start`
   - `session/cancel` -> `turn/interrupt`
+- Catalog/config projection:
+  - `model/list` -> ACP `model`, `reasoning_effort`, and `service_tier`
+    session config options.
+  - `permissionProfile/list` -> ACP `permission_profile` session config
+    option.
+  - `collaborationMode/list` -> ACP `collaboration_mode` session config option.
+  - `thread/start`, `thread/resume`, and `thread/fork` response settings seed
+    current config option values where app-server provides them.
 - Event translation:
   - `item/agentMessage/delta` -> ACP agent message chunks
+  - `item/reasoning/summaryTextDelta` and `item/reasoning/textDelta` -> ACP
+    thought chunks
+  - `item/started` and `item/completed` for command, file-change, MCP,
+    collaboration, web-search, review, sleep, and compaction items -> ACP tool
+    call lifecycle updates
+  - `item/commandExecution/outputDelta` -> incremental ACP tool call content
+  - `turn/diff/updated` -> ACP edit tool call content containing the current
+    unified diff snapshot
+  - `turn/plan/updated` -> ACP plan updates
+  - `thread/tokenUsage/updated` -> ACP usage updates through the unstable
+    `unstable_session_usage` crate feature
   - `turn/completed` -> ACP prompt response completion
+- Approval routing:
+  - `item/commandExecution/requestApproval` and
+    `item/fileChange/requestApproval` -> ACP `session/request_permission`
+    requests, then app-server JSON-RPC responses with the selected decision.
+  - `item/permissions/requestApproval` -> ACP `session/request_permission`,
+    then an app-server JSON-RPC response containing `permissions` and `scope`.
+  - The adapter maps `accept`, `acceptForSession`, `decline`, and `cancel` to
+    ACP permission options and preserves app-server's blocking request
+    semantics while awaiting the ACP client.
+- Slash commands:
+  - built-in `archive`, `apps`, `compact`, `fork`, `goal`, `hooks`, `mcp`,
+    `model`, `new`, `permissions`, `plugins`, `rename`, `resume`, `review`,
+    and `status` commands are published through ACP `available_commands_update`
+    alongside enabled skills.
+  - `/archive` is intercepted by the adapter, mapped to `thread/archive`, and
+    reflected to ACP clients through `session_info_update._meta`.
+  - `/compact` is intercepted by the adapter, mapped to
+    `thread/compact/start`, and streamed through the normal ACP turn update
+    projection. Because app-server returns `{}` for the start request, the
+    adapter waits for `turn/started` to learn the active turn id.
+  - `/fork` is intercepted by the adapter, mapped to `thread/fork`, initializes
+    adapter state for the returned thread/session id, and reports the new
+    session id as an ACP agent-message summary.
+  - `/new` is intercepted by the adapter, mapped to `thread/start` in the
+    current session cwd, initializes adapter state for the returned
+    thread/session id, and reports the new session id as an ACP agent-message
+    summary.
+  - `/goal`, `/goal get`, `/goal clear`, and `/goal <objective>` are
+    intercepted by the adapter, mapped to `thread/goal/get`,
+    `thread/goal/clear`, and `thread/goal/set`, then reflected through
+    `session_info_update._meta`.
+  - `/rename <title>` is intercepted by the adapter, mapped to
+    `thread/name/set`, and reflected to ACP clients through
+    `session_info_update`.
+  - `/resume <id-or-name>` is intercepted by the adapter, resolves an exact
+    thread id/name/preview match from `thread/list` for the current cwd when
+    possible, maps to `thread/resume`, initializes adapter state for the resumed
+    thread/session id, and reports the resumed session id as an ACP
+    agent-message summary.
+  - `/review` is intercepted by the adapter, mapped to `review/start`, and
+    streamed through the normal ACP turn update projection.
+  - `/apps`, `/plugins`, `/mcp`, `/hooks`, and `/status` are intercepted by the
+    adapter, mapped to app-server catalog/status endpoints, and reflected as
+    short ACP agent-message summaries.
+  - `/model` and `/permissions` are intercepted by the adapter, refresh
+    app-server-backed config catalogs, publish ACP `config_option_update`, and
+    send a short ACP agent-message summary.
+  - `thread/archived` app-server notifications are projected to ACP
+    `session_info_update._meta`.
+  - `thread/name/updated` app-server notifications are projected to ACP
+    `session_info_update`.
+  - `thread/status/changed` app-server notifications are projected to ACP
+    `session_info_update._meta`, preserving the full app-server status payload.
+  - `thread/goal/updated` and `thread/goal/cleared` app-server notifications are
+    projected to ACP `session_info_update._meta`.
 
-This baseline intentionally supports only text and resource-link prompt blocks,
-and advertises stable ACP v1 `sessionCapabilities.list`, `.resume`, and `.close`.
-Tool calls, command output, approval requests, reasoning chunks, `session/load`
-history replay, `session/delete`, skills catalogs, and slash command routing
-remain planned work.
+This baseline intentionally supports only text and resource-link prompt blocks
+as input, and advertises stable ACP v1 `sessionCapabilities.list`, `.resume`,
+`.close`, and `.delete`. It also advertises the Rust crate's unstable session
+fork extension. Partial permission grants, rich ACP UI for MCP elicitation,
+dynamic tool callbacks, terminal embedding, exact per-tool diff objects,
+paginated/full-fidelity history replay, ACP-facing skills configuration, and
+remaining slash command routing remain planned work.
 
 ## Immediate Roadmap
 
@@ -200,22 +292,44 @@ would see.
 
 Tasks:
 
-- Add a typed app-server notification dispatcher instead of handling only
+- [x] Add a typed app-server notification dispatcher instead of handling only
   prompt-local `item/agentMessage/delta` and `turn/completed`.
-- Track active turns by `threadId` and `turnId`.
-- Track active items by app-server `itemId`.
-- Map command execution, tool calls, reasoning, file changes, and usage updates
+- [x] Track the active prompt turn by `threadId` and `turnId`.
+- [x] Track active tool output by app-server `itemId` during a prompt.
+- [x] Map command execution, tool calls, reasoning, file changes, and usage updates
   into ACP updates.
-- Add tests that feed fake app-server notifications and assert ACP output.
+- [x] Add tests that feed fake app-server notifications and assert adapter
+  events.
+- [x] Decode `skills/changed` and `thread/settings/updated` notifications
+  observed during an active prompt.
+- [x] Dispatch app-server stdout in a background reader so responses and
+  notifications are routed independently of active requests.
+- [ ] Add end-to-end ACP client tests that assert serialized `session/update`
+  notifications.
+- [x] Add approval request bridging for command and file-change approvals.
+- [x] Add approval request bridging for permission-profile requests, granting
+  the full requested profile for a turn/session or rejecting it.
+- [x] Add non-blocking fallback responses for MCP elicitation, dynamic tool
+  requests, and `request_user_input` when no ACP-compatible UI is available.
+- [ ] Add rich ACP UI bridging for MCP elicitation and dynamic tool requests.
+- [ ] Add terminal embedding once ACP terminal creation is wired.
 
 Acceptance criteria:
 
-- Agent text streams as it does today.
-- Reasoning deltas appear as ACP thought chunks when supported.
-- Shell commands appear as ACP tool calls.
-- Shell output streams incrementally.
-- File changes appear as tool call updates or diff content.
-- Prompt completion returns the correct `StopReason`.
+- [x] Agent text streams as it does today.
+- [x] Reasoning deltas appear as ACP thought chunks when supported.
+- [x] Shell commands appear as ACP tool calls.
+- [x] Shell output streams incrementally.
+- [x] File changes appear as tool call updates or diff content.
+- [x] Prompt completion returns the correct `StopReason`.
+- [x] Command and file-change approval requests route through ACP
+  `session/request_permission` instead of blocking or being ignored.
+- [x] Permission-profile approvals route through ACP `session/request_permission`
+  and respond to app-server with `permissions`/`scope`.
+- [x] MCP elicitation, dynamic tool, and `request_user_input` requests receive
+  explicit cancel/failure fallback responses instead of blocking app-server.
+- [ ] MCP elicitation and dynamic tool requests route through a rich ACP
+  request surface when one is available.
 
 ### Milestone B: Skills Catalog and Invocation
 
@@ -224,27 +338,28 @@ unstructured text.
 
 Tasks:
 
-- Add app-server `skills/list` request support in the adapter.
-- Refresh skills on `session/new`, `session/load`, `session/resume`, and
-  `skills/changed`. Also refresh after `session/fork` only when the fork
-  extension is enabled.
-- Cache skills by cwd and invalidate on `skills/changed`.
-- Publish skills through ACP available commands and, where supported, mention
-  metadata.
-- Convert `$skill-name` and `/skill skill-name` input into app-server
+- [x] Add app-server `skills/list` request support in the adapter.
+- [x] Refresh skills on `session/new`, `session/load`, `session/resume`, and
+  extension `session/fork`.
+- [x] Refresh skills on `skills/changed` notifications.
+- [x] Cache skills by cwd.
+- [x] Invalidate the skill cache on `skills/changed` notifications.
+- [x] Publish enabled skills through ACP available commands.
+- [ ] Publish skills through ACP mention metadata where supported.
+- [x] Convert `$skill-name` and `/skill skill-name` input into app-server
   `UserInput::Skill` when the skill path is known.
-- Fall back to plain text when a skill cannot be resolved.
-- Add `skills/config/write` support for enable/disable.
+- [x] Fall back to plain text when a skill cannot be resolved.
+- [x] Add app-server `skills/config/write` request support.
+- [ ] Expose skill enable/disable through ACP session config options.
 
 Acceptance criteria:
 
-- A client can discover available skills for a session cwd through ACP-supported
-  projection surfaces, initially `available_commands_update` and config
-  options.
-- `$skill-name do work` reaches Codex with structured skill metadata when
+- [x] A client can discover available skills for a session cwd through an
+  ACP-supported projection surface, initially `available_commands_update`.
+- [x] `$skill-name do work` reaches Codex with structured skill metadata when
   possible.
-- Disabled skills disappear from the published list after refresh.
-- Unknown skills produce a clear error or clean text fallback.
+- [x] Disabled skills disappear from the published list after refresh.
+- [x] Unknown skills produce a clear error or clean text fallback.
 
 ### Milestone C: Slash Command Router
 
@@ -253,28 +368,59 @@ client behavior, not model prompts.
 
 Tasks:
 
-- Add a parser that only treats a leading slash at the start of the user message
-  as a command.
-- Build a command registry with name, aliases, availability, required active
-  turn state, and handler.
-- Publish ACP available commands from that registry plus skills.
+- [x] Add an initial parser for leading slash commands, currently `/archive`,
+  `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/mcp`, `/model`,
+  `/new`, `/permissions`, `/plugins`, `/rename`, `/resume`, `/review`, and
+  `/status`.
+- [ ] Build the full command registry with aliases, availability, required
+  active turn state, and handler metadata.
+- [x] Publish adapter-owned ACP available commands plus skills.
 - Implement backend commands first: `/new`, `/resume`, `/review`,
   `/compact`, `/rename`, `/model`, `/permissions`, `/mcp`, `/apps`,
-  `/plugins`, `/hooks`, and `/status`. Implement `/fork` only as an extension
-  command backed by Codex `thread/fork`, not as required ACP v1 behavior.
+  `/plugins`, `/hooks`, and `/status`. Implemented so far: `/archive`,
+  `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/mcp`, `/model`,
+  `/new`, `/permissions`, `/plugins`, `/rename`, `/resume`, `/review`, and
+  `/status`. `/fork` is implemented only as an extension command backed by Codex
+  `thread/fork`, not as required ACP v1 behavior.
 - Return explicit unsupported-command responses for known UI-only commands that
   ACP cannot represent.
-- Add fake app-server tests for each backend command mapping.
+- [x] Add fake app-server coverage for `thread/archive`,
+  `thread/compact/start`, `thread/goal/*`, `thread/name/set`, and
+  `review/start` plus unit coverage for `/archive`, `/compact`, `/goal`,
+  `/rename`, and `/review` parsing/advertisement.
+- [x] Add fake app-server coverage for `app/list`, `plugin/list`,
+  `plugin/installed`, `mcpServerStatus/list`, `hooks/list`, and
+  `thread/loaded/list` plus unit coverage for `/apps`, `/plugins`, `/mcp`,
+  `/hooks`, and `/status` parsing/advertisement.
+- [x] Add unit coverage for `/model` and `/permissions` parsing/advertisement;
+  both reuse the existing fake app-server catalog coverage for model and
+  permission-profile config option refresh.
+- [x] Add unit coverage for `/fork` parsing/advertisement; it reuses the
+  existing fake app-server `thread/fork` coverage for the backend call.
+- [x] Add unit coverage for `/new` parsing/advertisement; it reuses the
+  existing fake app-server `thread/start` coverage for the backend call.
+- [x] Add fake app-server coverage for `thread/resume` plus unit coverage for
+  `/resume` parsing/advertisement.
+- [ ] Add serialized ACP coverage proving `/rename` emits
+  `session_info_update` and does not call `turn/start`.
+- [ ] Add serialized ACP coverage proving `/archive` emits
+  `session_info_update._meta` and does not call `turn/start`.
+- [ ] Add serialized ACP coverage proving `/goal` emits
+  `session_info_update._meta` and does not call `turn/start`.
+- [ ] Add fake app-server tests for each remaining backend command mapping.
 
 Acceptance criteria:
 
-- `/fork`, when the extension is enabled, creates a new session via
+- [x] `/fork`, when the extension is enabled, creates a new session via
   `thread/fork`.
-- `/review` calls `review/start`.
-- `/compact` calls the app-server compaction API when available.
-- `/model` and `/permissions` expose pickers/config updates rather than sending
-  text to the model.
-- Unknown commands never silently become prompts unless explicitly configured.
+- [x] `/review` calls `review/start`.
+- [x] `/compact` calls the app-server compaction API when available.
+- [x] `/model` and `/permissions` expose pickers/config updates rather than
+  sending text to the model.
+- [x] `/apps`, `/plugins`, `/mcp`, `/hooks`, and `/status` call app-server
+  catalog/status endpoints instead of becoming model prompts.
+- [ ] Unknown commands never silently become prompts unless explicitly
+  configured.
 
 ### Milestone D: Session History and Replay
 
@@ -283,19 +429,23 @@ hydration.
 
 Tasks:
 
-- Add `thread/read` support.
-- Implement `session/load` as the stable ACP v1 history-replay path.
-- Keep `session/resume` as a no-replay reconnect path, as required by ACP v1.
-- Convert stored user messages, agent messages, reasoning, command executions,
+- [x] Add `thread/read` support.
+- [x] Implement `session/load` as the stable ACP v1 history-replay path.
+- [x] Keep `session/resume` as a no-replay reconnect path, as required by ACP
+  v1.
+- [x] Convert stored user messages, agent messages, reasoning, command executions,
   MCP tool calls, and file changes into ACP updates.
-- Add pagination and size limits for large histories.
-- Add tests for replay ordering and partial history.
+- [ ] Add pagination and size limits for large histories.
+- [x] Add fake app-server tests for replay ordering.
+- [ ] Add ACP client tests for replay notification ordering before the
+  `session/load` response and partial history behavior.
 
 Acceptance criteria:
 
-- `session/list` plus `session/resume` can reopen a useful prior conversation.
-- Large histories do not require loading all turns into memory.
-- Fork replay behavior is explicit and tested for the extension path.
+- [x] `session/list` plus `session/load` can reopen a useful prior conversation
+  with replayed transcript state.
+- [ ] Large histories do not require loading all turns into memory.
+- [ ] Fork replay behavior is explicit and tested for the extension path.
 
 ## Core Session Mapping
 
@@ -372,7 +522,10 @@ After creation:
 
 - Send initial `skills/list` for the cwd.
 - Send available commands.
-- Send config options from model and permission catalogs.
+- Send config options from model, collaboration-mode, and permission catalogs.
+  The current implementation publishes `model`, `reasoning_effort`,
+  `service_tier`, `approval_policy`, `collaboration_mode`, and
+  `permission_profile`.
 
 ### session/load
 
@@ -383,13 +536,23 @@ thread/read
 thread/resume
 ```
 
-Only implement and advertise this when `loadSession` can be true. ACP v1
-requires `session/load` to replay the entire conversation history as
-`session/update` notifications before sending the `session/load` response. After
-the response, the session must be ready for new prompts.
+Implemented baseline:
 
-Use `thread/read` or `thread/resume` with history included, depending on the
-app-server API that provides ordered history without losing live subscriptions.
+- Call `thread/read` with `includeTurns: true`.
+- Call `thread/resume` with `excludeTurns: true` so the loaded session is ready
+  for new prompts.
+- Replay known stored `ThreadItem` variants as ACP `session/update`
+  notifications before returning `session/load`.
+
+Remaining work:
+
+- Page large histories through `thread/turns/list`.
+- Preserve message IDs once the ACP crate feature is enabled and clients can use
+  them.
+- Convert every app-server item variant to a high-fidelity ACP update instead of
+  using generic text/raw JSON fallbacks.
+- Add serialized ACP client tests that prove replay notifications are emitted
+  before the `session/load` response.
 
 ### session/resume
 
@@ -406,7 +569,9 @@ After resume:
 
 - Reconnect notification subscriptions.
 - Refresh skills.
-- Refresh config options.
+- Refresh config options. The current implementation refreshes `model`,
+  `reasoning_effort`, `service_tier`, `approval_policy`,
+  `collaboration_mode`, and `permission_profile`.
 - Refresh available commands.
 
 ### session/list
@@ -426,9 +591,17 @@ Return:
 - additional directories when `sessionCapabilities.additionalDirectories` is
   supported and app-server provides them
 - title/name if available
-- updated time if available
+- app-server preview, status, model-provider, timestamp, recency, agent, and
+  parent-thread fields under `_meta.brokk_codex_acp`
 - adapter-specific archived/deleted metadata only under `_meta`; stable
   `SessionInfo` has no first-class archive field.
+
+Still pending:
+
+- additional directories when `sessionCapabilities.additionalDirectories` is
+  supported and app-server provides them
+- ACP `updatedAt` once app-server exposes a documented ISO 8601 value or the
+  adapter adds a deliberate timestamp conversion policy
 
 ### session/close
 
@@ -573,9 +746,12 @@ Primary notification families:
 - `item/started`
 - `item/completed`
 - `item/agentMessage/delta`
-- `item/reasoning/delta`
+- `item/reasoning/summaryTextDelta`
+- `item/reasoning/textDelta`
 - `item/commandExecution/outputDelta`
 - `item/commandExecution/requestApproval`
+- `item/fileChange/requestApproval`
+- `item/permissions/requestApproval`
 - `item/tool/requestUserInput`
 - `skills/changed`
 - `app/list/updated`
@@ -609,14 +785,18 @@ app-server item id -> ACP tool call id / message stream id
 | `turn/started` | internal active-turn state | Store `turn.id`; do not need a visible update by default. |
 | `turn/completed` | `PromptResponse.stopReason` | Already handled for the active prompt path. |
 | `item/agentMessage/delta` | `agent_message_chunk` | Already handled for the active prompt path. |
-| `item/reasoning/delta` | `agent_thought_chunk` | Stable ACP v1 supports thought chunks. |
+| `item/reasoning/summaryTextDelta` / `item/reasoning/textDelta` | `agent_thought_chunk` | Stable ACP v1 supports thought chunks. |
 | `item/started` | `tool_call` or internal item state | Depends on item subtype. |
 | `item/completed` | `tool_call_update` | Mark final status and attach final content. |
 | `item/commandExecution/outputDelta` | `tool_call_update` content | Preserve stdout/stderr boundaries if present. |
 | `turn/diff/updated` | `tool_call_update` with diff content | Useful for file edit previews. |
 | `turn/plan/updated` | `plan` | Send the full plan every time. |
-| `permissions/requestApproval` | `session/request_permission` | Must block app-server until the ACP client answers. |
-| `skills/changed` | `available_commands_update` and `config_option_update` | Re-run app-server `skills/list` first. |
+| `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` | `session/request_permission` | Implemented for `accept`, `acceptForSession`, `decline`, and `cancel`; app-server remains blocked until the ACP client answers. |
+| `item/permissions/requestApproval` | `session/request_permission` | Implemented for full requested-profile grants scoped to turn/session and rejection. Partial grants are still pending. |
+| `mcpServer/elicitation/request`, `item/tool/call`, `item/tool/requestUserInput` | fallback response now; future ACP elicitation or extension request | Implemented as explicit cancel/empty/failure responses so app-server does not block. Rich ACP UI is still pending. |
+| `skills/changed` | `available_commands_update` | Implemented through the background app-server notification dispatcher; re-runs app-server `skills/list` with `forceReload`. |
+| `thread/settings/updated` | `config_option_update` | Implemented through the background app-server notification dispatcher; refreshes model, collaboration-mode, and permission catalogs before publishing current options. |
+| `thread/status/changed` | `session_info_update._meta` | Implemented through the background app-server notification dispatcher; preserves the full app-server status payload under adapter metadata. |
 | `model/rerouted` | `session_info_update` or warning chunk | Prefer non-invasive visibility. |
 | `warning` / `error` | agent message chunk or tool-call error | Keep user-actionable text. |
 
@@ -634,26 +814,26 @@ These map cleanly to app-server APIs and should be supported early:
 
 | Slash command | App-server mapping |
 | --- | --- |
-| `/review` | `review/start` |
-| `/compact` | `thread/compact/start` |
+| `/review` | `review/start` `[implemented]` |
+| `/compact` | `thread/compact/start` `[implemented]` |
 | `/init` | transform into the AGENTS.md generation prompt |
-| `/rename <name>` | `thread/name/set` |
-| `/new` | `thread/start` |
-| `/resume <id-or-name>` | `thread/resume` after lookup |
-| `/fork` | `thread/fork` extension only |
-| `/archive` | `thread/archive` |
+| `/rename <name>` | `thread/name/set` `[implemented]` |
+| `/new` | `thread/start` `[implemented]` |
+| `/resume <id-or-name>` | `thread/resume` after exact id/name/preview lookup `[implemented]` |
+| `/fork` | `thread/fork` extension only `[implemented]` |
+| `/archive` | `thread/archive` `[implemented]` |
 | `/delete` | `thread/delete` |
-| `/goal ...` | `thread/goal/*` |
+| `/goal ...` | `thread/goal/*` `[implemented for get, clear, and objective updates]` |
 | `/plan` | `thread/settings/update` with collaboration mode |
-| `/model` | `model/list` plus `thread/settings/update` |
-| `/permissions` | `permissionProfile/list` plus settings update |
-| `/mcp` | `mcpServerStatus/list` |
-| `/apps` | `app/list` |
-| `/plugins` | `plugin/list` and `plugin/installed` |
-| `/hooks` | `hooks/list` |
+| `/model` | `model/list` plus ACP config-option refresh `[implemented]` |
+| `/permissions` | `permissionProfile/list` plus ACP config-option refresh `[implemented]` |
+| `/mcp` | `mcpServerStatus/list` `[implemented as summary]` |
+| `/apps` | `app/list` `[implemented as summary]` |
+| `/plugins` | `plugin/list` and `plugin/installed` `[implemented as summary]` |
+| `/hooks` | `hooks/list` `[implemented as summary]` |
 | `/ps` | `thread/backgroundTerminals/list` |
 | `/stop` | `thread/backgroundTerminals/clean` |
-| `/status` | local summary plus app-server status/config reads |
+| `/status` | local summary plus app-server status/config reads `[implemented as initial loaded-thread summary]` |
 
 ### Command Parser Rules
 
@@ -743,13 +923,15 @@ and `skills/changed`, call:
 skills/list
 ```
 
-Use the current session cwd. Cache the returned skills per cwd.
+Use the current session cwd. Cache the returned skills per cwd. The current
+implementation refreshes lifecycle paths and `skills/changed` notifications,
+then publishes enabled skills as `skill:<name>` available commands.
 
 Expose skills to ACP clients as:
 
-- available commands if ACP only supports slash commands
-- mention completions if ACP supports mentions
-- config options if ACP supports enable/disable toggles
+- [x] available commands if ACP only supports slash commands
+- [ ] mention completions if ACP supports mentions
+- [ ] config options if ACP supports enable/disable toggles
 
 The app-server shape to use is:
 
@@ -774,13 +956,13 @@ $skill-name Do the task.
 
 Preferred transport to app-server:
 
-- preserve the visible `$skill-name` text
-- include a structured mention item pointing at the skill path when app-server
+- [x] preserve the visible `$skill-name` text
+- [x] include a structured skill item pointing at the skill path when app-server
   accepts that shape
 
 Fallback transport:
 
-- send the text as-is and rely on Codex's skill mention parser
+- [x] send the text as-is and rely on Codex's skill mention parser
 
 Structured app-server input should use `UserInput::Skill`:
 
@@ -793,9 +975,9 @@ Structured app-server input should use `UserInput::Skill`:
 ```
 
 When the user writes `$skill-name extra instructions`, the `turn/start.input`
-list should include both the skill item and a text item for the remaining user
-text. Preserve the visible text in the ACP transcript so the client still shows
-what the user typed.
+list includes both the visible text item and the structured skill item when
+`skills/list` provided a path. Preserve the visible text in the ACP transcript
+so the client still shows what the user typed.
 
 ### Enable/Disable
 
@@ -805,6 +987,12 @@ Map to:
 skills/config/write
 ```
 
+Implemented baseline:
+
+- App-server request/response mapping for `skills/config/write`.
+- Fake app-server coverage that writes by name and verifies a forced
+  `skills/list` refresh reflects the new enabled state.
+
 Inputs:
 
 - by absolute skill path when available
@@ -812,8 +1000,9 @@ Inputs:
 
 After write:
 
-- call `skills/list` with `forceReload: true`
-- publish updated available commands/config options
+- [x] call `skills/list` with `forceReload: true`
+- [ ] publish updated available commands/config options from an ACP
+  `session/set_config_option` handler
 
 ### Extra Roots
 
@@ -851,9 +1040,14 @@ Invocation should follow app-server mention semantics:
 The adapter should expose these as command/catalog surfaces first, not as direct
 model prompts:
 
-- `/apps` should call `app/list`.
-- `/plugins` should call `plugin/list` and `plugin/installed`.
-- `/mcp` should call `mcpServerStatus/list`.
+- [x] `/apps` calls `app/list` and returns an ACP agent-message summary.
+- [x] `/plugins` calls `plugin/list` and `plugin/installed` and returns an ACP
+  agent-message summary.
+- [x] `/mcp` calls `mcpServerStatus/list` and returns an ACP agent-message
+  summary.
+- [x] `/hooks` calls `hooks/list` and returns an ACP agent-message summary.
+- [x] `/status` calls `thread/loaded/list` and returns an ACP agent-message
+  summary.
 - resource reads and direct tool calls should only be exposed when an ACP client
   has a clear UI affordance for them.
 
@@ -879,10 +1073,12 @@ will be removed in a future protocol version.
 
 Mappings:
 
-- `model/list` -> model picker
-- `permissionProfile/list` -> permissions picker
-- `collaborationMode/list` -> mode picker
+- `model/list` -> model, reasoning effort, and service tier pickers
+  `[implemented]`
+- `permissionProfile/list` -> permissions picker `[implemented for profile id selection]`
+- `collaborationMode/list` -> mode picker `[implemented]`
 - `thread/settings/update` -> persisted next-turn setting changes
+  `[implemented for model, effort, service tier, approval policy, collaboration mode, and permissions]`
 
 ACP config option IDs should be stable and adapter-owned:
 
@@ -890,24 +1086,63 @@ ACP config option IDs should be stable and adapter-owned:
 | --- | --- | --- |
 | `model` | `model/list` | `thread/settings/update.model` |
 | `reasoning_effort` | `model/list` selected model metadata | `thread/settings/update.effort` |
+| `service_tier` | `model/list` selected model metadata | `thread/settings/update.serviceTier` |
 | `permission_profile` | `permissionProfile/list` | `thread/settings/update.permissions` |
 | `approval_policy` | config/read or thread settings | `thread/settings/update.approvalPolicy` |
 | `collaboration_mode` | `collaborationMode/list` | `thread/settings/update.collaborationMode` |
 | `skills.enabled` | `skills/list` | `skills/config/write` |
 
+Implemented config option baseline:
+
+- `model` is populated from `model/list`, seeded from app-server
+  `thread/start`, `thread/resume`, or `thread/fork` response model when present,
+  and written with `thread/settings/update.model`.
+- `reasoning_effort` is populated from the selected model's catalog metadata,
+  seeded from app-server thread lifecycle responses when present, and written
+  with `thread/settings/update.effort`.
+- `service_tier` is populated from the selected model's catalog metadata, seeded
+  from app-server thread lifecycle responses when present, and written with
+  `thread/settings/update.serviceTier`; the adapter's synthetic `Automatic`
+  option clears the app-server override with `null`.
+- `approval_policy` is seeded from app-server thread lifecycle responses when
+  present, defaults to app-server's normal `on-request` behavior otherwise, and
+  is written with `thread/settings/update.approvalPolicy`.
+- `collaboration_mode` is populated from `collaborationMode/list`, seeded from
+  app-server thread lifecycle responses when present, and written with
+  `thread/settings/update.collaborationMode`.
+- `permission_profile` is populated from `permissionProfile/list`, seeded from
+  app-server `activePermissionProfile` when present, and written with
+  `thread/settings/update.permissions`.
+- `session/set_config_option` returns the complete current config option list
+  and sends a `config_option_update` notification after successful writes.
+
+Remaining config option work:
+
+- Add skill enable/disable selectors backed by `skills/config/write`.
+
 ## Approval Flow
 
 Approval routing should preserve app-server semantics.
 
-When app-server emits a command approval request:
+When app-server emits a command or file-change approval request, the adapter now:
 
-- translate it to an ACP permission request
-- include command, cwd, reason, affected paths, and suggested actions
-- preserve any "approve for session" or "remember this pattern" options by
+- translates it to an ACP permission request
+- includes the app-server request payload as raw tool input, with command/file
+  kind and a user-facing title
+- preserves the standard "approve for session" option by
   mapping them to ACP permission options with stable `optionId`s and the closest
   `kind` (`allow_once`, `allow_always`, `reject_once`, or `reject_always`)
-- send the user's decision back to app-server through the matching response
+- sends the user's decision back to app-server through the matching response
   method
+
+Remaining approval work:
+
+- Add rich MCP elicitation and dynamic tool request handling once the adapter
+  has an ACP-compatible elicitation surface.
+- Preserve partial-grant choices for `item/permissions/requestApproval` instead
+  of only granting the full requested profile or `{}`.
+- Preserve richer `availableDecisions` payloads such as exec-policy and network
+  amendments instead of only mapping simple string decisions.
 
 Do not invent approval policies in the adapter. Policies should come from
 Codex config, app-server thread settings, or explicit ACP session options.
@@ -915,9 +1150,10 @@ Codex config, app-server thread settings, or explicit ACP session options.
 ### Approval Implementation Notes
 
 - Treat app-server approval notifications as blocking requests.
-- Store pending app-server request IDs by ACP permission request ID.
+- The current implementation answers the app-server request inline after the
+  ACP permission response returns.
 - Include command argv, cwd, sandbox profile, affected paths, and any app-server
-  rationale.
+  rationale in the raw tool input until ACP exposes richer first-class fields.
 - Map ACP `selected` outcomes by `optionId` to the app-server approval response
   shape.
 - Map ACP `cancelled` distinctly.
@@ -970,7 +1206,7 @@ Prefer graceful degradation:
 - Skills list cache invalidation.
 - `session/delete` request and response mapping.
 - `session/fork` extension request and response mapping.
-- Approval option mapping.
+- Approval option mapping for command/file-change requests.
 - Prompt cancellation state cleanup.
 - Active item mapping for command execution and MCP calls.
 
@@ -984,7 +1220,7 @@ Scenarios:
 - new session `[done]`
 - prompt and stream final answer `[done]`
 - command tool call output
-- approval request and approval response
+- approval request and approval response `[done at app-server client level for command approvals]`
 - skills list and changed notification
 - enable/disable skill
 - delete listed session
@@ -1026,61 +1262,70 @@ Manual flows:
 - [x] Implement basic text `prompt` via `turn/start`.
 - [x] Add fake app-server integration tests for thread and prompt mappings.
 - [x] Implement cancellation via `turn/interrupt`.
-- [ ] Implement stable `session/load` and advertise `loadSession`.
-- [ ] Implement stable `session/delete` and advertise `sessionCapabilities.delete`.
+- [x] Implement `session/load` and advertise `loadSession`.
+- [x] Implement `session/delete` and advertise `sessionCapabilities.delete`.
 
 ### Phase 2: Event Translation
 
 - [x] Map agent message deltas for the active prompt.
 - [x] Map turn completion for the active prompt.
 - [x] Add active turn tracking for cancellation.
-- [ ] Move notification handling into a typed app-server event dispatcher.
-- [ ] Map reasoning deltas.
-- [ ] Map command execution lifecycle and output.
-- [ ] Map file diffs/changes.
-- [ ] Map MCP tool calls.
-- [ ] Add active item/tool-call tracking.
-- [ ] Add buffered output fallback for clients without terminal streaming.
-- [ ] Add fake app-server tests for each notification family.
+- [x] Move prompt notification handling into a typed app-server event dispatcher.
+- [x] Map reasoning deltas.
+- [x] Map command execution lifecycle and output.
+- [x] Map file diffs/changes.
+- [x] Map MCP tool calls at the lifecycle level.
+- [x] Add active item/tool-call output tracking for prompt-local updates.
+- [x] Add buffered output fallback for clients without terminal streaming.
+- [ ] Add serialized ACP client tests for each notification family.
 
 ### Phase 3: Slash Commands
 
-- [ ] Add command parser.
+- [x] Add initial command parser.
 - [ ] Add command registry.
-- [ ] Publish command registry through ACP available commands.
-- [ ] Implement `/new`.
-- [ ] Implement `/resume`.
-- [ ] Implement `/fork`.
-- [ ] Implement `/review`.
-- [ ] Implement `/compact`.
+- [x] Publish initial adapter-owned command through ACP available commands.
+- [x] Implement `/new`.
+- [x] Implement `/resume`.
+- [x] Implement `/fork`.
+- [x] Implement `/review`.
+- [x] Implement `/compact`.
 - [ ] Implement `/init`.
-- [ ] Implement `/rename`.
-- [ ] Implement `/goal`.
-- [ ] Implement `/model`.
-- [ ] Implement `/permissions`.
-- [ ] Implement `/mcp`.
-- [ ] Implement `/apps`.
-- [ ] Implement `/plugins`.
-- [ ] Implement `/hooks`.
-- [ ] Implement `/status`.
+- [x] Implement `/rename`.
+- [x] Implement `/archive`.
+- [x] Implement `/goal`.
+- [x] Implement `/model`.
+- [x] Implement `/permissions`.
+- [x] Implement `/mcp`.
+- [x] Implement `/apps`.
+- [x] Implement `/plugins`.
+- [x] Implement `/hooks`.
+- [x] Implement `/status`.
 
 ### Phase 4: Skills
 
-- [ ] Implement `skills/list` request/response types.
-- [ ] Implement skill cache by cwd.
-- [ ] Refresh skills on session lifecycle and `skills/changed`.
-- [ ] Publish skills as ACP commands or mentions.
-- [ ] Support `$skill-name` invocation.
-- [ ] Support `/skill skill-name` invocation.
-- [ ] Implement enable/disable with `skills/config/write`.
+- [x] Implement `skills/list` request/response types.
+- [x] Implement skill cache by cwd.
+- [x] Refresh skills on session lifecycle.
+- [x] Refresh skills on `skills/changed` notifications.
+- [x] Publish skills as ACP commands.
+- [ ] Publish skills as ACP mentions.
+- [x] Support `$skill-name` invocation.
+- [x] Support `/skill skill-name` invocation.
+- [x] Implement app-server `skills/config/write` mapping.
+- [ ] Expose enable/disable through ACP session config options.
 - [ ] Support `skills/extraRoots/set`.
-- [ ] Add fake app-server tests for discovery, invocation, and invalidation.
+- [x] Add fake app-server tests for discovery.
+- [x] Add fake app-server tests for invocation.
+- [x] Add fake app-server tests for app-server config writes.
+- [x] Add fake app-server tests for invalidation notification decoding and
+  background app-server message dispatch.
 
 ### Phase 5: Session Delete and Fork Extension
 
-- [ ] Add stable ACP `session/delete` handler.
-- [ ] Map `session/delete` to app-server session removal.
-- [ ] Hide `sessionCapabilities.delete` until the mapping removes sessions from
+- [x] Add ACP `session/delete` handler through the crate's
+  `unstable_session_delete` feature.
+- [x] Map `session/delete` to app-server session removal.
+- [x] Hide `sessionCapabilities.delete` until the mapping removes sessions from
   future `session/list` results.
 
 - [x] Add `session/fork` extension handler exposed by the current Rust crate.
@@ -1088,17 +1333,17 @@ Manual flows:
 - [x] Return the returned thread as a new ACP session.
 - [ ] Mark `session/fork` as extension/RFD behavior in code and docs.
 - [ ] Replay fork history when requested.
-- [ ] Route `/fork` through the same extension code path.
+- [x] Route `/fork` through the same extension code path.
 - [ ] Add tests for persistent and ephemeral forks.
 
 ### Phase 6: Catalogs and Advanced Surfaces
 
-- [ ] Add model and reasoning effort config options.
-- [ ] Add permission profile config options.
-- [ ] Add approval policy config options.
-- [ ] Add collaboration mode config options.
-- [ ] Add apps/plugins/MCP commands.
-- [ ] Add hooks display.
+- [x] Add model, reasoning effort, and service tier config options.
+- [x] Add permission profile config options.
+- [x] Add approval policy config options.
+- [x] Add collaboration mode config options.
+- [x] Add apps/plugins/MCP commands.
+- [x] Add initial hooks display.
 - [ ] Add background terminal list/clean.
 
 ### Phase 7: Hardening
@@ -1130,20 +1375,24 @@ Manual flows:
 
 Keep PRs small enough to review against fake app-server tests.
 
-1. App-server event dispatcher:
-   - add typed notification enum
-   - move active prompt handling onto the dispatcher
-   - keep existing behavior unchanged
+1. Rich MCP elicitation and dynamic tool request UI:
+   - map `mcpServer/elicitation/request`, `item/tool/call`, and
+     `item/tool/requestUserInput` to an ACP-compatible request surface
+   - preserve app-server blocking request semantics while waiting for the ACP
+     client
+   - keep the current cancel/empty/failure fallback for clients that cannot
+     render the request
 
-2. Command execution streaming:
-   - decode command execution start/output/completion notifications
-   - map them to ACP `tool_call` and `tool_call_update` session updates
-   - add fake app-server tests
+2. Permission-profile approval refinements:
+   - preserve partial grants when ACP exposes a compatible selection surface
+   - add richer UI text for requested filesystem and network permissions
+   - add fake app-server tests for cancel/reject and partial-grant fallback
 
-3. Skills discovery:
-   - add `skills/list`
-   - publish available commands for skills
-   - refresh on session lifecycle
+3. Serialized ACP integration tests:
+   - exercise `session/update` output with a fake ACP client transport
+   - prove `session/load` replay notifications arrive before the response
+   - prove background `skills/changed` and `thread/settings/updated`
+     notifications publish ACP updates
 
 4. Slash command parser and `/fork`:
    - add parser and registry
@@ -1151,6 +1400,7 @@ Keep PRs small enough to review against fake app-server tests.
    - publish `/fork` as an ACP available command
 
 5. Config options:
-   - add `model/list` and `permissionProfile/list`
-   - publish `model` and `permission_profile` ACP config options
-   - write changes with `thread/settings/update`
+   - add approval policy and collaboration mode selectors
+   - add skill enable/disable selectors backed by `skills/config/write`
+   - add serialized ACP tests for `session/set_config_option` responses and
+     `config_option_update` notifications

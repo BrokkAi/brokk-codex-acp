@@ -1,7 +1,9 @@
 use std::fs;
 
 use brokk_codex_acp::app_server::{
-    AppServerClient, AppServerCommand, AppServerPromptCompletion, AppServerPromptEvent,
+    AppServerApprovalDecision, AppServerClient, AppServerCollaborationMode, AppServerCommand,
+    AppServerHistoryEvent, AppServerMessage, AppServerPromptCompletion, AppServerPromptEvent,
+    AppServerTurnInput, history_events,
 };
 use tempfile::TempDir;
 use tokio::{sync::oneshot, time};
@@ -17,23 +19,289 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         .await?;
     assert_eq!(initialize.codex_home, "/tmp/fake-codex-home");
 
+    let mut app_server_messages = client.subscribe();
     let started = client.thread_start("/repo".to_string()).await?;
     assert_eq!(started.thread.id, "thread-1");
     assert_eq!(
         started.thread.cwd.as_deref(),
         Some(std::path::Path::new("/repo"))
     );
+    let message = time::timeout(time::Duration::from_secs(1), app_server_messages.recv()).await??;
+    assert!(matches!(
+        message,
+        AppServerMessage::Notification { ref method, .. } if method == "skills/changed"
+    ));
 
     let forked = client
         .thread_fork("thread-1".to_string(), "/repo-fork".to_string())
         .await?;
     assert_eq!(forked.thread.id, "thread-2");
 
+    let resumed = client
+        .thread_resume("thread-1".to_string(), "/repo".to_string())
+        .await?;
+    assert_eq!(resumed.thread.id, "thread-1");
+    assert_eq!(resumed.model.as_deref(), Some("gpt-5-codex"));
+
     let listed = client.thread_list(Some("/repo".to_string()), None).await?;
     assert_eq!(listed.data.len(), 1);
     assert_eq!(listed.data[0].id, "thread-1");
+    assert_eq!(listed.data[0].preview.as_deref(), Some("Started preview"));
+    assert_eq!(
+        listed.data[0]
+            .status
+            .as_ref()
+            .and_then(|status| status["type"].as_str()),
+        Some("notLoaded")
+    );
+    assert_eq!(listed.data[0].model_provider.as_deref(), Some("openai"));
+    assert_eq!(listed.data[0].updated_at, Some(1700000100));
+    assert_eq!(
+        listed.data[0].parent_thread_id.as_deref(),
+        Some("thread-parent")
+    );
 
-    let mut deltas = Vec::new();
+    client
+        .thread_name_set("thread-1".to_string(), "Renamed Thread".to_string())
+        .await?;
+    let message = time::timeout(time::Duration::from_secs(1), app_server_messages.recv()).await??;
+    assert!(matches!(
+        message,
+        AppServerMessage::Notification { ref method, ref params }
+            if method == "thread/name/updated"
+                && params["threadId"] == "thread-1"
+                && params["threadName"] == "Renamed Thread"
+    ));
+
+    client.thread_archive("thread-1".to_string()).await?;
+    let message = time::timeout(time::Duration::from_secs(1), app_server_messages.recv()).await??;
+    assert!(matches!(
+        message,
+        AppServerMessage::Notification { ref method, ref params }
+            if method == "thread/archived"
+                && params["threadId"] == "thread-1"
+    ));
+    let message = time::timeout(time::Duration::from_secs(1), app_server_messages.recv()).await??;
+    assert!(matches!(
+        message,
+        AppServerMessage::Notification { ref method, ref params }
+            if method == "thread/status/changed"
+                && params["threadId"] == "thread-1"
+                && params["status"]["type"] == "notLoaded"
+    ));
+
+    let goal = client
+        .thread_goal_set(
+            "thread-1".to_string(),
+            Some("Improve ACP coverage".to_string()),
+            None,
+            Some(Some(200_000)),
+        )
+        .await?;
+    assert_eq!(goal.goal["objective"], "Improve ACP coverage");
+    let message = time::timeout(time::Duration::from_secs(1), app_server_messages.recv()).await??;
+    assert!(matches!(
+        message,
+        AppServerMessage::Notification { ref method, ref params }
+            if method == "thread/goal/updated"
+                && params["threadId"] == "thread-1"
+                && params["goal"]["tokenBudget"] == 200_000
+    ));
+
+    let goal = client.thread_goal_get("thread-1".to_string()).await?;
+    assert_eq!(
+        goal.goal.as_ref().and_then(|goal| goal["status"].as_str()),
+        Some("active")
+    );
+
+    let cleared = client.thread_goal_clear("thread-1".to_string()).await?;
+    assert!(cleared.cleared);
+    let message = time::timeout(time::Duration::from_secs(1), app_server_messages.recv()).await??;
+    assert!(matches!(
+        message,
+        AppServerMessage::Notification { ref method, ref params }
+            if method == "thread/goal/cleared"
+                && params["threadId"] == "thread-1"
+    ));
+
+    let skills = client.skills_list("/repo".to_string(), false).await?;
+    assert_eq!(skills.data.len(), 1);
+    assert_eq!(skills.data[0].cwd, "/repo");
+    assert_eq!(skills.data[0].skills.len(), 2);
+    assert_eq!(skills.data[0].skills[0].name, "skill-creator");
+    assert_eq!(
+        skills.data[0].skills[0].path.as_deref(),
+        Some("/skills/skill-creator/SKILL.md")
+    );
+    assert_eq!(
+        skills.data[0].skills[0].description.as_deref(),
+        Some("Create skills")
+    );
+    assert!(skills.data[0].skills[0].enabled);
+    assert_eq!(
+        skills.data[0].skills[0]
+            .interface
+            .as_ref()
+            .and_then(|interface| interface.short_description.as_deref()),
+        Some("Create or update Codex skills")
+    );
+    assert_eq!(skills.data[0].skills[1].name, "disabled-skill");
+    assert!(!skills.data[0].skills[1].enabled);
+
+    client
+        .skills_config_write(Some("skill-creator".to_string()), None, false)
+        .await?;
+    let skills = client.skills_list("/repo".to_string(), true).await?;
+    assert!(!skills.data[0].skills[0].enabled);
+
+    let models = client.model_list().await?;
+    assert_eq!(models.data.len(), 2);
+    assert_eq!(models.data[0].id, "gpt-5");
+    assert!(models.data[0].is_default);
+
+    let collaboration_modes = client.collaboration_mode_list().await?;
+    assert_eq!(collaboration_modes.data.len(), 2);
+    assert_eq!(collaboration_modes.data[0].mode.as_deref(), Some("default"));
+    assert_eq!(
+        collaboration_modes.data[1].reasoning_effort.as_ref(),
+        Some(&Some("medium".to_string()))
+    );
+
+    let permission_profiles = client
+        .permission_profile_list(Some("/repo".to_string()))
+        .await?;
+    assert_eq!(permission_profiles.data.len(), 3);
+    assert_eq!(permission_profiles.data[1].id, ":workspace");
+
+    client
+        .thread_settings_update(
+            "thread-1".to_string(),
+            Some("gpt-5-codex".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await?;
+    client
+        .thread_settings_update(
+            "thread-1".to_string(),
+            None,
+            Some(":danger-full-access".to_string()),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await?;
+    client
+        .thread_settings_update(
+            "thread-1".to_string(),
+            None,
+            None,
+            Some("high".to_string()),
+            None,
+            None,
+            None,
+        )
+        .await?;
+    client
+        .thread_settings_update(
+            "thread-1".to_string(),
+            None,
+            None,
+            None,
+            Some(Some("priority".to_string())),
+            None,
+            None,
+        )
+        .await?;
+    client
+        .thread_settings_update(
+            "thread-1".to_string(),
+            None,
+            None,
+            None,
+            Some(None),
+            None,
+            None,
+        )
+        .await?;
+    client
+        .thread_settings_update(
+            "thread-1".to_string(),
+            None,
+            None,
+            None,
+            None,
+            Some("never".to_string()),
+            None,
+        )
+        .await?;
+    client
+        .thread_settings_update(
+            "thread-1".to_string(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(AppServerCollaborationMode::new(
+                "plan".to_string(),
+                "gpt-5-codex".to_string(),
+                Some("medium".to_string()),
+                None,
+            )),
+        )
+        .await?;
+
+    let mut skill_deltas = Vec::new();
+    client
+        .turn_start_until_complete(
+            "thread-1".to_string(),
+            vec![
+                AppServerTurnInput::Text {
+                    text: "$skill-creator Make one".to_string(),
+                },
+                AppServerTurnInput::Skill {
+                    name: "skill-creator".to_string(),
+                    path: "/skills/skill-creator/SKILL.md".to_string(),
+                },
+            ],
+            None,
+            |event| {
+                if let AppServerPromptEvent::AgentMessageDelta(delta) = event {
+                    skill_deltas.push(delta);
+                }
+                Ok(())
+            },
+            |_approval| async { Ok(AppServerApprovalDecision::Cancel) },
+        )
+        .await?;
+    assert_eq!(skill_deltas, vec!["skill response"]);
+
+    let read = client.thread_read("thread-1".to_string()).await?;
+    assert_eq!(read.thread.id, "thread-1");
+    let history_events = history_events(&read.thread)
+        .into_iter()
+        .map(summarize_history_event)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        history_events,
+        vec![
+            "user:hello",
+            "thought:remembered reasoning",
+            "tool-started:cmd-history:cargo check",
+            "tool-updated:cmd-history",
+            "tool-started:file-history:Edit 1 file",
+            "tool-updated:file-history",
+            "diff:### src/lib.rs\n@@ -1 +1 @@",
+            "message:remembered response",
+        ]
+    );
+
+    let mut events = Vec::new();
     client
         .turn_start_text_until_complete(
             "thread-1".to_string(),
@@ -41,13 +309,239 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
             None,
             |event| {
                 match event {
-                    AppServerPromptEvent::AgentMessageDelta(delta) => deltas.push(delta),
+                    AppServerPromptEvent::AgentMessageDelta(delta) => {
+                        events.push(format!("message:{delta}"));
+                    }
+                    AppServerPromptEvent::AgentThoughtDelta(delta) => {
+                        events.push(format!("thought:{delta}"));
+                    }
+                    AppServerPromptEvent::ToolCallStarted(call) => {
+                        events.push(format!("tool-started:{}:{}", call.id, call.title));
+                    }
+                    AppServerPromptEvent::ToolCallUpdated(update) => {
+                        events.push(format!("tool-updated:{}", update.id));
+                    }
+                    AppServerPromptEvent::PlanUpdated(entries) => {
+                        events.push(format!("plan:{}", entries.len()));
+                    }
+                    AppServerPromptEvent::TurnDiffUpdated { diff, .. } => {
+                        events.push(format!("diff:{diff}"));
+                    }
+                    AppServerPromptEvent::UsageUpdated(usage) => {
+                        events.push(format!("usage:{}/{}", usage.used, usage.size));
+                    }
+                    AppServerPromptEvent::SkillsChanged => {
+                        events.push("skills-changed".to_string());
+                    }
+                    AppServerPromptEvent::ThreadSettingsUpdated(settings) => {
+                        events.push(format!(
+                            "settings:{}:{}:{}:{}",
+                            settings.thread_id,
+                            settings.model.as_deref().unwrap_or_default(),
+                            settings.reasoning_effort.as_deref().unwrap_or_default(),
+                            settings.service_tier.as_deref().unwrap_or_default()
+                        ));
+                    }
                 }
                 Ok(())
             },
         )
         .await?;
-    assert_eq!(deltas, vec!["fake response"]);
+    assert_eq!(
+        events,
+        vec![
+            "thought:thinking",
+            "plan:1",
+            "tool-started:cmd-1:cargo test",
+            "tool-updated:cmd-1",
+            "tool-updated:cmd-1",
+            "diff:diff --git a/src/lib.rs b/src/lib.rs",
+            "usage:42/100",
+            "skills-changed",
+            "settings:thread-1:gpt-5-codex:high:priority",
+            "message:fake response",
+        ]
+    );
+
+    let mut approval_summaries = Vec::new();
+    client
+        .turn_start_until_complete(
+            "thread-1".to_string(),
+            vec![AppServerTurnInput::Text {
+                text: "approval callback".to_string(),
+            }],
+            None,
+            |event| {
+                if let AppServerPromptEvent::AgentMessageDelta(delta) = event {
+                    approval_summaries.push(format!("message:{delta}"));
+                }
+                Ok(())
+            },
+            |approval| async move {
+                assert_eq!(approval.item_id, "cmd-approval");
+                assert_eq!(approval.title, "Run `cargo fmt`");
+                assert!(matches!(
+                    approval.kind,
+                    brokk_codex_acp::app_server::AppServerToolKind::Execute
+                ));
+                assert_eq!(
+                    approval
+                        .options
+                        .iter()
+                        .map(|option| option.id())
+                        .collect::<Vec<_>>(),
+                    vec!["accept", "decline"]
+                );
+                assert!(approval.raw.get("command").is_some());
+                Ok(AppServerApprovalDecision::Accept)
+            },
+        )
+        .await?;
+    assert_eq!(approval_summaries, vec!["message:approved callback"]);
+
+    let mut file_approval_summaries = Vec::new();
+    client
+        .turn_start_until_complete(
+            "thread-1".to_string(),
+            vec![AppServerTurnInput::Text {
+                text: "file approval callback".to_string(),
+            }],
+            None,
+            |event| {
+                if let AppServerPromptEvent::AgentMessageDelta(delta) = event {
+                    file_approval_summaries.push(format!("message:{delta}"));
+                }
+                Ok(())
+            },
+            |approval| async move {
+                assert_eq!(approval.item_id, "file-approval");
+                assert_eq!(approval.title, "Apply file changes");
+                assert!(matches!(
+                    approval.kind,
+                    brokk_codex_acp::app_server::AppServerToolKind::Edit
+                ));
+                assert_eq!(
+                    approval
+                        .options
+                        .iter()
+                        .map(|option| option.id())
+                        .collect::<Vec<_>>(),
+                    vec!["accept", "acceptForSession", "decline", "cancel"]
+                );
+                Ok(AppServerApprovalDecision::AcceptForSession)
+            },
+        )
+        .await?;
+    assert_eq!(file_approval_summaries, vec!["message:approved file"]);
+
+    let mut permissions_approval_summaries = Vec::new();
+    client
+        .turn_start_until_complete(
+            "thread-1".to_string(),
+            vec![AppServerTurnInput::Text {
+                text: "permissions approval callback".to_string(),
+            }],
+            None,
+            |event| {
+                if let AppServerPromptEvent::AgentMessageDelta(delta) = event {
+                    permissions_approval_summaries.push(format!("message:{delta}"));
+                }
+                Ok(())
+            },
+            |approval| async move {
+                assert_eq!(approval.item_id, "permissions-approval");
+                assert_eq!(approval.title, "Need network and write access");
+                assert!(matches!(
+                    approval.kind,
+                    brokk_codex_acp::app_server::AppServerToolKind::Other
+                ));
+                assert_eq!(
+                    approval
+                        .options
+                        .iter()
+                        .map(|option| option.id())
+                        .collect::<Vec<_>>(),
+                    vec!["accept", "acceptForSession", "decline", "cancel"]
+                );
+                assert_eq!(approval.raw["permissions"]["network"]["enabled"], true);
+                Ok(AppServerApprovalDecision::AcceptForSession)
+            },
+        )
+        .await?;
+    assert_eq!(
+        permissions_approval_summaries,
+        vec!["message:approved permissions"]
+    );
+
+    let mcp_elicitation_summaries =
+        run_text_turn_and_collect_messages(&mut client, "mcp elicitation callback").await?;
+    assert_eq!(
+        mcp_elicitation_summaries,
+        vec!["message:cancelled elicitation"]
+    );
+
+    let mut review_events = Vec::new();
+    client
+        .review_start_until_complete(
+            "thread-1".to_string(),
+            None,
+            |event| {
+                review_events.push(summarize_prompt_event(event));
+                Ok(())
+            },
+            |_approval| async { Ok(AppServerApprovalDecision::Cancel) },
+        )
+        .await?;
+    assert_eq!(review_events, vec!["message:review complete"]);
+
+    let mut compact_events = Vec::new();
+    client
+        .thread_compact_start_until_complete(
+            "thread-1".to_string(),
+            None,
+            |event| {
+                compact_events.push(summarize_prompt_event(event));
+                Ok(())
+            },
+            |_approval| async { Ok(AppServerApprovalDecision::Cancel) },
+        )
+        .await?;
+    assert_eq!(
+        compact_events,
+        vec![
+            "tool-started:compact-1:Compacting conversation context",
+            "tool-updated:compact-1",
+            "message:compact complete"
+        ]
+    );
+
+    let apps = client.app_list().await?;
+    assert_eq!(apps["data"][0]["displayName"], "GitHub");
+
+    let plugins = client.plugin_list().await?;
+    assert_eq!(plugins["data"][0]["name"], "github");
+
+    let installed_plugins = client.plugin_installed().await?;
+    assert_eq!(installed_plugins["data"][0]["pluginId"], "github@openai");
+
+    let mcp_servers = client
+        .mcp_server_status_list("thread-1".to_string())
+        .await?;
+    assert_eq!(mcp_servers["data"][0]["serverName"], "filesystem");
+
+    let hooks = client.hooks_list("/repo".to_string()).await?;
+    assert_eq!(hooks["data"][0]["cwd"], "/repo");
+
+    let loaded_threads = client.thread_loaded_list().await?;
+    assert_eq!(loaded_threads["data"][0], "thread-1");
+
+    let user_input_summaries =
+        run_text_turn_and_collect_messages(&mut client, "user input callback").await?;
+    assert_eq!(user_input_summaries, vec!["message:empty user input"]);
+
+    let dynamic_tool_summaries =
+        run_text_turn_and_collect_messages(&mut client, "dynamic tool callback").await?;
+    assert_eq!(dynamic_tool_summaries, vec!["message:failed dynamic tool"]);
 
     let (cancel_tx, cancel_rx) = oneshot::channel();
     tokio::spawn(async move {
@@ -67,7 +561,50 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     let closed = client.thread_unsubscribe("thread-1".to_string()).await?;
     assert_eq!(closed.status, "ok");
 
+    client.thread_delete("thread-1".to_string()).await?;
+
     Ok(())
+}
+
+async fn run_text_turn_and_collect_messages(
+    client: &mut AppServerClient,
+    text: &str,
+) -> anyhow::Result<Vec<String>> {
+    let mut summaries = Vec::new();
+    client
+        .turn_start_text_until_complete("thread-1".to_string(), text.to_owned(), None, |event| {
+            if let AppServerPromptEvent::AgentMessageDelta(delta) = event {
+                summaries.push(format!("message:{delta}"));
+            }
+            Ok(())
+        })
+        .await?;
+    Ok(summaries)
+}
+
+fn summarize_history_event(event: AppServerHistoryEvent) -> String {
+    match event {
+        AppServerHistoryEvent::UserMessage(text) => format!("user:{text}"),
+        AppServerHistoryEvent::PromptEvent(event) => summarize_prompt_event(event),
+    }
+}
+
+fn summarize_prompt_event(event: AppServerPromptEvent) -> String {
+    match event {
+        AppServerPromptEvent::AgentMessageDelta(delta) => format!("message:{delta}"),
+        AppServerPromptEvent::AgentThoughtDelta(delta) => format!("thought:{delta}"),
+        AppServerPromptEvent::ToolCallStarted(call) => {
+            format!("tool-started:{}:{}", call.id, call.title)
+        }
+        AppServerPromptEvent::ToolCallUpdated(update) => format!("tool-updated:{}", update.id),
+        AppServerPromptEvent::PlanUpdated(entries) => format!("plan:{}", entries.len()),
+        AppServerPromptEvent::TurnDiffUpdated { diff, .. } => format!("diff:{diff}"),
+        AppServerPromptEvent::UsageUpdated(usage) => format!("usage:{}/{}", usage.used, usage.size),
+        AppServerPromptEvent::SkillsChanged => "skills-changed".to_owned(),
+        AppServerPromptEvent::ThreadSettingsUpdated(settings) => {
+            format!("settings:{}", settings.thread_id)
+        }
+    }
 }
 
 struct FakeCodex {
@@ -122,6 +659,8 @@ const FAKE_CODEX_APP_SERVER: &str = r#"#!/usr/bin/env python3
 import json
 import sys
 
+skill_creator_enabled = True
+
 
 def send(message):
     print(json.dumps(message), flush=True)
@@ -129,6 +668,19 @@ def send(message):
 
 def response(message_id, result):
     send({"id": message_id, "result": result})
+
+
+def goal_payload():
+    return {
+        "threadId": "thread-1",
+        "objective": "Improve ACP coverage",
+        "status": "active",
+        "tokenBudget": 200000,
+        "tokensUsed": 0,
+        "timeUsedSeconds": 0,
+        "createdAt": 1776272400,
+        "updatedAt": 1776272400,
+    }
 
 
 for line in sys.stdin:
@@ -153,7 +705,24 @@ for line in sys.stdin:
                 "id": "thread-1",
                 "cwd": params["cwd"],
                 "name": "Started Thread",
-            }
+            },
+            "model": "gpt-5",
+            "reasoningEffort": "medium",
+            "serviceTier": "standard",
+            "approvalPolicy": "on-request",
+            "collaborationMode": {
+                "mode": "default",
+                "settings": {
+                    "model": "gpt-5",
+                    "reasoning_effort": "medium",
+                    "developer_instructions": None,
+                },
+            },
+            "activePermissionProfile": {"id": ":workspace"},
+        })
+        send({
+            "method": "skills/changed",
+            "params": {},
         })
     elif method == "thread/fork":
         assert params["threadId"] == "thread-1"
@@ -163,7 +732,44 @@ for line in sys.stdin:
                 "id": "thread-2",
                 "cwd": params["cwd"],
                 "name": "Forked Thread",
-            }
+            },
+            "model": "gpt-5-codex",
+            "reasoningEffort": "high",
+            "serviceTier": "priority",
+            "approvalPolicy": "never",
+            "collaborationMode": {
+                "mode": "plan",
+                "settings": {
+                    "model": "gpt-5-codex",
+                    "reasoning_effort": "medium",
+                    "developer_instructions": None,
+                },
+            },
+            "activePermissionProfile": {"id": ":workspace"},
+        })
+    elif method == "thread/resume":
+        assert params["threadId"] == "thread-1"
+        assert params["cwd"] == "/repo"
+        assert params["excludeTurns"] is True
+        response(message_id, {
+            "thread": {
+                "id": "thread-1",
+                "cwd": params["cwd"],
+                "name": "Started Thread",
+            },
+            "model": "gpt-5-codex",
+            "reasoningEffort": "high",
+            "serviceTier": "priority",
+            "approvalPolicy": "never",
+            "collaborationMode": {
+                "mode": "plan",
+                "settings": {
+                    "model": "gpt-5-codex",
+                    "reasoning_effort": "medium",
+                    "developer_instructions": None,
+                },
+            },
+            "activePermissionProfile": {"id": ":workspace"},
         })
     elif method == "thread/list":
         assert params["cwd"] == "/repo"
@@ -173,14 +779,498 @@ for line in sys.stdin:
                     "id": "thread-1",
                     "cwd": "/repo",
                     "name": "Started Thread",
+                    "preview": "Started preview",
+                    "status": {"type": "notLoaded"},
+                    "modelProvider": "openai",
+                    "createdAt": 1700000000,
+                    "updatedAt": 1700000100,
+                    "recencyAt": 1700000200,
+                    "agentNickname": "Codex",
+                    "agentRole": "primary",
+                    "parentThreadId": "thread-parent",
                 }
             ],
             "nextCursor": None,
+        })
+    elif method == "thread/name/set":
+        assert params == {
+            "threadId": "thread-1",
+            "name": "Renamed Thread",
+        }
+        response(message_id, {})
+        send({
+            "method": "thread/name/updated",
+            "params": {
+                "threadId": "thread-1",
+                "threadName": params["name"],
+            },
+        })
+    elif method == "thread/archive":
+        assert params == {"threadId": "thread-1"}
+        response(message_id, {})
+        send({
+            "method": "thread/archived",
+            "params": {"threadId": "thread-1"},
+        })
+        send({
+            "method": "thread/status/changed",
+            "params": {
+                "threadId": "thread-1",
+                "status": {"type": "notLoaded"},
+            },
+        })
+    elif method == "thread/goal/set":
+        assert params == {
+            "threadId": "thread-1",
+            "objective": "Improve ACP coverage",
+            "tokenBudget": 200000,
+        }
+        goal = goal_payload()
+        response(message_id, {"goal": goal})
+        send({
+            "method": "thread/goal/updated",
+            "params": {
+                "threadId": "thread-1",
+                "goal": goal,
+            },
+        })
+    elif method == "thread/goal/get":
+        assert params == {"threadId": "thread-1"}
+        response(message_id, {"goal": goal_payload()})
+    elif method == "thread/goal/clear":
+        assert params == {"threadId": "thread-1"}
+        response(message_id, {"cleared": True})
+        send({
+            "method": "thread/goal/cleared",
+            "params": {"threadId": "thread-1"},
+        })
+    elif method == "review/start":
+        assert params == {"threadId": "thread-1"}
+        response(message_id, {"turn": {"id": "turn-review", "status": "running"}})
+        send({
+            "method": "item/agentMessage/delta",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-review",
+                "itemId": "item-review",
+                "delta": "review complete",
+            },
+        })
+        send({
+            "method": "turn/completed",
+            "params": {
+                "threadId": "thread-1",
+                "turn": {"id": "turn-review", "status": "completed"},
+            },
+        })
+    elif method == "thread/compact/start":
+        assert params == {"threadId": "thread-1"}
+        response(message_id, {})
+        send({
+            "method": "turn/started",
+            "params": {
+                "threadId": "thread-1",
+                "turn": {"id": "turn-compact", "status": "running"},
+            },
+        })
+        send({
+            "method": "item/started",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-compact",
+                "item": {
+                    "type": "contextCompaction",
+                    "id": "compact-1",
+                    "status": "inProgress",
+                },
+            },
+        })
+        send({
+            "method": "item/completed",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-compact",
+                "item": {
+                    "type": "contextCompaction",
+                    "id": "compact-1",
+                    "status": "completed",
+                },
+            },
+        })
+        send({
+            "method": "item/agentMessage/delta",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-compact",
+                "itemId": "item-compact",
+                "delta": "compact complete",
+            },
+        })
+        send({
+            "method": "turn/completed",
+            "params": {
+                "threadId": "thread-1",
+                "turn": {"id": "turn-compact", "status": "completed"},
+            },
+        })
+    elif method == "app/list":
+        assert params == {}
+        response(message_id, {
+            "data": [
+                {
+                    "displayName": "GitHub",
+                    "connectorId": "github",
+                    "isAccessible": True,
+                },
+            ],
+        })
+    elif method == "plugin/list":
+        assert params == {}
+        response(message_id, {
+            "data": [
+                {
+                    "name": "github",
+                    "marketplaceName": "openai",
+                    "availability": "AVAILABLE",
+                },
+            ],
+        })
+    elif method == "plugin/installed":
+        assert params == {}
+        response(message_id, {
+            "data": [
+                {
+                    "pluginId": "github@openai",
+                    "name": "github",
+                },
+            ],
+        })
+    elif method == "mcpServerStatus/list":
+        assert params == {
+            "threadId": "thread-1",
+            "detail": "full",
+        }
+        response(message_id, {
+            "data": [
+                {
+                    "serverName": "filesystem",
+                    "status": "running",
+                    "tools": [
+                        {"name": "read_file"},
+                    ],
+                },
+            ],
+        })
+    elif method == "hooks/list":
+        assert params == {"cwds": ["/repo"]}
+        response(message_id, {
+            "data": [
+                {
+                    "cwd": "/repo",
+                    "hooks": [
+                        {"name": "SessionStart"},
+                    ],
+                },
+            ],
+        })
+    elif method == "thread/loaded/list":
+        assert params == {}
+        response(message_id, {"data": ["thread-1"]})
+    elif method == "skills/list":
+        assert params["cwds"] == ["/repo"]
+        assert params["forceReload"] in (False, True)
+        response(message_id, {
+            "data": [
+                {
+                    "cwd": "/repo",
+                    "skills": [
+                        {
+                            "name": "skill-creator",
+                            "path": "/skills/skill-creator/SKILL.md",
+                            "description": "Create skills",
+                            "enabled": skill_creator_enabled,
+                            "interface": {
+                                "displayName": "Skill Creator",
+                                "shortDescription": "Create or update Codex skills",
+                                "defaultPrompt": "Create a skill",
+                            },
+                        },
+                        {
+                            "name": "disabled-skill",
+                            "description": "Not currently enabled",
+                            "enabled": False,
+                        },
+                    ],
+                    "errors": [],
+                },
+            ],
+        })
+    elif method == "skills/config/write":
+        assert params["name"] == "skill-creator"
+        assert "path" not in params
+        skill_creator_enabled = params["enabled"]
+        response(message_id, {})
+    elif method == "model/list":
+        assert params == {"includeHidden": False}
+        response(message_id, {
+            "data": [
+                {
+                    "id": "gpt-5",
+                    "model": "gpt-5",
+                    "displayName": "GPT-5",
+                    "description": "Default model",
+                    "supportedReasoningEfforts": [
+                        {"reasoningEffort": "medium", "description": "Balanced"},
+                        {"reasoningEffort": "high", "description": "More thorough"},
+                    ],
+                    "defaultReasoningEffort": "medium",
+                    "serviceTiers": [
+                        {"id": "standard", "name": "Standard", "description": "Default speed"},
+                        {"id": "priority", "name": "Priority", "description": "Faster"},
+                    ],
+                    "defaultServiceTier": "standard",
+                    "hidden": False,
+                    "isDefault": True,
+                },
+                {
+                    "id": "gpt-5-codex",
+                    "model": "gpt-5-codex",
+                    "displayName": "GPT-5 Codex",
+                    "description": "Coding model",
+                    "supportedReasoningEfforts": [
+                        {"reasoningEffort": "low", "description": "Fast"},
+                        {"reasoningEffort": "high", "description": "Deep"},
+                    ],
+                    "defaultReasoningEffort": "high",
+                    "serviceTiers": [
+                        {"id": "standard", "name": "Standard", "description": "Default speed"},
+                        {"id": "priority", "name": "Priority", "description": "Faster"},
+                    ],
+                    "defaultServiceTier": "standard",
+                    "hidden": False,
+                    "isDefault": False,
+                },
+            ],
+            "nextCursor": None,
+        })
+    elif method == "collaborationMode/list":
+        assert params == {}
+        response(message_id, {
+            "data": [
+                {
+                    "name": "Default",
+                    "mode": "default",
+                    "model": None,
+                    "reasoning_effort": None,
+                },
+                {
+                    "name": "Plan",
+                    "mode": "plan",
+                    "model": None,
+                    "reasoning_effort": "medium",
+                },
+            ],
+        })
+    elif method == "permissionProfile/list":
+        assert params["cwd"] == "/repo"
+        response(message_id, {
+            "data": [
+                {"id": ":read-only", "description": None},
+                {"id": ":workspace", "description": None},
+                {"id": ":danger-full-access", "description": None},
+            ],
+            "nextCursor": None,
+        })
+    elif method == "thread/settings/update":
+        assert params["threadId"] == "thread-1"
+        if "model" in params:
+            assert params == {"threadId": "thread-1", "model": "gpt-5-codex"}
+        elif "permissions" in params:
+            assert params == {
+                "threadId": "thread-1",
+                "permissions": ":danger-full-access",
+            }
+        elif "effort" in params:
+            assert params == {"threadId": "thread-1", "effort": "high"}
+        elif "approvalPolicy" in params:
+            assert params == {"threadId": "thread-1", "approvalPolicy": "never"}
+        elif "collaborationMode" in params:
+            assert params == {
+                "threadId": "thread-1",
+                "collaborationMode": {
+                    "mode": "plan",
+                    "settings": {
+                        "model": "gpt-5-codex",
+                        "reasoning_effort": "medium",
+                        "developer_instructions": None,
+                    },
+                },
+            }
+        else:
+            assert "serviceTier" in params
+            assert params in (
+                {"threadId": "thread-1", "serviceTier": "priority"},
+                {"threadId": "thread-1", "serviceTier": None},
+            )
+        response(message_id, {})
+    elif method == "thread/read":
+        assert params["threadId"] == "thread-1"
+        assert params["includeTurns"] is True
+        response(message_id, {
+            "thread": {
+                "id": "thread-1",
+                "cwd": "/repo",
+                "name": "Started Thread",
+                "turns": [
+                    {
+                        "id": "turn-history",
+                        "items": [
+                            {
+                                "type": "userMessage",
+                                "id": "user-history",
+                                "content": [
+                                    {"type": "text", "text": "hello"},
+                                ],
+                            },
+                            {
+                                "type": "reasoning",
+                                "id": "reasoning-history",
+                                "summary": [
+                                    {"text": "remembered reasoning"},
+                                ],
+                            },
+                            {
+                                "type": "commandExecution",
+                                "id": "cmd-history",
+                                "command": "cargo check",
+                                "cwd": "/repo",
+                                "status": "completed",
+                                "aggregatedOutput": "checked",
+                            },
+                            {
+                                "type": "fileChange",
+                                "id": "file-history",
+                                "status": "completed",
+                                "changes": [
+                                    {
+                                        "path": "src/lib.rs",
+                                        "kind": "update",
+                                        "diff": "@@ -1 +1 @@",
+                                    },
+                                ],
+                            },
+                            {
+                                "type": "agentMessage",
+                                "id": "agent-history",
+                                "text": "remembered response",
+                            },
+                        ],
+                    },
+                ],
+            }
         })
     elif method == "turn/start":
         assert params["threadId"] == "thread-1"
         if params["input"] == [{"type": "text", "text": "hello"}]:
             response(message_id, {"turn": {"id": "turn-1", "status": "running"}})
+            send({
+                "method": "item/reasoning/summaryTextDelta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "reasoning-1",
+                    "delta": "thinking",
+                },
+            })
+            send({
+                "method": "turn/plan/updated",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "plan": [
+                        {"step": "Run tests", "status": "inProgress"},
+                    ],
+                },
+            })
+            send({
+                "method": "item/started",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "item": {
+                        "type": "commandExecution",
+                        "id": "cmd-1",
+                        "command": "cargo test",
+                        "cwd": "/repo",
+                        "status": "inProgress",
+                    },
+                },
+            })
+            send({
+                "method": "item/commandExecution/outputDelta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "cmd-1",
+                    "delta": "ok",
+                },
+            })
+            send({
+                "method": "item/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "item": {
+                        "type": "commandExecution",
+                        "id": "cmd-1",
+                        "command": "cargo test",
+                        "status": "completed",
+                        "aggregatedOutput": "ok",
+                    },
+                },
+            })
+            send({
+                "method": "turn/diff/updated",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "diff": "diff --git a/src/lib.rs b/src/lib.rs",
+                },
+            })
+            send({
+                "method": "thread/tokenUsage/updated",
+                "params": {
+                    "threadId": "thread-1",
+                    "used": 42,
+                    "size": 100,
+                },
+            })
+            send({
+                "method": "skills/changed",
+                "params": {},
+            })
+            send({
+                "method": "thread/settings/updated",
+                "params": {
+                    "threadId": "thread-1",
+                    "threadSettings": {
+                        "cwd": "/repo",
+                        "model": "gpt-5-codex",
+                        "effort": "high",
+                        "serviceTier": "priority",
+                        "approvalPolicy": "never",
+                        "collaborationMode": {
+                            "mode": "plan",
+                            "settings": {
+                                "model": "gpt-5-codex",
+                                "reasoning_effort": "medium",
+                                "developer_instructions": None,
+                            },
+                        },
+                        "activePermissionProfile": {"id": ":workspace"},
+                    },
+                },
+            })
             send({
                 "method": "item/agentMessage/delta",
                 "params": {
@@ -195,6 +1285,307 @@ for line in sys.stdin:
                 "params": {
                     "threadId": "thread-1",
                     "turn": {"id": "turn-1", "status": "completed"},
+                },
+            })
+        elif params["input"] == [
+            {"type": "text", "text": "$skill-creator Make one"},
+            {"type": "skill", "name": "skill-creator", "path": "/skills/skill-creator/SKILL.md"},
+        ]:
+            response(message_id, {"turn": {"id": "turn-skill", "status": "running"}})
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-skill",
+                    "itemId": "item-skill",
+                    "delta": "skill response",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {"id": "turn-skill", "status": "completed"},
+                },
+            })
+        elif params["input"] == [{"type": "text", "text": "approval callback"}]:
+            response(message_id, {"turn": {"id": "turn-approval", "status": "running"}})
+            send({
+                "method": "item/started",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-approval",
+                    "item": {
+                        "type": "commandExecution",
+                        "id": "cmd-approval",
+                        "command": "cargo fmt",
+                        "cwd": "/repo",
+                        "status": "pending",
+                    },
+                },
+            })
+            send({
+                "id": "approval-request-1",
+                "method": "item/commandExecution/requestApproval",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-approval",
+                    "itemId": "cmd-approval",
+                    "command": "cargo fmt",
+                    "cwd": "/repo",
+                    "reason": "test approval",
+                    "availableDecisions": ["accept", "decline"],
+                },
+            })
+            approval_response = json.loads(sys.stdin.readline())
+            assert approval_response == {
+                "id": "approval-request-1",
+                "result": {"decision": "accept"},
+            }
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-approval",
+                    "itemId": "item-approval",
+                    "delta": "approved callback",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {"id": "turn-approval", "status": "completed"},
+                },
+            })
+        elif params["input"] == [{"type": "text", "text": "file approval callback"}]:
+            response(message_id, {"turn": {"id": "turn-file-approval", "status": "running"}})
+            send({
+                "method": "item/started",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-file-approval",
+                    "item": {
+                        "type": "fileChange",
+                        "id": "file-approval",
+                        "status": "inProgress",
+                        "changes": [
+                            {
+                                "path": "src/lib.rs",
+                                "kind": "update",
+                                "diff": "@@ -1 +1 @@",
+                            },
+                        ],
+                    },
+                },
+            })
+            send({
+                "id": "file-approval-request-1",
+                "method": "item/fileChange/requestApproval",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-file-approval",
+                    "itemId": "file-approval",
+                    "reason": "test file approval",
+                },
+            })
+            approval_response = json.loads(sys.stdin.readline())
+            assert approval_response == {
+                "id": "file-approval-request-1",
+                "result": {"decision": "acceptForSession"},
+            }
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-file-approval",
+                    "itemId": "item-file-approval",
+                    "delta": "approved file",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {"id": "turn-file-approval", "status": "completed"},
+                },
+            })
+        elif params["input"] == [{"type": "text", "text": "permissions approval callback"}]:
+            response(message_id, {"turn": {"id": "turn-permissions-approval", "status": "running"}})
+            send({
+                "id": "permissions-approval-request-1",
+                "method": "item/permissions/requestApproval",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-permissions-approval",
+                    "itemId": "permissions-approval",
+                    "environmentId": "local",
+                    "startedAtMs": 123,
+                    "cwd": "/repo",
+                    "reason": "Need network and write access",
+                    "permissions": {
+                        "network": {"enabled": True},
+                        "fileSystem": {
+                            "read": ["/repo"],
+                            "write": ["/repo/src"],
+                        },
+                    },
+                },
+            })
+            approval_response = json.loads(sys.stdin.readline())
+            assert approval_response == {
+                "id": "permissions-approval-request-1",
+                "result": {
+                    "permissions": {
+                        "network": {"enabled": True},
+                        "fileSystem": {
+                            "read": ["/repo"],
+                            "write": ["/repo/src"],
+                        },
+                    },
+                    "scope": "session",
+                },
+            }
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-permissions-approval",
+                    "itemId": "item-permissions-approval",
+                    "delta": "approved permissions",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {"id": "turn-permissions-approval", "status": "completed"},
+                },
+            })
+        elif params["input"] == [{"type": "text", "text": "mcp elicitation callback"}]:
+            response(message_id, {"turn": {"id": "turn-mcp-elicitation", "status": "running"}})
+            send({
+                "id": "mcp-elicitation-request-1",
+                "method": "mcpServer/elicitation/request",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-mcp-elicitation",
+                    "serverName": "test-mcp",
+                    "type": "url",
+                    "message": "Authorize app",
+                    "url": "https://example.test/auth",
+                    "elicitationId": "elicitation-1",
+                },
+            })
+            elicitation_response = json.loads(sys.stdin.readline())
+            assert elicitation_response == {
+                "id": "mcp-elicitation-request-1",
+                "result": {
+                    "action": "cancel",
+                    "content": None,
+                    "_meta": None,
+                },
+            }
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-mcp-elicitation",
+                    "itemId": "item-mcp-elicitation",
+                    "delta": "cancelled elicitation",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {"id": "turn-mcp-elicitation", "status": "completed"},
+                },
+            })
+        elif params["input"] == [{"type": "text", "text": "user input callback"}]:
+            response(message_id, {"turn": {"id": "turn-user-input", "status": "running"}})
+            send({
+                "id": "user-input-request-1",
+                "method": "item/tool/requestUserInput",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-user-input",
+                    "itemId": "user-input",
+                    "questions": [
+                        {
+                            "id": "confirm",
+                            "header": "Confirm",
+                            "question": "Proceed?",
+                            "options": [
+                                {"label": "Yes", "description": "Continue"},
+                                {"label": "No", "description": "Stop"},
+                            ],
+                        },
+                    ],
+                },
+            })
+            user_input_response = json.loads(sys.stdin.readline())
+            assert user_input_response == {
+                "id": "user-input-request-1",
+                "result": {"answers": {}},
+            }
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-user-input",
+                    "itemId": "item-user-input",
+                    "delta": "empty user input",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {"id": "turn-user-input", "status": "completed"},
+                },
+            })
+        elif params["input"] == [{"type": "text", "text": "dynamic tool callback"}]:
+            response(message_id, {"turn": {"id": "turn-dynamic-tool", "status": "running"}})
+            send({
+                "id": "dynamic-tool-request-1",
+                "method": "item/tool/call",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-dynamic-tool",
+                    "callId": "dynamic-tool",
+                    "namespace": "test",
+                    "tool": "unsupported",
+                    "arguments": {},
+                },
+            })
+            dynamic_tool_response = json.loads(sys.stdin.readline())
+            assert dynamic_tool_response == {
+                "id": "dynamic-tool-request-1",
+                "result": {
+                    "contentItems": [
+                        {
+                            "type": "inputText",
+                            "text": "Dynamic tool calls are not supported by this ACP adapter yet.",
+                        },
+                    ],
+                    "success": False,
+                },
+            }
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-dynamic-tool",
+                    "itemId": "item-dynamic-tool",
+                    "delta": "failed dynamic tool",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {"id": "turn-dynamic-tool", "status": "completed"},
                 },
             })
         elif params["input"] == [{"type": "text", "text": "cancel me"}]:
@@ -215,6 +1606,9 @@ for line in sys.stdin:
     elif method == "thread/unsubscribe":
         assert params["threadId"] == "thread-1"
         response(message_id, {"status": "ok"})
+    elif method == "thread/delete":
+        assert params["threadId"] == "thread-1"
+        response(message_id, {})
     else:
         send({
             "id": message_id,
