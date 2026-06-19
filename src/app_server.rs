@@ -750,7 +750,10 @@ impl AppServerClient {
                 | "item/reasoning/textDelta"
                 | "turn/diff/updated"
                 | "turn/plan/updated"
-                | "thread/tokenUsage/updated" => {
+                | "thread/tokenUsage/updated"
+                | "warning"
+                | "error"
+                | "model/rerouted" => {
                     if let Some(event) = decode_prompt_event(
                         method.as_str(),
                         &params,
@@ -1871,6 +1874,9 @@ pub enum AppServerPromptEvent {
     UsageUpdated(AppServerUsage),
     SkillsChanged,
     ThreadSettingsUpdated(AppServerThreadSettingsUpdate),
+    Warning(AppServerWarningUpdate),
+    Error(AppServerErrorUpdate),
+    ModelRerouted(AppServerModelReroutedUpdate),
 }
 
 pub enum AppServerHistoryEvent {
@@ -2053,6 +2059,31 @@ pub struct AppServerThreadGoalUpdate {
     pub goal: Option<Value>,
 }
 
+#[derive(Debug, Clone)]
+pub struct AppServerWarningUpdate {
+    pub thread_id: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppServerErrorUpdate {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub message: String,
+    pub will_retry: bool,
+    pub codex_error_info: Option<Value>,
+    pub additional_details: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppServerModelReroutedUpdate {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub from_model: String,
+    pub to_model: String,
+    pub reason: Value,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ThreadArchivedNotification {
@@ -2095,6 +2126,43 @@ struct ThreadGoalUpdatedNotification {
 #[serde(rename_all = "camelCase")]
 struct ThreadGoalClearedNotification {
     thread_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WarningNotification {
+    #[serde(default)]
+    thread_id: Option<String>,
+    message: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ErrorNotification {
+    error: TurnErrorNotification,
+    will_retry: bool,
+    thread_id: String,
+    turn_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TurnErrorNotification {
+    message: String,
+    #[serde(default)]
+    codex_error_info: Option<Value>,
+    #[serde(default)]
+    additional_details: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelReroutedNotification {
+    thread_id: String,
+    turn_id: String,
+    from_model: String,
+    to_model: String,
+    reason: Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2203,6 +2271,35 @@ fn decode_prompt_event(
         }
         "thread/tokenUsage/updated" => {
             Ok(decode_usage(params).map(AppServerPromptEvent::UsageUpdated))
+        }
+        "warning" => {
+            let update = decode_warning(params)?;
+            if update
+                .thread_id
+                .as_deref()
+                .is_some_and(|id| id != active_thread_id)
+            {
+                return Ok(None);
+            }
+            Ok(Some(AppServerPromptEvent::Warning(update)))
+        }
+        "error" => {
+            let update = decode_error(params)?;
+            if update.thread_id != active_thread_id
+                || Some(update.turn_id.as_str()) != active_turn_id
+            {
+                return Ok(None);
+            }
+            Ok(Some(AppServerPromptEvent::Error(update)))
+        }
+        "model/rerouted" => {
+            let update = decode_model_rerouted(params)?;
+            if update.thread_id != active_thread_id
+                || Some(update.turn_id.as_str()) != active_turn_id
+            {
+                return Ok(None);
+            }
+            Ok(Some(AppServerPromptEvent::ModelRerouted(update)))
         }
         _ => Ok(None),
     }
@@ -2362,6 +2459,37 @@ pub fn decode_thread_goal_cleared(params: &Value) -> anyhow::Result<AppServerThr
     Ok(AppServerThreadGoalUpdate {
         thread_id: notification.thread_id,
         goal: None,
+    })
+}
+
+pub fn decode_warning(params: &Value) -> anyhow::Result<AppServerWarningUpdate> {
+    let notification: WarningNotification = serde_json::from_value(params.clone())?;
+    Ok(AppServerWarningUpdate {
+        thread_id: notification.thread_id,
+        message: notification.message,
+    })
+}
+
+pub fn decode_error(params: &Value) -> anyhow::Result<AppServerErrorUpdate> {
+    let notification: ErrorNotification = serde_json::from_value(params.clone())?;
+    Ok(AppServerErrorUpdate {
+        thread_id: notification.thread_id,
+        turn_id: notification.turn_id,
+        message: notification.error.message,
+        will_retry: notification.will_retry,
+        codex_error_info: notification.error.codex_error_info,
+        additional_details: notification.error.additional_details,
+    })
+}
+
+pub fn decode_model_rerouted(params: &Value) -> anyhow::Result<AppServerModelReroutedUpdate> {
+    let notification: ModelReroutedNotification = serde_json::from_value(params.clone())?;
+    Ok(AppServerModelReroutedUpdate {
+        thread_id: notification.thread_id,
+        turn_id: notification.turn_id,
+        from_model: notification.from_model,
+        to_model: notification.to_model,
+        reason: notification.reason,
     })
 }
 

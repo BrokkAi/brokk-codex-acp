@@ -31,14 +31,16 @@ use tracing::{debug, trace};
 use crate::app_server::{
     AppServerActivePermissionProfile, AppServerApprovalDecision, AppServerApprovalOption,
     AppServerApprovalRequest, AppServerClient, AppServerCollaborationMode,
-    AppServerCollaborationModeMask, AppServerCollaborationModeSettings, AppServerHistoryEvent,
-    AppServerMessage, AppServerModel, AppServerPermissionProfile, AppServerPlanStatus,
-    AppServerPromptCompletion, AppServerPromptEvent, AppServerSkill, AppServerThread,
-    AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
-    ThreadSettingsUpdateParams, decode_thread_archived, decode_thread_closed,
-    decode_thread_deleted, decode_thread_goal_cleared, decode_thread_goal_updated,
-    decode_thread_name_updated, decode_thread_settings_updated, decode_thread_status_changed,
-    decode_thread_unarchived, history_events_for_turns, is_app_server_method_unavailable,
+    AppServerCollaborationModeMask, AppServerCollaborationModeSettings, AppServerErrorUpdate,
+    AppServerHistoryEvent, AppServerMessage, AppServerModel, AppServerModelReroutedUpdate,
+    AppServerPermissionProfile, AppServerPlanStatus, AppServerPromptCompletion,
+    AppServerPromptEvent, AppServerSkill, AppServerThread, AppServerThreadSettingsUpdate,
+    AppServerToolKind, AppServerToolStatus, AppServerTurnInput, AppServerWarningUpdate,
+    ThreadSettingsUpdateParams, decode_error, decode_model_rerouted, decode_thread_archived,
+    decode_thread_closed, decode_thread_deleted, decode_thread_goal_cleared,
+    decode_thread_goal_updated, decode_thread_name_updated, decode_thread_settings_updated,
+    decode_thread_status_changed, decode_thread_unarchived, decode_warning,
+    history_events_for_turns, is_app_server_method_unavailable,
 };
 
 const MODEL_CONFIG_ID: &str = "model";
@@ -493,6 +495,46 @@ impl CodexAcpAgent {
                 let update = decode_thread_goal_cleared(&params).map_err(acp_internal_error)?;
                 let session_id = SessionId::new(update.thread_id);
                 publish_session_goal_update(&session_id, update.goal, cx)
+                    .map_err(acp_internal_error)?;
+            }
+            "warning" => {
+                let update = decode_warning(&params).map_err(acp_internal_error)?;
+                let Some(thread_id) = update.thread_id.as_ref() else {
+                    return Ok(());
+                };
+                if self.active_prompts.lock().await.contains_key(thread_id) {
+                    return Ok(());
+                }
+                let session_id = SessionId::new(thread_id.clone());
+                publish_agent_message(&session_id, warning_message(&update), cx)
+                    .map_err(acp_internal_error)?;
+            }
+            "error" => {
+                let update = decode_error(&params).map_err(acp_internal_error)?;
+                if self
+                    .active_prompts
+                    .lock()
+                    .await
+                    .contains_key(&update.thread_id)
+                {
+                    return Ok(());
+                }
+                let session_id = SessionId::new(update.thread_id.clone());
+                publish_agent_message(&session_id, error_message(&update), cx)
+                    .map_err(acp_internal_error)?;
+            }
+            "model/rerouted" => {
+                let update = decode_model_rerouted(&params).map_err(acp_internal_error)?;
+                if self
+                    .active_prompts
+                    .lock()
+                    .await
+                    .contains_key(&update.thread_id)
+                {
+                    return Ok(());
+                }
+                let session_id = SessionId::new(update.thread_id.clone());
+                publish_agent_message(&session_id, model_rerouted_message(&update), cx)
                     .map_err(acp_internal_error)?;
             }
             _ => {}
@@ -2988,16 +3030,37 @@ fn collaboration_mode_for_config(
 }
 
 fn humanize_identifier(id: &str) -> String {
-    let mut words = id.split(['-', '_']);
-    let Some(first) = words.next() else {
+    let words = id
+        .split(['-', '_'])
+        .flat_map(split_camel_words)
+        .collect::<Vec<_>>();
+    let Some((first, rest)) = words.split_first() else {
         return String::new();
     };
     let mut result = capitalize(first);
-    for word in words {
+    for word in rest {
         result.push(' ');
         result.push_str(word);
     }
     result
+}
+
+fn split_camel_words(word: &str) -> Vec<&str> {
+    if word.is_empty() {
+        return Vec::new();
+    }
+    let mut words = Vec::new();
+    let mut start = 0;
+    let mut previous_lowercase = false;
+    for (index, ch) in word.char_indices() {
+        if index > 0 && previous_lowercase && ch.is_uppercase() {
+            words.push(&word[start..index]);
+            start = index;
+        }
+        previous_lowercase = ch.is_lowercase();
+    }
+    words.push(&word[start..]);
+    words
 }
 
 fn capitalize(text: &str) -> String {
@@ -3335,6 +3398,21 @@ fn send_prompt_event(
             session_id,
             SessionUpdate::UsageUpdate(UsageUpdate::new(usage.used, usage.size)),
         ),
+        AppServerPromptEvent::Warning(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(warning_message(&update))),
+        ),
+        AppServerPromptEvent::Error(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(error_message(&update))),
+        ),
+        AppServerPromptEvent::ModelRerouted(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(model_rerouted_message(&update))),
+        ),
         AppServerPromptEvent::SkillsChanged | AppServerPromptEvent::ThreadSettingsUpdated(_) => {
             Ok(())
         }
@@ -3482,6 +3560,57 @@ fn approval_decision_from_option_id(option_id: &str) -> AppServerApprovalDecisio
         "decline" => AppServerApprovalDecision::Decline,
         "cancel" => AppServerApprovalDecision::Cancel,
         _ => AppServerApprovalDecision::Cancel,
+    }
+}
+
+fn publish_agent_message(
+    session_id: &SessionId,
+    message: String,
+    cx: &ConnectionTo<Client>,
+) -> anyhow::Result<()> {
+    send_session_update(
+        cx,
+        session_id.clone(),
+        SessionUpdate::AgentMessageChunk(text_chunk(message)),
+    )
+}
+
+fn warning_message(update: &AppServerWarningUpdate) -> String {
+    format!("Codex warning: {}", update.message)
+}
+
+fn error_message(update: &AppServerErrorUpdate) -> String {
+    let mut message = if update.will_retry {
+        format!("Codex error (retrying): {}", update.message)
+    } else {
+        format!("Codex error: {}", update.message)
+    };
+    if let Some(details) = update.additional_details.as_deref()
+        && !details.trim().is_empty()
+    {
+        message.push_str("\n\n");
+        message.push_str(details);
+    }
+    if let Some(info) = update.codex_error_info.as_ref() {
+        message.push_str("\n\nCode: ");
+        message.push_str(&json_value_label(info));
+    }
+    message
+}
+
+fn model_rerouted_message(update: &AppServerModelReroutedUpdate) -> String {
+    format!(
+        "Codex rerouted the model from `{}` to `{}` ({}) for this turn.",
+        update.from_model,
+        update.to_model,
+        json_value_label(&update.reason)
+    )
+}
+
+fn json_value_label(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(value) => humanize_identifier(value),
+        other => other.to_string(),
     }
 }
 

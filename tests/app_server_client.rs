@@ -347,6 +347,18 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
                             settings.service_tier.as_deref().unwrap_or_default()
                         ));
                     }
+                    AppServerPromptEvent::Warning(update) => {
+                        events.push(format!("warning:{}", update.message));
+                    }
+                    AppServerPromptEvent::Error(update) => {
+                        events.push(format!("error:{}", update.message));
+                    }
+                    AppServerPromptEvent::ModelRerouted(update) => {
+                        events.push(format!(
+                            "model-rerouted:{}:{}",
+                            update.from_model, update.to_model
+                        ));
+                    }
                 }
                 Ok(())
             },
@@ -707,6 +719,11 @@ fn summarize_prompt_event(event: AppServerPromptEvent) -> String {
         AppServerPromptEvent::SkillsChanged => "skills-changed".to_owned(),
         AppServerPromptEvent::ThreadSettingsUpdated(settings) => {
             format!("settings:{}", settings.thread_id)
+        }
+        AppServerPromptEvent::Warning(update) => format!("warning:{}", update.message),
+        AppServerPromptEvent::Error(update) => format!("error:{}", update.message),
+        AppServerPromptEvent::ModelRerouted(update) => {
+            format!("model-rerouted:{}:{}", update.from_model, update.to_model)
         }
     }
 }

@@ -199,6 +199,24 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
         }),
         "session updates: {session_updates:#?}"
     );
+    let agent_messages = session_updates
+        .iter()
+        .filter(|update| update["sessionUpdate"] == "agent_message_chunk")
+        .filter_map(|update| update["content"]["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    for expected in [
+        "Codex warning: limited skills loaded",
+        "Codex rerouted the model from `gpt-5-codex` to `gpt-5` (High Risk Cyber Activity) for this turn.",
+        "Codex error (retrying): transient failure",
+        "retry details",
+        "Code: Rate Limit",
+    ] {
+        assert!(
+            agent_messages.contains(expected),
+            "agent messages did not include {expected:?}: {agent_messages:#?}"
+        );
+    }
 
     Ok(())
 }
@@ -1035,6 +1053,36 @@ for line in sys.stdin:
                     "threadId": "thread-serialized",
                     "used": 42,
                     "size": 100,
+                },
+            })
+            send({
+                "method": "warning",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "message": "limited skills loaded",
+                },
+            })
+            send({
+                "method": "model/rerouted",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "fromModel": "gpt-5-codex",
+                    "toModel": "gpt-5",
+                    "reason": "highRiskCyberActivity",
+                },
+            })
+            send({
+                "method": "error",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "willRetry": True,
+                    "error": {
+                        "message": "transient failure",
+                        "codexErrorInfo": "rateLimit",
+                        "additionalDetails": "retry details",
+                    },
                 },
             })
             send({
