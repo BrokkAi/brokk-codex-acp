@@ -313,7 +313,7 @@ Tasks:
   observed during an active prompt.
 - [x] Dispatch app-server stdout in a background reader so responses and
   notifications are routed independently of active requests.
-- [ ] Add end-to-end ACP client tests that assert serialized `session/update`
+- [x] Add end-to-end ACP client tests that assert serialized `session/update`
   notifications.
 - [x] Add approval request bridging for command and file-change approvals.
 - [x] Add approval request bridging for permission-profile requests, granting
@@ -1302,7 +1302,7 @@ Manual flows:
 - [x] Map MCP tool calls at the lifecycle level.
 - [x] Add active item/tool-call output tracking for prompt-local updates.
 - [x] Add buffered output fallback for clients without terminal streaming.
-- [ ] Add serialized ACP client tests for each notification family.
+- [x] Add serialized ACP client tests for each notification family.
 
 ### Phase 3: Slash Commands
 

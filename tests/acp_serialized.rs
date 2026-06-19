@@ -92,6 +92,99 @@ async fn serialized_load_replays_history_before_response() -> anyhow::Result<()>
     Ok(())
 }
 
+#[tokio::test]
+async fn serialized_prompt_emits_session_update_notification_families() -> anyhow::Result<()> {
+    let (prompt, notifications) = run_serialized_prompt("serialized notifications").await?;
+
+    assert_eq!(prompt["result"]["stopReason"], "end_turn");
+
+    let session_updates = notifications
+        .iter()
+        .filter(|notification| notification["method"] == "session/update")
+        .map(|notification| &notification["params"]["update"])
+        .collect::<Vec<_>>();
+
+    assert!(
+        session_updates.iter().any(|update| {
+            update["sessionUpdate"] == "agent_thought_chunk"
+                && update["content"]["text"] == "thinking"
+        }),
+        "session updates: {session_updates:#?}"
+    );
+    assert!(
+        session_updates
+            .iter()
+            .any(|update| update["sessionUpdate"] == "plan"),
+        "session updates: {session_updates:#?}"
+    );
+    assert!(
+        session_updates.iter().any(|update| {
+            update["sessionUpdate"] == "tool_call" && update["toolCallId"] == "cmd-1"
+        }),
+        "session updates: {session_updates:#?}"
+    );
+    assert!(
+        session_updates.iter().any(|update| {
+            update["sessionUpdate"] == "tool_call_update" && update["toolCallId"] == "cmd-1"
+        }),
+        "session updates: {session_updates:#?}"
+    );
+    assert!(
+        session_updates.iter().any(|update| {
+            update["sessionUpdate"] == "tool_call"
+                && update["toolCallId"] == "mcp-1"
+                && update["title"] == "filesystem.read_file"
+        }),
+        "session updates: {session_updates:#?}"
+    );
+    assert!(
+        session_updates.iter().any(|update| {
+            update["sessionUpdate"] == "tool_call_update"
+                && update["toolCallId"] == "mcp-1"
+                && update["status"] == "completed"
+        }),
+        "session updates: {session_updates:#?}"
+    );
+    assert!(
+        session_updates.iter().any(|update| {
+            update["sessionUpdate"] == "tool_call"
+                && update["toolCallId"] == "file-1"
+                && update["kind"] == "edit"
+        }),
+        "session updates: {session_updates:#?}"
+    );
+    assert!(
+        session_updates.iter().any(|update| {
+            update["sessionUpdate"] == "tool_call_update"
+                && update["toolCallId"] == "file-1"
+                && update["status"] == "completed"
+        }),
+        "session updates: {session_updates:#?}"
+    );
+    assert!(
+        session_updates.iter().any(|update| {
+            update["sessionUpdate"] == "tool_call"
+                && update["toolCallId"] == "turn-diff:turn-serialized-notifications"
+        }),
+        "session updates: {session_updates:#?}"
+    );
+    assert!(
+        session_updates
+            .iter()
+            .any(|update| { update["sessionUpdate"] == "usage_update" && update["used"] == 42 }),
+        "session updates: {session_updates:#?}"
+    );
+    assert!(
+        session_updates.iter().any(|update| {
+            update["sessionUpdate"] == "agent_message_chunk"
+                && update["content"]["text"] == "serialized response"
+        }),
+        "session updates: {session_updates:#?}"
+    );
+
+    Ok(())
+}
+
 async fn run_serialized_prompt(prompt_text: &str) -> anyhow::Result<(Value, Vec<Value>)> {
     let fake_codex = fake_codex_app_server(SERIALIZED_RENAME_CODEX_APP_SERVER)?;
     let mut app_server =
@@ -306,6 +399,10 @@ def response(message_id, payload):
     print(json.dumps({"id": message_id, **payload}), flush=True)
 
 
+def send(payload):
+    print(json.dumps(payload), flush=True)
+
+
 for line in sys.stdin:
     message = json.loads(line)
     method = message.get("method")
@@ -424,12 +521,175 @@ for line in sys.stdin:
             },
         })
     elif method == "turn/start":
-        response(message_id, {
-            "error": {
-                "code": -32000,
-                "message": "turn/start should not be called for /rename",
-            },
-        })
+        assert params["threadId"] == "thread-serialized"
+        if params["input"] == [{"type": "text", "text": "serialized notifications"}]:
+            response(message_id, {
+                "result": {
+                    "turn": {"id": "turn-serialized-notifications", "status": "running"},
+                },
+            })
+            send({
+                "method": "item/reasoning/summaryTextDelta",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "itemId": "reasoning-1",
+                    "delta": "thinking",
+                },
+            })
+            send({
+                "method": "turn/plan/updated",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "plan": [
+                        {"step": "Run serialized test", "status": "inProgress"},
+                    ],
+                },
+            })
+            send({
+                "method": "item/started",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "item": {
+                        "type": "commandExecution",
+                        "id": "cmd-1",
+                        "command": "cargo test",
+                        "cwd": "/repo",
+                        "status": "inProgress",
+                    },
+                },
+            })
+            send({
+                "method": "item/commandExecution/outputDelta",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "itemId": "cmd-1",
+                    "delta": "ok",
+                },
+            })
+            send({
+                "method": "item/completed",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "item": {
+                        "type": "commandExecution",
+                        "id": "cmd-1",
+                        "command": "cargo test",
+                        "status": "completed",
+                        "aggregatedOutput": "ok",
+                    },
+                },
+            })
+            send({
+                "method": "item/started",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "item": {
+                        "type": "mcpToolCall",
+                        "id": "mcp-1",
+                        "server": "filesystem",
+                        "tool": "read_file",
+                        "status": "inProgress",
+                    },
+                },
+            })
+            send({
+                "method": "item/completed",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "item": {
+                        "type": "mcpToolCall",
+                        "id": "mcp-1",
+                        "server": "filesystem",
+                        "tool": "read_file",
+                        "status": "completed",
+                        "result": {"content": "read"},
+                    },
+                },
+            })
+            send({
+                "method": "item/started",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "item": {
+                        "type": "fileChange",
+                        "id": "file-1",
+                        "status": "inProgress",
+                        "changes": [
+                            {
+                                "path": "src/lib.rs",
+                                "kind": "update",
+                                "diff": "@@ -1 +1 @@",
+                            },
+                        ],
+                    },
+                },
+            })
+            send({
+                "method": "item/completed",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "item": {
+                        "type": "fileChange",
+                        "id": "file-1",
+                        "status": "completed",
+                        "changes": [
+                            {
+                                "path": "src/lib.rs",
+                                "kind": "update",
+                                "diff": "@@ -1 +1 @@",
+                            },
+                        ],
+                    },
+                },
+            })
+            send({
+                "method": "turn/diff/updated",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "diff": "diff --git a/src/lib.rs b/src/lib.rs",
+                },
+            })
+            send({
+                "method": "thread/tokenUsage/updated",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "used": 42,
+                    "size": 100,
+                },
+            })
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "itemId": "item-1",
+                    "delta": "serialized response",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turn": {"id": "turn-serialized-notifications", "status": "completed"},
+                },
+            })
+        else:
+            response(message_id, {
+                "error": {
+                    "code": -32000,
+                    "message": "turn/start should not be called for built-in slash commands",
+                },
+            })
     else:
         response(message_id, {
             "error": {
