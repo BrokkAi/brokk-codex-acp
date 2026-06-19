@@ -2360,6 +2360,12 @@ fn decode_approval_request(
                 .get("permissions")
                 .cloned()
                 .unwrap_or_else(|| json!({}));
+            let default_options = [
+                AppServerApprovalOption::Accept,
+                AppServerApprovalOption::AcceptForSession,
+                AppServerApprovalOption::Decline,
+                AppServerApprovalOption::Cancel,
+            ];
             AppServerApprovalRequest {
                 item_id,
                 title: string_field(params, "reason")
@@ -2369,12 +2375,7 @@ fn decode_approval_request(
                 response_kind: AppServerApprovalResponseKind::Permissions {
                     requested_permissions,
                 },
-                options: vec![
-                    AppServerApprovalOption::Accept,
-                    AppServerApprovalOption::AcceptForSession,
-                    AppServerApprovalOption::Decline,
-                    AppServerApprovalOption::Cancel,
-                ],
+                options: approval_options_from_params(params, &default_options),
             }
         }
         _ => return Ok(None),
@@ -3018,6 +3019,37 @@ mod tests {
             assert_eq!(response["scope"], "turn");
             assert_eq!(response["permissions"], json!({}));
         }
+    }
+
+    #[test]
+    fn permissions_approval_uses_available_decisions_when_present() {
+        let approval = decode_approval_request(
+            "item/permissions/requestApproval",
+            &json!({
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "itemId": "permissions-approval",
+                "startedAtMs": 123,
+                "cwd": "/repo",
+                "reason": "Need network",
+                "permissions": {
+                    "network": {"enabled": true},
+                },
+                "availableDecisions": ["accept", "decline"],
+            }),
+            "thread-1",
+            Some("turn-1"),
+        )
+        .unwrap()
+        .expect("permissions request should decode");
+
+        assert_eq!(
+            approval.options,
+            vec![
+                AppServerApprovalOption::Accept,
+                AppServerApprovalOption::Decline
+            ]
+        );
     }
 
     #[test]
