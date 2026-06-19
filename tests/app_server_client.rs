@@ -291,6 +291,10 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         ]
     );
 
+    let rollback = client.thread_rollback("thread-1".to_string(), 2).await?;
+    assert_eq!(rollback.thread.id, "thread-1");
+    assert_eq!(rollback.thread.turns.len(), 1);
+
     let turns_page = client
         .thread_turns_list("thread-1".to_string(), None, 50)
         .await?;
@@ -1180,6 +1184,23 @@ for line in sys.stdin:
             "processId": "42",
         }
         response(message_id, {"terminated": True})
+    elif method == "thread/rollback":
+        assert params == {
+            "threadId": "thread-1",
+            "numTurns": 2,
+        }
+        response(message_id, {
+            "thread": {
+                "id": "thread-1",
+                "cwd": "/repo",
+                "turns": [
+                    {
+                        "id": "rollback-turn-1",
+                        "items": [],
+                    },
+                ],
+            },
+        })
     elif method == "skills/list":
         assert params["cwds"] == ["/repo"]
         assert params["forceReload"] in (False, True)

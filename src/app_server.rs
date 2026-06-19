@@ -168,6 +168,21 @@ impl AppServerClient {
         .await
     }
 
+    pub async fn thread_rollback(
+        &mut self,
+        thread_id: String,
+        num_turns: u32,
+    ) -> anyhow::Result<ThreadRollbackResponse> {
+        self.request(
+            "thread/rollback",
+            ThreadRollbackParams {
+                thread_id,
+                num_turns,
+            },
+        )
+        .await
+    }
+
     pub async fn thread_turns_list(
         &mut self,
         thread_id: String,
@@ -1230,6 +1245,19 @@ struct ThreadReadParams {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadReadResponse {
     pub thread: AppServerThreadHistory,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadRollbackParams {
+    thread_id: String,
+    num_turns: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadRollbackResponse {
+    pub thread: AppServerThread,
 }
 
 #[derive(Debug, Serialize)]

@@ -69,6 +69,7 @@ const PS_COMMAND: &str = "ps";
 const RENAME_COMMAND: &str = "rename";
 const RESUME_COMMAND: &str = "resume";
 const REVIEW_COMMAND: &str = "review";
+const ROLLBACK_COMMAND: &str = "rollback";
 const SKILL_COMMAND: &str = "skill";
 const SKILL_ROOTS_COMMAND: &str = "skill-roots";
 const STATUS_COMMAND: &str = "status";
@@ -1159,6 +1160,29 @@ impl CodexAcpAgent {
                     cx,
                 )
             }
+            BuiltinCommand::Rollback { num_turns } => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .thread_rollback(thread_id.to_owned(), num_turns)
+                    .await
+                    .map_err(|error| acp_app_server_method_error("thread/rollback", error))?;
+                if let Some(cwd) = response.thread.cwd {
+                    self.set_session_cwd(session_id, cwd.to_string_lossy().into_owned())
+                        .await;
+                }
+                let turn_count = response.thread.turns.len();
+                let turn_label = if num_turns == 1 { "turn" } else { "turns" };
+                publish_catalog_message(
+                    session_id,
+                    "Rollback",
+                    format!(
+                        "Rolled back the last {num_turns} {turn_label}. The thread now contains {turn_count} turn(s). Local file changes made by rolled-back turns were not reverted."
+                    ),
+                    cx,
+                )
+            }
             BuiltinCommand::Compact => {
                 self.run_builtin_turn_command(
                     BuiltinTurnCommand::Compact,
@@ -2196,6 +2220,7 @@ enum BuiltinCommand {
     Rename { title: String },
     Resume { target: String },
     Review,
+    Rollback { num_turns: u32 },
     SkillRoots { roots: Vec<String> },
     Status,
     Stop,
@@ -2233,6 +2258,7 @@ enum CommandHandler {
     Rename,
     Resume,
     Review,
+    Rollback,
     SkillRoots,
     Status,
     Stop,
@@ -2387,6 +2413,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         handler: CommandHandler::Review,
     },
     BuiltinCommandSpec {
+        name: ROLLBACK_COMMAND,
+        aliases: &[],
+        description: "Rollback recent Codex thread turns",
+        input_hint: Some("number of turns"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Rollback,
+    },
+    BuiltinCommandSpec {
         name: SKILL_ROOTS_COMMAND,
         aliases: &[],
         description: "Set process-local Codex extra skill roots",
@@ -2516,6 +2550,10 @@ fn parse_command_from_spec(
         CommandHandler::Review => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Review)
         }
+        CommandHandler::Rollback => {
+            let num_turns = parse_positive_u32(rest.trim(), "/rollback requires a turn count")?;
+            Ok(Some(BuiltinCommand::Rollback { num_turns }))
+        }
         CommandHandler::SkillRoots => parse_skill_roots_command(rest),
         CommandHandler::Status => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Status)
@@ -2567,6 +2605,19 @@ fn parse_skill_roots_command(rest: &str) -> Result<Option<BuiltinCommand>, Error
         return Err(Error::invalid_params().data("/skill-roots requires at least one path"));
     }
     Ok(Some(BuiltinCommand::SkillRoots { roots }))
+}
+
+fn parse_positive_u32(text: &str, empty_message: &'static str) -> Result<u32, Error> {
+    if text.is_empty() {
+        return Err(Error::invalid_params().data(empty_message));
+    }
+    let value = text.parse::<u32>().map_err(|_| {
+        Error::invalid_params().data(format!("expected a positive integer, got `{text}`"))
+    })?;
+    if value == 0 {
+        return Err(Error::invalid_params().data("turn count must be greater than zero"));
+    }
+    Ok(value)
 }
 
 fn init_prompt() -> String {
@@ -3760,6 +3811,16 @@ mod tests {
     }
 
     #[test]
+    fn parse_builtin_command_recognizes_rollback() {
+        let command = parse_builtin_command("/rollback 2").unwrap().unwrap();
+
+        assert!(matches!(
+            command,
+            BuiltinCommand::Rollback { num_turns } if num_turns == 2
+        ));
+    }
+
+    #[test]
     fn parse_shell_command_recognizes_bang_command() {
         assert_eq!(
             parse_shell_command("  !echo hi").unwrap().as_deref(),
@@ -3800,6 +3861,7 @@ mod tests {
             "/permissions",
             "/plugins",
             "/ps",
+            "/rollback 2",
             "/skill-roots /repo/.codex/skills,/shared/skills",
             "/status",
             "/stop",
@@ -3817,6 +3879,10 @@ mod tests {
                 "/permissions" => assert!(matches!(command, BuiltinCommand::Permissions)),
                 "/plugins" => assert!(matches!(command, BuiltinCommand::Plugins)),
                 "/ps" => assert!(matches!(command, BuiltinCommand::Ps)),
+                "/rollback 2" => assert!(matches!(
+                    command,
+                    BuiltinCommand::Rollback { num_turns } if num_turns == 2
+                )),
                 "/skill-roots /repo/.codex/skills,/shared/skills" => assert!(matches!(
                     command,
                     BuiltinCommand::SkillRoots { roots }
@@ -3937,6 +4003,27 @@ mod tests {
         assert_eq!(
             error.data.as_ref().and_then(serde_json::Value::as_str),
             Some("/kill requires a process id")
+        );
+    }
+
+    #[test]
+    fn parse_builtin_command_rejects_invalid_rollback_count() {
+        let error = parse_builtin_command("/rollback").unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("/rollback requires a turn count")
+        );
+
+        let error = parse_builtin_command("/rollback 0").unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("turn count must be greater than zero")
+        );
+
+        let error = parse_builtin_command("/rollback latest").unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("expected a positive integer, got `latest`")
         );
     }
 
@@ -4070,6 +4157,7 @@ mod tests {
                 "rename",
                 "resume",
                 "review",
+                "rollback",
                 "skill-roots",
                 "status",
                 "stop",

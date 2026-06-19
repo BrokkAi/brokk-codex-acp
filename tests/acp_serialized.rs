@@ -255,6 +255,14 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             "/kill 42",
             &["Terminated background terminal process `42`."],
         ),
+        (
+            "/rollback 2",
+            &[
+                "Rolled back the last 2 turns.",
+                "The thread now contains 1 turn(s).",
+                "Local file changes made by rolled-back turns were not reverted.",
+            ],
+        ),
     ] {
         let (prompt, notifications) = run_serialized_prompt(command).await?;
 
@@ -697,6 +705,25 @@ for line in sys.stdin:
         response(message_id, {
             "result": {
                 "terminated": True,
+            },
+        })
+    elif method == "thread/rollback":
+        assert params == {
+            "threadId": "thread-serialized",
+            "numTurns": 2,
+        }
+        response(message_id, {
+            "result": {
+                "thread": {
+                    "id": "thread-serialized",
+                    "cwd": thread_cwd,
+                    "turns": [
+                        {
+                            "id": "rollback-turn-1",
+                            "items": [],
+                        },
+                    ],
+                },
             },
         })
     elif method == "model/list":

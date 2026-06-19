@@ -394,7 +394,8 @@ Tasks:
 - [x] Add an initial parser for leading slash commands, currently `/archive`,
   `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/kill`, `/mcp`,
   `/model`, `/new`, `/permissions`, `/plugins`, `/ps`, `/rename`, `/resume`,
-  `/review`, `/skill-roots`, `/status`, `/stop`, and `/unarchive`.
+  `/review`, `/rollback`, `/skill-roots`, `/status`, `/stop`, and
+  `/unarchive`.
 - [x] Build the full command registry with aliases, availability, required
   active turn state, and handler metadata.
 - [x] Publish adapter-owned ACP available commands plus skills.
@@ -403,7 +404,8 @@ Tasks:
   `/plugins`, `/hooks`, and `/status`. Implemented so far: `/archive`,
   `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/kill`, `/mcp`,
   `/model`, `/new`, `/permissions`, `/plugins`, `/ps`, `/rename`, `/resume`,
-  `/review`, `/skill-roots`, `/status`, `/stop`, and `/unarchive`. `/fork` is
+  `/review`, `/rollback`, `/skill-roots`, `/status`, `/stop`, and
+  `/unarchive`. `/fork` is
   implemented only as an extension command backed by Codex `thread/fork`, not
   as required ACP v1 behavior.
 - [x] Return explicit unsupported-command responses for slash commands that are
@@ -433,6 +435,10 @@ Tasks:
 - [x] Add fake app-server coverage for `thread/backgroundTerminals/list` and
   `thread/backgroundTerminals/clean` plus unit coverage for `/ps` and `/stop`
   parsing/advertisement.
+- [x] Add fake app-server coverage for `thread/rollback` plus unit coverage for
+  `/rollback` parsing/advertisement. ACP v1 has no transcript deletion update,
+  so the command updates app-server state and publishes a status message instead
+  of trying to visually remove prior history.
 - [x] Add fake app-server coverage for
   `thread/backgroundTerminals/terminate` plus unit coverage for `/kill`
   parsing/advertisement.
@@ -859,6 +865,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/resume <id-or-name>` | `thread/resume` after exact id/name/preview lookup `[implemented]` |
 | `/fork` | `thread/fork` extension only `[implemented]` |
 | `/archive` | `thread/archive` `[implemented]` |
+| `/rollback <num-turns>` | `thread/rollback` `[implemented as status message; ACP v1 cannot delete visible transcript entries]` |
 | `/delete` | `thread/delete` |
 | `/goal ...` | `thread/goal/*` `[implemented for get, clear, and objective updates]` |
 | `/plan` | `thread/settings/update` with collaboration mode |
@@ -1333,6 +1340,7 @@ Manual flows:
 - [x] Implement `/init`.
 - [x] Implement `/rename`.
 - [x] Implement `/archive`.
+- [x] Implement `/rollback`.
 - [x] Implement `/goal`.
 - [x] Implement `/model`.
 - [x] Implement `/permissions`.
