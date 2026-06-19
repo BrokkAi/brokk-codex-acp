@@ -2017,6 +2017,200 @@ enum BuiltinTurnCommand {
     Review,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CommandAvailability {
+    RequiresSession,
+    RequiresNoActiveTurn,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CommandHandler {
+    Archive,
+    Apps,
+    Compact,
+    Fork,
+    Goal,
+    Hooks,
+    Init,
+    Mcp,
+    Model,
+    New,
+    Permissions,
+    Plugins,
+    Ps,
+    Rename,
+    Resume,
+    Review,
+    SkillRoots,
+    Status,
+    Stop,
+}
+
+#[derive(Debug)]
+struct BuiltinCommandSpec {
+    name: &'static str,
+    aliases: &'static [&'static str],
+    description: &'static str,
+    input_hint: Option<&'static str>,
+    availability: CommandAvailability,
+    handler: CommandHandler,
+}
+
+const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
+    BuiltinCommandSpec {
+        name: ARCHIVE_COMMAND,
+        aliases: &[],
+        description: "Archive this Codex thread",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Archive,
+    },
+    BuiltinCommandSpec {
+        name: APPS_COMMAND,
+        aliases: &[],
+        description: "List available Codex apps",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Apps,
+    },
+    BuiltinCommandSpec {
+        name: COMPACT_COMMAND,
+        aliases: &[],
+        description: "Compact this Codex thread",
+        input_hint: None,
+        availability: CommandAvailability::RequiresNoActiveTurn,
+        handler: CommandHandler::Compact,
+    },
+    BuiltinCommandSpec {
+        name: FORK_COMMAND,
+        aliases: &[],
+        description: "Fork this Codex thread",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Fork,
+    },
+    BuiltinCommandSpec {
+        name: GOAL_COMMAND,
+        aliases: &[],
+        description: "Show, set, or clear this thread goal",
+        input_hint: Some("objective, get, or clear"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Goal,
+    },
+    BuiltinCommandSpec {
+        name: HOOKS_COMMAND,
+        aliases: &[],
+        description: "List configured Codex hooks",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Hooks,
+    },
+    BuiltinCommandSpec {
+        name: INIT_COMMAND,
+        aliases: &[],
+        description: "Create or update AGENTS.md",
+        input_hint: None,
+        availability: CommandAvailability::RequiresNoActiveTurn,
+        handler: CommandHandler::Init,
+    },
+    BuiltinCommandSpec {
+        name: MCP_COMMAND,
+        aliases: &[],
+        description: "List configured MCP servers",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Mcp,
+    },
+    BuiltinCommandSpec {
+        name: MODEL_COMMAND,
+        aliases: &[],
+        description: "Refresh Codex model options",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Model,
+    },
+    BuiltinCommandSpec {
+        name: NEW_COMMAND,
+        aliases: &[],
+        description: "Start a new Codex session",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::New,
+    },
+    BuiltinCommandSpec {
+        name: PERMISSIONS_COMMAND,
+        aliases: &[],
+        description: "Refresh Codex permission options",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Permissions,
+    },
+    BuiltinCommandSpec {
+        name: PLUGINS_COMMAND,
+        aliases: &[],
+        description: "List available and installed Codex plugins",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Plugins,
+    },
+    BuiltinCommandSpec {
+        name: PS_COMMAND,
+        aliases: &[],
+        description: "List Codex background terminals",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Ps,
+    },
+    BuiltinCommandSpec {
+        name: RENAME_COMMAND,
+        aliases: &[],
+        description: "Rename this Codex thread",
+        input_hint: Some("new thread title"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Rename,
+    },
+    BuiltinCommandSpec {
+        name: RESUME_COMMAND,
+        aliases: &[],
+        description: "Resume a Codex session",
+        input_hint: Some("thread id or name"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Resume,
+    },
+    BuiltinCommandSpec {
+        name: REVIEW_COMMAND,
+        aliases: &[],
+        description: "Run Codex review for this thread",
+        input_hint: None,
+        availability: CommandAvailability::RequiresNoActiveTurn,
+        handler: CommandHandler::Review,
+    },
+    BuiltinCommandSpec {
+        name: SKILL_ROOTS_COMMAND,
+        aliases: &[],
+        description: "Set process-local Codex extra skill roots",
+        input_hint: Some("absolute skill root paths"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::SkillRoots,
+    },
+    BuiltinCommandSpec {
+        name: STATUS_COMMAND,
+        aliases: &[],
+        description: "Show Codex thread status",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Status,
+    },
+    BuiltinCommandSpec {
+        name: STOP_COMMAND,
+        aliases: &[],
+        description: "Clean Codex background terminals",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Stop,
+    },
+];
+
 fn parse_builtin_command(text: &str) -> Result<Option<BuiltinCommand>, Error> {
     let text = text.trim_start();
     let Some(stripped) = text.strip_prefix('/') else {
@@ -2026,35 +2220,50 @@ fn parse_builtin_command(text: &str) -> Result<Option<BuiltinCommand>, Error> {
         return Ok(None);
     };
 
-    match command {
-        ARCHIVE_COMMAND => {
-            if !rest.trim().is_empty() {
-                return Err(Error::invalid_params().data("/archive does not accept arguments"));
-            }
-            Ok(Some(BuiltinCommand::Archive))
+    if command == SKILL_COMMAND {
+        return Ok(None);
+    }
+
+    let Some(spec) = builtin_command_spec(command) else {
+        return Err(Error::invalid_params().data(format!("unsupported slash command `/{command}`")));
+    };
+
+    parse_command_from_spec(spec, rest)
+}
+
+fn builtin_command_spec(command: &str) -> Option<&'static BuiltinCommandSpec> {
+    BUILTIN_COMMAND_SPECS
+        .iter()
+        .find(|spec| spec.name == command || spec.aliases.contains(&command))
+}
+
+fn parse_command_from_spec(
+    spec: &BuiltinCommandSpec,
+    rest: &str,
+) -> Result<Option<BuiltinCommand>, Error> {
+    match spec.handler {
+        CommandHandler::Archive => {
+            parse_no_argument_command(rest, spec.name, BuiltinCommand::Archive)
         }
-        APPS_COMMAND => parse_no_argument_command(rest, APPS_COMMAND, BuiltinCommand::Apps),
-        COMPACT_COMMAND => {
-            if !rest.trim().is_empty() {
-                return Err(Error::invalid_params().data("/compact does not accept arguments"));
-            }
-            Ok(Some(BuiltinCommand::Compact))
+        CommandHandler::Apps => parse_no_argument_command(rest, spec.name, BuiltinCommand::Apps),
+        CommandHandler::Compact => {
+            parse_no_argument_command(rest, spec.name, BuiltinCommand::Compact)
         }
-        FORK_COMMAND => parse_no_argument_command(rest, FORK_COMMAND, BuiltinCommand::Fork),
-        GOAL_COMMAND => parse_goal_command(rest),
-        HOOKS_COMMAND => parse_no_argument_command(rest, HOOKS_COMMAND, BuiltinCommand::Hooks),
-        INIT_COMMAND => parse_no_argument_command(rest, INIT_COMMAND, BuiltinCommand::Init),
-        MCP_COMMAND => parse_no_argument_command(rest, MCP_COMMAND, BuiltinCommand::Mcp),
-        MODEL_COMMAND => parse_no_argument_command(rest, MODEL_COMMAND, BuiltinCommand::Model),
-        NEW_COMMAND => parse_no_argument_command(rest, NEW_COMMAND, BuiltinCommand::New),
-        PERMISSIONS_COMMAND => {
-            parse_no_argument_command(rest, PERMISSIONS_COMMAND, BuiltinCommand::Permissions)
+        CommandHandler::Fork => parse_no_argument_command(rest, spec.name, BuiltinCommand::Fork),
+        CommandHandler::Goal => parse_goal_command(rest),
+        CommandHandler::Hooks => parse_no_argument_command(rest, spec.name, BuiltinCommand::Hooks),
+        CommandHandler::Init => parse_no_argument_command(rest, spec.name, BuiltinCommand::Init),
+        CommandHandler::Mcp => parse_no_argument_command(rest, spec.name, BuiltinCommand::Mcp),
+        CommandHandler::Model => parse_no_argument_command(rest, spec.name, BuiltinCommand::Model),
+        CommandHandler::New => parse_no_argument_command(rest, spec.name, BuiltinCommand::New),
+        CommandHandler::Permissions => {
+            parse_no_argument_command(rest, spec.name, BuiltinCommand::Permissions)
         }
-        PLUGINS_COMMAND => {
-            parse_no_argument_command(rest, PLUGINS_COMMAND, BuiltinCommand::Plugins)
+        CommandHandler::Plugins => {
+            parse_no_argument_command(rest, spec.name, BuiltinCommand::Plugins)
         }
-        PS_COMMAND => parse_no_argument_command(rest, PS_COMMAND, BuiltinCommand::Ps),
-        RENAME_COMMAND => {
+        CommandHandler::Ps => parse_no_argument_command(rest, spec.name, BuiltinCommand::Ps),
+        CommandHandler::Rename => {
             let title = rest.trim();
             if title.is_empty() {
                 return Err(Error::invalid_params().data("/rename requires a title"));
@@ -2063,7 +2272,7 @@ fn parse_builtin_command(text: &str) -> Result<Option<BuiltinCommand>, Error> {
                 title: title.to_owned(),
             }))
         }
-        RESUME_COMMAND => {
+        CommandHandler::Resume => {
             let target = rest.trim();
             if target.is_empty() {
                 return Err(Error::invalid_params().data("/resume requires a thread id or name"));
@@ -2072,17 +2281,14 @@ fn parse_builtin_command(text: &str) -> Result<Option<BuiltinCommand>, Error> {
                 target: target.to_owned(),
             }))
         }
-        REVIEW_COMMAND => {
-            if !rest.trim().is_empty() {
-                return Err(Error::invalid_params().data("/review does not accept arguments"));
-            }
-            Ok(Some(BuiltinCommand::Review))
+        CommandHandler::Review => {
+            parse_no_argument_command(rest, spec.name, BuiltinCommand::Review)
         }
-        SKILL_COMMAND => Ok(None),
-        SKILL_ROOTS_COMMAND => parse_skill_roots_command(rest),
-        STATUS_COMMAND => parse_no_argument_command(rest, STATUS_COMMAND, BuiltinCommand::Status),
-        STOP_COMMAND => parse_no_argument_command(rest, STOP_COMMAND, BuiltinCommand::Stop),
-        _ => Err(Error::invalid_params().data(format!("unsupported slash command `/{command}`"))),
+        CommandHandler::SkillRoots => parse_skill_roots_command(rest),
+        CommandHandler::Status => {
+            parse_no_argument_command(rest, spec.name, BuiltinCommand::Status)
+        }
+        CommandHandler::Stop => parse_no_argument_command(rest, spec.name, BuiltinCommand::Stop),
     }
 }
 
@@ -3030,39 +3236,25 @@ fn skill_command(skill: AppServerSkill) -> AvailableCommand {
 }
 
 fn builtin_commands() -> Vec<AvailableCommand> {
-    vec![
-        AvailableCommand::new("archive", "Archive this Codex thread"),
-        AvailableCommand::new("apps", "List available Codex apps"),
-        AvailableCommand::new("compact", "Compact this Codex thread"),
-        AvailableCommand::new("fork", "Fork this Codex thread"),
-        AvailableCommand::new("goal", "Show, set, or clear this thread goal").input(
-            AvailableCommandInput::Unstructured(UnstructuredCommandInput::new(
-                "objective, get, or clear",
-            )),
-        ),
-        AvailableCommand::new("hooks", "List configured Codex hooks"),
-        AvailableCommand::new("init", "Create or update AGENTS.md"),
-        AvailableCommand::new("mcp", "List configured MCP servers"),
-        AvailableCommand::new("model", "Refresh Codex model options"),
-        AvailableCommand::new("new", "Start a new Codex session"),
-        AvailableCommand::new("permissions", "Refresh Codex permission options"),
-        AvailableCommand::new("plugins", "List available and installed Codex plugins"),
-        AvailableCommand::new("ps", "List Codex background terminals"),
-        AvailableCommand::new("rename", "Rename this Codex thread").input(
-            AvailableCommandInput::Unstructured(UnstructuredCommandInput::new("new thread title")),
-        ),
-        AvailableCommand::new("resume", "Resume a Codex session").input(
-            AvailableCommandInput::Unstructured(UnstructuredCommandInput::new("thread id or name")),
-        ),
-        AvailableCommand::new("review", "Run Codex review for this thread"),
-        AvailableCommand::new("skill-roots", "Set process-local Codex extra skill roots").input(
-            AvailableCommandInput::Unstructured(UnstructuredCommandInput::new(
-                "absolute skill root paths",
-            )),
-        ),
-        AvailableCommand::new("status", "Show Codex thread status"),
-        AvailableCommand::new("stop", "Clean Codex background terminals"),
-    ]
+    BUILTIN_COMMAND_SPECS
+        .iter()
+        .filter(|spec| {
+            matches!(
+                spec.availability,
+                CommandAvailability::RequiresSession | CommandAvailability::RequiresNoActiveTurn
+            )
+        })
+        .map(|spec| {
+            let command = AvailableCommand::new(spec.name, spec.description);
+            if let Some(input_hint) = spec.input_hint {
+                command.input(AvailableCommandInput::Unstructured(
+                    UnstructuredCommandInput::new(input_hint),
+                ))
+            } else {
+                command
+            }
+        })
+        .collect()
 }
 
 fn available_commands(skills: Vec<AppServerSkill>) -> Vec<AvailableCommand> {
@@ -3434,6 +3626,18 @@ mod tests {
         let command = parse_builtin_command("/skill skill-creator Make a test skill").unwrap();
 
         assert!(command.is_none());
+    }
+
+    #[test]
+    fn builtin_command_registry_carries_availability_metadata() {
+        let compact = builtin_command_spec(COMPACT_COMMAND).expect("compact command is registered");
+        assert_eq!(
+            compact.availability,
+            CommandAvailability::RequiresNoActiveTurn
+        );
+
+        let status = builtin_command_spec(STATUS_COMMAND).expect("status command is registered");
+        assert_eq!(status.availability, CommandAvailability::RequiresSession);
     }
 
     #[test]

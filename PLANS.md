@@ -382,7 +382,7 @@ Tasks:
   `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/mcp`, `/model`,
   `/new`, `/permissions`, `/plugins`, `/ps`, `/rename`, `/resume`, `/review`,
   `/skill-roots`, `/status`, and `/stop`.
-- [ ] Build the full command registry with aliases, availability, required
+- [x] Build the full command registry with aliases, availability, required
   active turn state, and handler metadata.
 - [x] Publish adapter-owned ACP available commands plus skills.
 - Implement backend commands first: `/new`, `/resume`, `/review`,
