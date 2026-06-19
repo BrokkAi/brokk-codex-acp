@@ -421,7 +421,7 @@ Tasks:
 - [x] Add fake app-server coverage for `thread/backgroundTerminals/list` and
   `thread/backgroundTerminals/clean` plus unit coverage for `/ps` and `/stop`
   parsing/advertisement.
-- [ ] Add serialized ACP coverage proving `/rename` emits
+- [x] Add serialized ACP coverage proving `/rename` emits
   `session_info_update` and does not call `turn/start`.
 - [ ] Add serialized ACP coverage proving `/archive` emits
   `session_info_update._meta` and does not call `turn/start`.
