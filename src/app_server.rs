@@ -18,6 +18,7 @@ use tracing::{debug, trace, warn};
 const APP_SERVER_OVERLOADED_CODE: i64 = -32001;
 const APP_SERVER_OVERLOAD_MAX_RETRIES: usize = 3;
 const APP_SERVER_OVERLOAD_INITIAL_RETRY_DELAY: Duration = Duration::from_millis(25);
+const APP_SERVER_MESSAGE_BUFFER_CAPACITY: usize = 16 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct AppServerCommand {
@@ -68,7 +69,7 @@ impl AppServerClient {
 
         let stdin = Arc::new(Mutex::new(stdin));
         let pending_responses = Arc::new(Mutex::new(HashMap::new()));
-        let (messages_tx, _) = broadcast::channel(1024);
+        let (messages_tx, _) = broadcast::channel(APP_SERVER_MESSAGE_BUFFER_CAPACITY);
         let reader_task = spawn_reader(stdout, pending_responses.clone(), messages_tx.clone());
 
         Ok(Self {
@@ -536,7 +537,12 @@ impl AppServerClient {
         loop {
             let message = if let Some(cancel) = cancel_rx.as_mut() {
                 tokio::select! {
-                    message = messages_rx.recv() => receive_app_server_message(message)?,
+                    message = messages_rx.recv() => {
+                        let Some(message) = receive_app_server_message(message)? else {
+                            continue;
+                        };
+                        message
+                    },
                     _ = cancel => {
                         cancel_rx = None;
                         interrupt_requested = true;
@@ -555,7 +561,11 @@ impl AppServerClient {
                     }
                 }
             } else {
-                receive_app_server_message(messages_rx.recv().await)?
+                loop {
+                    if let Some(message) = receive_app_server_message(messages_rx.recv().await)? {
+                        break message;
+                    }
+                }
             };
 
             let (method, params) = match message {
@@ -993,14 +1003,18 @@ fn spawn_reader(
 
 fn receive_app_server_message(
     message: Result<AppServerMessage, broadcast::error::RecvError>,
-) -> anyhow::Result<AppServerMessage> {
+) -> anyhow::Result<Option<AppServerMessage>> {
     match message {
-        Ok(message) => Ok(message),
+        Ok(message) => Ok(Some(message)),
         Err(broadcast::error::RecvError::Closed) => {
             bail!("codex app-server notification stream closed")
         }
         Err(broadcast::error::RecvError::Lagged(count)) => {
-            bail!("missed {count} codex app-server notifications")
+            warn!(
+                missed_notifications = count,
+                "missed codex app-server notifications; continuing with latest buffered message"
+            );
+            Ok(None)
         }
     }
 }
@@ -2693,6 +2707,24 @@ mod tests {
                 "success": false,
             })
         );
+    }
+
+    #[test]
+    fn app_server_message_receive_recovers_from_lagged_broadcasts() {
+        let lagged = receive_app_server_message(Err(broadcast::error::RecvError::Lagged(42)))
+            .expect("lagged notifications should not fail the receiver");
+        assert!(lagged.is_none());
+
+        let received = receive_app_server_message(Ok(AppServerMessage::Notification {
+            method: "turn/completed".to_owned(),
+            params: json!({}),
+        }))
+        .expect("valid messages should decode")
+        .expect("valid messages should be present");
+        assert!(matches!(
+            received,
+            AppServerMessage::Notification { ref method, .. } if method == "turn/completed"
+        ));
     }
 
     #[test]

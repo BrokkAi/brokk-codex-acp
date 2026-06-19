@@ -1378,7 +1378,7 @@ Manual flows:
 - [ ] Add compatibility handling for older Codex versions.
 - [x] Add structured logging around app-server requests and ACP dispatch.
 - [x] Add retry handling for app-server overload backpressure.
-- [ ] Add backpressure for notification bursts.
+- [x] Add backpressure handling for notification bursts.
 - [x] Add shutdown cleanup for app-server child process.
 - [x] Add real app-server smoke tests.
 - [x] Add connection-disconnect cleanup for active prompts.
