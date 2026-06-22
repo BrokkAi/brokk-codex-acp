@@ -17,6 +17,7 @@ use tokio::time::{Duration, sleep};
 use tracing::{debug, trace, warn};
 
 const APP_SERVER_OVERLOADED_CODE: i64 = -32001;
+const JSON_RPC_REQUEST_FAILED: i64 = -32000;
 const JSON_RPC_METHOD_NOT_FOUND: i64 = -32601;
 const APP_SERVER_OVERLOAD_MAX_RETRIES: usize = 3;
 const APP_SERVER_OVERLOAD_INITIAL_RETRY_DELAY: Duration = Duration::from_millis(25);
@@ -713,12 +714,8 @@ impl AppServerClient {
                                 ?params,
                                 "rejecting unsupported app-server request during turn"
                             );
-                            self.write_request_error(
-                                id,
-                                JSON_RPC_METHOD_NOT_FOUND,
-                                format!("unsupported app-server request `{method}`"),
-                            )
-                            .await?;
+                            let (code, message) = app_server_request_error(&method);
+                            self.write_request_error(id, code, message).await?;
                         }
                     }
                     continue;
@@ -3396,6 +3393,19 @@ fn fallback_interactive_request_response(method: &str, _params: &Value) -> Optio
     }
 }
 
+fn app_server_request_error(method: &str) -> (i64, String) {
+    match method {
+        "attestation/generate" => (
+            JSON_RPC_REQUEST_FAILED,
+            "attestation generation is not supported by this ACP adapter".to_owned(),
+        ),
+        _ => (
+            JSON_RPC_METHOD_NOT_FOUND,
+            format!("unsupported app-server request `{method}`"),
+        ),
+    }
+}
+
 fn current_unix_timestamp_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -4027,6 +4037,13 @@ mod tests {
                 ],
                 "success": false,
             })
+        );
+        assert_eq!(
+            app_server_request_error("attestation/generate"),
+            (
+                JSON_RPC_REQUEST_FAILED,
+                "attestation generation is not supported by this ACP adapter".to_owned()
+            )
         );
     }
 

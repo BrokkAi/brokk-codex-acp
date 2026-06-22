@@ -67,6 +67,8 @@ The project currently includes:
   host's current Unix timestamp so external-clock reminders do not block turns.
 - Unsupported server-initiated app-server requests receive explicit JSON-RPC
   method-not-found errors instead of being silently ignored.
+- Unexpected `attestation/generate` requests receive an explicit JSON-RPC
+  failure because this adapter does not provide a native attestation token.
 - Thread-scoped MCP server startup status notifications are projected as
   user-visible ACP diagnostic messages.
 - Global app-server configuration warnings are projected as user-visible ACP

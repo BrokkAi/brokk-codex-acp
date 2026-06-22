@@ -694,6 +694,13 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         vec!["message:rejected unsupported server request"]
     );
 
+    let attestation_summaries =
+        run_text_turn_and_collect_messages(&mut client, "attestation callback").await?;
+    assert_eq!(
+        attestation_summaries,
+        vec!["message:rejected attestation request"]
+    );
+
     let (cancel_tx, cancel_rx) = oneshot::channel();
     tokio::spawn(async move {
         time::sleep(time::Duration::from_millis(50)).await;
@@ -2283,6 +2290,40 @@ for line in sys.stdin:
                 "params": {
                     "threadId": "thread-1",
                     "turn": {"id": "turn-unsupported-request", "status": "completed"},
+                },
+            })
+        elif params["input"] == [{"type": "text", "text": "attestation callback"}]:
+            response(message_id, {"turn": {"id": "turn-attestation", "status": "running"}})
+            send({
+                "id": "attestation-request-1",
+                "method": "attestation/generate",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-attestation",
+                },
+            })
+            attestation_response = json.loads(sys.stdin.readline())
+            assert attestation_response == {
+                "id": "attestation-request-1",
+                "error": {
+                    "code": -32000,
+                    "message": "attestation generation is not supported by this ACP adapter",
+                },
+            }
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-attestation",
+                    "itemId": "item-attestation",
+                    "delta": "rejected attestation request",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {"id": "turn-attestation", "status": "completed"},
                 },
             })
         elif params["input"] == [{"type": "text", "text": "cancel me"}]:
