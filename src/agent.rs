@@ -9,7 +9,7 @@ use agent_client_protocol::schema::{
     CancelNotification, CloseSessionRequest, CloseSessionResponse, ConfigOptionUpdate,
     ContentBlock, ContentChunk, CreateElicitationRequest, DeleteSessionRequest,
     DeleteSessionResponse, ElicitationAction, ElicitationContentValue, ElicitationFormMode,
-    ElicitationMode, ElicitationSchema, ElicitationSessionScope, ElicitationUrlMode,
+    ElicitationMode, ElicitationSchema, ElicitationSessionScope, ElicitationUrlMode, EnumOption,
     ForkSessionRequest, ForkSessionResponse, InitializeRequest, InitializeResponse,
     ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
     NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionId,
@@ -20,9 +20,9 @@ use agent_client_protocol::schema::{
     SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
     SessionDeleteCapabilities, SessionForkCapabilities, SessionId, SessionInfo, SessionInfoUpdate,
     SessionListCapabilities, SessionNotification, SessionResumeCapabilities, SessionUpdate,
-    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, StopReason, TextContent,
-    ToolCall, ToolCallContent, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind,
-    UnstructuredCommandInput, UsageUpdate,
+    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, StopReason,
+    StringPropertySchema, TextContent, ToolCall, ToolCallContent, ToolCallId, ToolCallStatus,
+    ToolCallUpdate, ToolCallUpdateFields, ToolKind, UnstructuredCommandInput, UsageUpdate,
 };
 use agent_client_protocol::{
     Agent, ByteStreams, Client, ConnectTo, ConnectionTo, Error, on_receive_notification,
@@ -46,12 +46,13 @@ use crate::app_server::{
     AppServerPromptCompletion, AppServerPromptEvent, AppServerRealtimeAudioDelta,
     AppServerRealtimeUpdate, AppServerSkill, AppServerThread, AppServerThreadSettingsUpdate,
     AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
-    AppServerTurnModerationMetadataUpdate, AppServerWarningUpdate,
-    AppServerWindowsSandboxSetupUpdate, ThreadSettingsUpdateParams, decode_account_login_completed,
-    decode_account_rate_limits_updated, decode_account_updated, decode_config_warning,
-    decode_error, decode_fuzzy_file_search_update, decode_mcp_server_oauth_login_completed,
-    decode_mcp_server_startup_status_updated, decode_model_rerouted, decode_model_verification,
-    decode_realtime_update, decode_thread_archived, decode_thread_closed, decode_thread_deleted,
+    AppServerTurnModerationMetadataUpdate, AppServerUserInputQuestion, AppServerUserInputRequest,
+    AppServerWarningUpdate, AppServerWindowsSandboxSetupUpdate, ThreadSettingsUpdateParams,
+    decode_account_login_completed, decode_account_rate_limits_updated, decode_account_updated,
+    decode_config_warning, decode_error, decode_fuzzy_file_search_update,
+    decode_mcp_server_oauth_login_completed, decode_mcp_server_startup_status_updated,
+    decode_model_rerouted, decode_model_verification, decode_realtime_update,
+    decode_thread_archived, decode_thread_closed, decode_thread_deleted,
     decode_thread_goal_cleared, decode_thread_goal_updated, decode_thread_name_updated,
     decode_thread_settings_updated, decode_thread_status_changed, decode_thread_unarchived,
     decode_turn_moderation_metadata, decode_warning, decode_windows_sandbox_setup_completed,
@@ -3902,6 +3903,9 @@ async fn request_interactive(
         AppServerInteractiveRequest::McpElicitation(request) => {
             request_mcp_elicitation(cx, session_id, request).await
         }
+        AppServerInteractiveRequest::UserInput(request) => {
+            request_user_input(cx, session_id, request).await
+        }
     }
 }
 
@@ -3955,6 +3959,80 @@ fn acp_elicitation_request(
     Some(CreateElicitationRequest::new(mode, request.message.clone()))
 }
 
+async fn request_user_input(
+    cx: &ConnectionTo<Client>,
+    session_id: SessionId,
+    request: AppServerUserInputRequest,
+) -> anyhow::Result<Option<serde_json::Value>> {
+    let Some(elicitation_request) = user_input_elicitation_request(&session_id, &request) else {
+        return Ok(None);
+    };
+
+    match cx.send_request(elicitation_request).block_task().await {
+        Ok(response) => Ok(Some(app_server_user_input_response(response.action))),
+        Err(error) => {
+            debug!(
+                method = %request.method,
+                item_id = request.item_id.as_deref().unwrap_or(""),
+                %error,
+                "ACP client did not complete user input request; using app-server fallback"
+            );
+            Ok(None)
+        }
+    }
+}
+
+fn user_input_elicitation_request(
+    session_id: &SessionId,
+    request: &AppServerUserInputRequest,
+) -> Option<CreateElicitationRequest> {
+    if request.questions.is_empty() {
+        return None;
+    }
+
+    let mut scope = ElicitationSessionScope::new(session_id.clone());
+    if let Some(item_id) = &request.item_id {
+        scope = scope.tool_call_id(ToolCallId::new(item_id.clone()));
+    }
+
+    let mut schema = ElicitationSchema::new()
+        .title("Additional input")
+        .description("Codex needs additional input to continue.");
+    for question in &request.questions {
+        schema = schema.property(
+            question.id.clone(),
+            user_input_question_schema(question),
+            true,
+        );
+    }
+
+    let message = if request.questions.len() == 1 {
+        request.questions[0].question.clone()
+    } else {
+        "Codex needs additional input to continue.".to_owned()
+    };
+    Some(CreateElicitationRequest::new(
+        ElicitationMode::Form(ElicitationFormMode::new(scope, schema)),
+        message,
+    ))
+}
+
+fn user_input_question_schema(question: &AppServerUserInputQuestion) -> StringPropertySchema {
+    let mut schema = StringPropertySchema::new()
+        .title(question.header.clone())
+        .description(question.question.clone());
+    if !question.options.is_empty() {
+        schema = schema.one_of(Some(
+            question
+                .options
+                .iter()
+                .map(|option| EnumOption::new(option.label.clone(), option.label.clone()))
+                .collect(),
+        ));
+    }
+    schema
+}
+
 fn app_server_elicitation_response(action: ElicitationAction) -> serde_json::Value {
     match action {
         ElicitationAction::Accept(action) => serde_json::json!({
@@ -3972,6 +4050,23 @@ fn app_server_elicitation_response(action: ElicitationAction) -> serde_json::Val
         _ => serde_json::json!({
             "action": "cancel",
             "content": null,
+        }),
+    }
+}
+
+fn app_server_user_input_response(action: ElicitationAction) -> serde_json::Value {
+    match action {
+        ElicitationAction::Accept(action) => serde_json::json!({
+            "answers": action
+                .content
+                .map(elicitation_content_map_to_json)
+                .unwrap_or_else(|| serde_json::json!({})),
+        }),
+        ElicitationAction::Decline | ElicitationAction::Cancel => serde_json::json!({
+            "answers": {},
+        }),
+        _ => serde_json::json!({
+            "answers": {},
         }),
     }
 }

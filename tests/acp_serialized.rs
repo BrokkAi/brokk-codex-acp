@@ -369,6 +369,135 @@ async fn serialized_mcp_elicitation_uses_acp_elicitation_create() -> anyhow::Res
 }
 
 #[tokio::test]
+async fn serialized_request_user_input_uses_acp_elicitation_create() -> anyhow::Result<()> {
+    let fake_codex = fake_codex_app_server(SERIALIZED_RENAME_CODEX_APP_SERVER)?;
+    let mut app_server =
+        AppServerClient::spawn(AppServerCommand::new(fake_codex.path().to_owned())).await?;
+    app_server
+        .initialize(
+            "brokk_codex_acp_test",
+            "Brokk Codex ACP Test",
+            env!("CARGO_PKG_VERSION"),
+        )
+        .await?;
+
+    let (agent_side, client_side) = tokio::io::duplex(64 * 1024);
+    let (agent_read, agent_write) = split(agent_side);
+    let agent_transport = ByteStreams::new(agent_write.compat_write(), agent_read.compat());
+    let agent_task = tokio::spawn(CodexAcpAgent::new(app_server).serve(agent_transport));
+
+    let (client_read, mut client_write) = split(client_side);
+    let mut client_read = BufReader::new(client_read);
+    let mut notifications = Vec::new();
+
+    write_json(
+        &mut client_write,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": 1,
+                "clientCapabilities": {
+                    "elicitation": {
+                        "form": {},
+                    },
+                },
+            },
+        }),
+    )
+    .await?;
+    let initialize = read_response(&mut client_read, 1, &mut notifications).await?;
+    assert_eq!(initialize["result"]["protocolVersion"], 1);
+
+    let cwd = tempfile::tempdir()?;
+    write_json(
+        &mut client_write,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "session/new",
+            "params": {
+                "cwd": cwd.path(),
+                "mcpServers": [],
+            },
+        }),
+    )
+    .await?;
+    let session = read_response(&mut client_read, 2, &mut notifications).await?;
+    let session_id = session["result"]["sessionId"]
+        .as_str()
+        .expect("session/new should return a session id")
+        .to_owned();
+
+    write_json(
+        &mut client_write,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "session/prompt",
+            "params": {
+                "sessionId": session_id,
+                "prompt": [
+                    {
+                        "type": "text",
+                        "text": "serialized user input",
+                    },
+                ],
+            },
+        }),
+    )
+    .await?;
+
+    let elicitation = read_json(&mut client_read).await?;
+    assert_eq!(elicitation["method"], "elicitation/create");
+    assert_eq!(elicitation["params"]["mode"], "form");
+    assert_eq!(
+        elicitation["params"]["message"],
+        "Codex needs additional input to continue."
+    );
+    assert_eq!(elicitation["params"]["toolCallId"], "serialized-user-input");
+    assert_eq!(
+        elicitation["params"]["requestedSchema"]["properties"]["confirm"]["oneOf"][0]["const"],
+        "Yes"
+    );
+    assert_eq!(
+        elicitation["params"]["requestedSchema"]["properties"]["notes"]["type"],
+        "string"
+    );
+    write_json(
+        &mut client_write,
+        json!({
+            "jsonrpc": "2.0",
+            "id": elicitation["id"].clone(),
+            "result": {
+                "action": "accept",
+                "content": {
+                    "confirm": "Yes",
+                    "notes": "ship it",
+                },
+            },
+        }),
+    )
+    .await?;
+
+    let prompt = read_response(&mut client_read, 3, &mut notifications).await?;
+    assert_eq!(prompt["result"]["stopReason"], "end_turn");
+    assert!(
+        notifications.iter().any(|notification| {
+            notification["method"] == "session/update"
+                && notification["params"]["update"]["sessionUpdate"] == "agent_message_chunk"
+                && notification["params"]["update"]["content"]["text"] == "user input accepted"
+        }),
+        "notifications: {notifications:#?}"
+    );
+
+    drop(client_write);
+    agent_task.abort();
+    Ok(())
+}
+
+#[tokio::test]
 async fn serialized_bang_prompt_runs_shell_command_without_starting_turn() -> anyhow::Result<()> {
     let (prompt, notifications) = run_serialized_prompt("!echo hi").await?;
 
@@ -1610,6 +1739,63 @@ for line in sys.stdin:
                 "params": {
                     "threadId": "thread-serialized",
                     "turn": {"id": "turn-serialized-elicitation", "status": "completed"},
+                },
+            })
+        elif params["input"] == [{"type": "text", "text": "serialized user input"}]:
+            response(message_id, {
+                "result": {
+                    "turn": {"id": "turn-serialized-user-input", "status": "running"},
+                },
+            })
+            send({
+                "id": "user-input-rich-request-1",
+                "method": "item/tool/requestUserInput",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-user-input",
+                    "itemId": "serialized-user-input",
+                    "questions": [
+                        {
+                            "id": "confirm",
+                            "header": "Confirm",
+                            "question": "Proceed?",
+                            "options": [
+                                {"label": "Yes", "description": "Continue"},
+                                {"label": "No", "description": "Stop"},
+                            ],
+                        },
+                        {
+                            "id": "notes",
+                            "header": "Notes",
+                            "question": "Any notes?",
+                        },
+                    ],
+                },
+            })
+            user_input_response = json.loads(sys.stdin.readline())
+            assert user_input_response == {
+                "id": "user-input-rich-request-1",
+                "result": {
+                    "answers": {
+                        "confirm": "Yes",
+                        "notes": "ship it",
+                    },
+                },
+            }
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-user-input",
+                    "itemId": "item-serialized-user-input",
+                    "delta": "user input accepted",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turn": {"id": "turn-serialized-user-input", "status": "completed"},
                 },
             })
         elif params["input"] == [{"type": "text", "text": "close me"}]:

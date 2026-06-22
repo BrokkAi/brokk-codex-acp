@@ -203,9 +203,11 @@ The current repository has the first working ACP/app-server bridge in place:
   - `mcpServer/elicitation/request` -> ACP `elicitation/create` for supported
     form and URL elicitations, with explicit cancel fallback responses when the
     ACP client cannot answer.
-  - `tool/requestUserInput`, `item/tool/requestUserInput`, and
-    `item/tool/call` -> explicit empty/failure fallback responses when no
-    ACP-compatible rich UI is available.
+  - `tool/requestUserInput` and `item/tool/requestUserInput` -> ACP
+    `elicitation/create` form requests, with explicit empty-answer fallback
+    responses when the ACP client cannot answer.
+  - `item/tool/call` -> explicit failure fallback response when no
+    ACP-compatible dynamic tool execution surface is available.
   - `attestation/generate` -> explicit JSON-RPC failure when app-server asks
     unexpectedly; the adapter does not advertise or provide attestation tokens.
   - Unsupported server-initiated app-server requests receive a JSON-RPC
@@ -300,7 +302,7 @@ The current repository has the first working ACP/app-server bridge in place:
 This baseline intentionally supports only text and resource-link prompt blocks
 as input, and advertises stable ACP v1 `sessionCapabilities.list`, `.resume`,
 `.close`, and `.delete`. It also advertises the Rust crate's unstable session
-fork extension. Rich ACP UI for MCP elicitation, dynamic tool callbacks,
+fork and elicitation extensions. Rich ACP UI for dynamic tool callbacks,
 terminal embedding, exact per-tool diff objects, and ACP-facing skills
 configuration remain planned work.
 
@@ -383,8 +385,8 @@ Tasks:
   ACP-compatible UI is available, plus explicit JSON-RPC errors for unsupported
   app-server requests.
 - [x] Add rich ACP UI bridging for MCP elicitation.
-- [ ] Add rich ACP UI bridging for dynamic tool and request-user-input
-  requests.
+- [x] Add rich ACP UI bridging for request-user-input requests.
+- [ ] Add rich ACP UI bridging for dynamic tool requests.
 - [ ] Add terminal embedding once ACP terminal creation is wired.
 
 Acceptance criteria:
@@ -406,8 +408,10 @@ Acceptance criteria:
   errors instead of blocking app-server.
 - [x] MCP elicitation routes through ACP `elicitation/create` when the client
   can answer it.
-- [ ] Dynamic tool and request-user-input requests route through a rich ACP
-  request surface when one is available.
+- [x] Request-user-input requests route through ACP `elicitation/create` when
+  the client can answer them.
+- [ ] Dynamic tool requests route through a rich ACP request surface when one
+  is available.
 
 ### Milestone B: Skills Catalog and Invocation
 
@@ -875,8 +879,10 @@ Mapping rules:
 - Plan changes -> `session/update` with `plan`; each update must include the
   complete plan entry list because ACP clients replace the plan wholesale.
 - Approval requests -> client `session/request_permission` requests.
-- Tool user-input requests -> defer until ACP has a stable elicitation surface,
-  or expose a clear error message.
+- Tool user-input requests -> ACP `elicitation/create` form requests with
+  empty-answer fallback when the ACP client cannot answer.
+- Dynamic tool callbacks -> explicit failure fallback until ACP exposes a
+  compatible dynamic tool execution surface.
 - Turn completion -> ACP prompt response stop reason.
 
 The adapter should keep a per-session active item map:
@@ -901,7 +907,8 @@ app-server item id -> ACP tool call id / message stream id
 | `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` | `session/request_permission` | Implemented for simple decisions; rich command `availableDecisions` such as exec-policy and network-policy amendments keep their original app-server payload under ACP option metadata and are returned unchanged when selected. App-server remains blocked until the ACP client answers. |
 | `item/permissions/requestApproval` | `session/request_permission` | Implemented for full requested-profile grants, rejection, generated partial-grant options for individual requested network/filesystem units scoped to turn/session, and readable request content. |
 | `mcpServer/elicitation/request` | `elicitation/create` with cancel fallback | Implemented for form, `openai/form`, and URL elicitations; falls back to app-server cancel semantics when the ACP client cannot answer. |
-| `item/tool/call`, `tool/requestUserInput`, `item/tool/requestUserInput` | fallback response now; future ACP elicitation or extension request | Implemented as explicit empty/failure responses so app-server does not block. Rich ACP UI is still pending. |
+| `tool/requestUserInput`, `item/tool/requestUserInput` | `elicitation/create` with empty-answer fallback | Implemented as form elicitations from app-server questions; falls back to empty answers when the ACP client cannot answer. |
+| `item/tool/call` | fallback response now; future ACP extension request | Implemented as an explicit failure response so app-server does not block. Rich ACP UI is still pending. |
 | `attestation/generate` | JSON-RPC error | Implemented as an explicit request failure because the adapter does not advertise or provide native attestation tokens. |
 | `skills/changed` | `available_commands_update` | Implemented through the background app-server notification dispatcher; re-runs app-server `skills/list` with `forceReload`. |
 | `thread/settings/updated` | `config_option_update` | Implemented through the background app-server notification dispatcher; refreshes model, collaboration-mode, and permission catalogs before publishing current options. |
@@ -1503,8 +1510,7 @@ Manual flows:
 Keep PRs small enough to review against fake app-server tests.
 
 1. Rich dynamic tool request UI:
-   - map `item/tool/call` and `item/tool/requestUserInput` to an
-     ACP-compatible request surface
+   - map `item/tool/call` to an ACP-compatible request surface
    - preserve app-server blocking request semantics while waiting for the ACP
      client
    - keep the current cancel/empty/failure fallback for clients that cannot

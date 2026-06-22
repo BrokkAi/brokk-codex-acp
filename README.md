@@ -69,8 +69,8 @@ The project currently includes:
   bridged to ACP `elicitation/create` when the client can answer them, with the
   explicit cancel fallback preserved for clients without that surface.
 - Server-initiated `tool/requestUserInput` and `item/tool/requestUserInput`
-  requests receive explicit empty-answer fallbacks when no rich ACP UI is
-  available.
+  requests are bridged to ACP `elicitation/create` form requests when the
+  client can answer them, with explicit empty-answer fallbacks preserved.
 - Unsupported server-initiated app-server requests receive explicit JSON-RPC
   method-not-found errors instead of being silently ignored.
 - Unexpected `attestation/generate` requests receive an explicit JSON-RPC
@@ -103,11 +103,10 @@ The project currently includes:
   `thread/status/changed`, `thread/goal/updated`, `thread/goal/cleared`, or
   `thread/settings/updated` notifications are observed.
 
-The adapter is not complete yet. Rich ACP UI for dynamic tool callbacks and
-user-input requests, exact terminal embedding, native realtime audio playback,
-remaining slash command routing, plugin install/read actions, direct MCP
-resource/tool UI, and paginated/full-fidelity history replay are still planned
-work.
+The adapter is not complete yet. Rich ACP UI for dynamic tool callbacks, exact
+terminal embedding, native realtime audio playback, remaining slash command
+routing, plugin install/read actions, direct MCP resource/tool UI, and
+paginated/full-fidelity history replay are still planned work.
 
 ## Usage
 

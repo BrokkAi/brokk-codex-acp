@@ -2128,6 +2128,7 @@ pub struct AppServerApprovalRequest {
 #[derive(Debug, Clone)]
 pub enum AppServerInteractiveRequest {
     McpElicitation(AppServerMcpElicitationRequest),
+    UserInput(AppServerUserInputRequest),
 }
 
 #[derive(Debug, Clone)]
@@ -2141,6 +2142,30 @@ pub struct AppServerMcpElicitationRequest {
     pub requested_schema: Option<Value>,
     pub url: Option<String>,
     pub elicitation_id: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppServerUserInputRequest {
+    pub raw: Value,
+    pub method: String,
+    pub thread_id: String,
+    pub turn_id: Option<String>,
+    pub item_id: Option<String>,
+    pub questions: Vec<AppServerUserInputQuestion>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppServerUserInputQuestion {
+    pub id: String,
+    pub header: Option<String>,
+    pub question: String,
+    pub options: Vec<AppServerUserInputOption>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppServerUserInputOption {
+    pub label: String,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -3064,8 +3089,58 @@ fn decode_interactive_request(
                 },
             )))
         }
+        "item/tool/requestUserInput" | "tool/requestUserInput" => {
+            let thread_id = required_string(params, "threadId")?;
+            if thread_id != active_thread_id {
+                return Ok(None);
+            }
+            Ok(Some(AppServerInteractiveRequest::UserInput(
+                AppServerUserInputRequest {
+                    raw: params.clone(),
+                    method: method.to_owned(),
+                    thread_id,
+                    turn_id: optional_string(params, "turnId"),
+                    item_id: optional_string(params, "itemId"),
+                    questions: decode_user_input_questions(params)?,
+                },
+            )))
+        }
         _ => Ok(None),
     }
+}
+
+fn decode_user_input_questions(params: &Value) -> anyhow::Result<Vec<AppServerUserInputQuestion>> {
+    let questions = params
+        .get("questions")
+        .and_then(Value::as_array)
+        .context("missing `questions`")?;
+    questions
+        .iter()
+        .map(|question| {
+            let options = question
+                .get("options")
+                .and_then(Value::as_array)
+                .map(|options| {
+                    options
+                        .iter()
+                        .map(|option| {
+                            Ok(AppServerUserInputOption {
+                                label: required_string(option, "label")?,
+                                description: optional_string(option, "description"),
+                            })
+                        })
+                        .collect::<anyhow::Result<Vec<_>>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            Ok(AppServerUserInputQuestion {
+                id: required_string(question, "id")?,
+                header: optional_string(question, "header"),
+                question: required_string(question, "question")?,
+                options,
+            })
+        })
+        .collect()
 }
 
 pub fn decode_thread_settings_updated(
