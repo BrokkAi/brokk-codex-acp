@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -395,6 +395,20 @@ impl AppServerClient {
                 cursor: None,
                 limit: None,
                 thread_id: Some(thread_id),
+            },
+        )
+        .await
+    }
+
+    pub async fn experimental_feature_enablement_set(
+        &mut self,
+        name: String,
+        enabled: bool,
+    ) -> anyhow::Result<ExperimentalFeatureEnablementSetResponse> {
+        self.request(
+            "experimentalFeature/enablement/set",
+            ExperimentalFeatureEnablementSetParams {
+                enablement: BTreeMap::from([(name, enabled)]),
             },
         )
         .await
@@ -1864,6 +1878,18 @@ pub struct ExperimentalFeature {
     pub announcement: Option<String>,
     pub enabled: bool,
     pub default_enabled: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExperimentalFeatureEnablementSetParams {
+    enablement: BTreeMap<String, bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExperimentalFeatureEnablementSetResponse {
+    pub enablement: BTreeMap<String, bool>,
 }
 
 #[derive(Debug, Serialize)]

@@ -157,6 +157,10 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     assert_eq!(features.data[0].stage, "beta");
     assert!(features.data[0].enabled);
     assert!(!features.data[1].enabled);
+    let feature_enablement = client
+        .experimental_feature_enablement_set("memories".to_string(), false)
+        .await?;
+    assert_eq!(feature_enablement.enablement.get("memories"), Some(&false));
 
     let goal = client
         .thread_goal_set(
@@ -1478,6 +1482,17 @@ for line in sys.stdin:
                 },
             ],
             "nextCursor": None,
+        })
+    elif method == "experimentalFeature/enablement/set":
+        assert params == {
+            "enablement": {
+                "memories": False,
+            },
+        }
+        response(message_id, {
+            "enablement": {
+                "memories": False,
+            },
         })
     elif method == "thread/goal/set":
         assert params == {

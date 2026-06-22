@@ -86,6 +86,7 @@ const ARCHIVE_COMMAND: &str = "archive";
 const APPS_COMMAND: &str = "apps";
 const COMPACT_COMMAND: &str = "compact";
 const DELETE_COMMAND: &str = "delete";
+const FEATURE_COMMAND: &str = "feature";
 const FEATURES_COMMAND: &str = "features";
 const FORK_COMMAND: &str = "fork";
 const GOAL_COMMAND: &str = "goal";
@@ -1291,6 +1292,21 @@ impl CodexAcpAgent {
                     session_id,
                     "Delete",
                     format!("Deleted Codex session `{}`.", session_id.0),
+                    cx,
+                )
+            }
+            BuiltinCommand::Feature { name, enabled } => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .experimental_feature_enablement_set(name.clone(), enabled)
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(
+                    session_id,
+                    "Feature",
+                    experimental_feature_enablement_summary(&name, enabled, &response),
                     cx,
                 )
             }
@@ -2932,6 +2948,10 @@ enum BuiltinCommand {
     Apps,
     Compact,
     Delete,
+    Feature {
+        name: String,
+        enabled: bool,
+    },
     Features,
     Fork,
     GoalSet {
@@ -3017,6 +3037,7 @@ enum CommandHandler {
     Apps,
     Compact,
     Delete,
+    Feature,
     Features,
     Fork,
     Goal,
@@ -3088,6 +3109,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: None,
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::Delete,
+    },
+    BuiltinCommandSpec {
+        name: FEATURE_COMMAND,
+        aliases: &[],
+        description: "Enable or disable a Codex experimental feature flag",
+        input_hint: Some("name enable|disable"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Feature,
     },
     BuiltinCommandSpec {
         name: FEATURES_COMMAND,
@@ -3362,6 +3391,7 @@ fn parse_command_from_spec(
         CommandHandler::Delete => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Delete)
         }
+        CommandHandler::Feature => parse_feature_command(rest),
         CommandHandler::Features => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Features)
         }
@@ -3460,6 +3490,36 @@ fn parse_memory_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
         }
     };
     Ok(Some(BuiltinCommand::Memory { action }))
+}
+
+fn parse_feature_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
+    let mut parts = rest.split_whitespace();
+    let name = parts.next().ok_or_else(|| {
+        Error::invalid_params().data("/feature requires a feature name and `enable` or `disable`")
+    })?;
+    let action = parts.next().ok_or_else(|| {
+        Error::invalid_params().data("/feature requires a feature name and `enable` or `disable`")
+    })?;
+    if parts.next().is_some() {
+        return Err(
+            Error::invalid_params().data("/feature accepts only a feature name and one action")
+        );
+    }
+
+    let enabled = match action {
+        "enable" => true,
+        "disable" => false,
+        _ => {
+            return Err(
+                Error::invalid_params().data("/feature action must be `enable` or `disable`")
+            );
+        }
+    };
+
+    Ok(Some(BuiltinCommand::Feature {
+        name: name.to_owned(),
+        enabled,
+    }))
 }
 
 fn parse_goal_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
@@ -5574,6 +5634,25 @@ fn experimental_features_summary(
     lines.join("\n")
 }
 
+fn experimental_feature_enablement_summary(
+    name: &str,
+    enabled: bool,
+    response: &crate::app_server::ExperimentalFeatureEnablementSetResponse,
+) -> String {
+    match response.enablement.get(name) {
+        Some(actual) => {
+            let state = if *actual { "enabled" } else { "disabled" };
+            format!("Feature `{name}` is now {state} for this Codex app-server process.")
+        }
+        None => {
+            let requested = if enabled { "enable" } else { "disable" };
+            format!(
+                "Codex did not accept the request to {requested} feature `{name}`. It may be unknown or managed by policy."
+            )
+        }
+    }
+}
+
 fn plugin_detail_summary(value: &serde_json::Value) -> String {
     let plugin_name = first_string_at_paths(
         value,
@@ -6211,6 +6290,7 @@ mod tests {
         for text in [
             "/apps",
             "/delete",
+            "/feature memories enable",
             "/features",
             "/fork",
             "/hooks",
@@ -6238,6 +6318,11 @@ mod tests {
             match text {
                 "/apps" => assert!(matches!(command, BuiltinCommand::Apps)),
                 "/delete" => assert!(matches!(command, BuiltinCommand::Delete)),
+                "/feature memories enable" => assert!(matches!(
+                    command,
+                    BuiltinCommand::Feature { name, enabled }
+                        if name == "memories" && enabled
+                )),
                 "/features" => assert!(matches!(command, BuiltinCommand::Features)),
                 "/fork" => assert!(matches!(command, BuiltinCommand::Fork)),
                 "/hooks" => assert!(matches!(command, BuiltinCommand::Hooks)),
@@ -6454,6 +6539,33 @@ mod tests {
         assert_eq!(
             error.data.as_ref().and_then(serde_json::Value::as_str),
             Some("/memory accepts only `enable`, `disable`, or `reset`")
+        );
+    }
+
+    #[test]
+    fn parse_builtin_command_rejects_invalid_feature_action() {
+        let error = parse_builtin_command("/feature").unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("/feature requires a feature name and `enable` or `disable`")
+        );
+
+        let error = parse_builtin_command("/feature memories").unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("/feature requires a feature name and `enable` or `disable`")
+        );
+
+        let error = parse_builtin_command("/feature memories maybe").unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("/feature action must be `enable` or `disable`")
+        );
+
+        let error = parse_builtin_command("/feature memories enable extra").unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("/feature accepts only a feature name and one action")
         );
     }
 
@@ -6677,6 +6789,7 @@ mod tests {
                 "apps",
                 "compact",
                 "delete",
+                "feature",
                 "features",
                 "fork",
                 "goal",

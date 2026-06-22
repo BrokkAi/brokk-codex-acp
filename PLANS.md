@@ -240,8 +240,8 @@ The current repository has the first working ACP/app-server bridge in place:
     ACP permission options and preserves app-server's blocking request
     semantics while awaiting the ACP client.
 - Slash commands:
-  - built-in `archive`, `apps`, `compact`, `delete`, `features`, `fork`,
-    `goal`, `hooks`, `init`, `kill`, `memory`, `mcp`, `model`, `new`,
+  - built-in `archive`, `apps`, `compact`, `delete`, `feature`, `features`,
+    `fork`, `goal`, `hooks`, `init`, `kill`, `memory`, `mcp`, `model`, `new`,
     `permissions`, `plan`, `plugins`, `ps`, `rename`, `resume`, `review`,
     `rollback`, `skill-roots`, `status`, `stop`, and `unarchive` commands are
     published through ACP `available_commands_update` alongside enabled skills.
@@ -263,6 +263,9 @@ The current repository has the first working ACP/app-server bridge in place:
   - `/features` is intercepted by the adapter, mapped to
     `experimentalFeature/list` for the current thread, and reflected as a short
     ACP agent-message summary.
+  - `/feature <name> enable|disable` is intercepted by the adapter, mapped to
+    `experimentalFeature/enablement/set`, and reflected as a short ACP
+    agent-message summary.
   - `/goal`, `/goal get`, `/goal clear`, and `/goal <objective>` are
     intercepted by the adapter, mapped to `thread/goal/get`,
     `thread/goal/clear`, and `thread/goal/set`, then reflected through
@@ -483,20 +486,20 @@ client behavior, not model prompts.
 Tasks:
 
 - [x] Add an initial parser for leading slash commands, currently `/archive`,
-  `/apps`, `/compact`, `/delete`, `/features`, `/fork`, `/goal`, `/hooks`,
-  `/init`, `/kill`, `/memory`, `/mcp`, `/model`, `/new`, `/permissions`,
-  `/plan`, `/plugins`, `/ps`, `/rename`, `/resume`, `/review`, `/rollback`,
-  `/skill-roots`, `/status`, `/stop`, and `/unarchive`.
+  `/apps`, `/compact`, `/delete`, `/feature`, `/features`, `/fork`, `/goal`,
+  `/hooks`, `/init`, `/kill`, `/memory`, `/mcp`, `/model`, `/new`,
+  `/permissions`, `/plan`, `/plugins`, `/ps`, `/rename`, `/resume`, `/review`,
+  `/rollback`, `/skill-roots`, `/status`, `/stop`, and `/unarchive`.
 - [x] Build the full command registry with aliases, availability, required
   active turn state, and handler metadata.
 - [x] Publish adapter-owned ACP available commands plus skills.
 - Implement backend commands first: `/new`, `/resume`, `/review`,
   `/compact`, `/rename`, `/model`, `/permissions`, `/mcp`, `/apps`,
   `/plugins`, `/hooks`, and `/status`. Implemented so far: `/archive`,
-  `/apps`, `/compact`, `/delete`, `/features`, `/fork`, `/goal`, `/hooks`,
-  `/init`, `/kill`, `/memory`, `/mcp`, `/model`, `/new`, `/permissions`,
-  `/plan`, `/plugins`, `/ps`, `/rename`, `/resume`, `/review`, `/rollback`,
-  `/skill-roots`, `/status`, `/stop`, and `/unarchive`. `/fork` is
+  `/apps`, `/compact`, `/delete`, `/feature`, `/features`, `/fork`, `/goal`,
+  `/hooks`, `/init`, `/kill`, `/memory`, `/mcp`, `/model`, `/new`,
+  `/permissions`, `/plan`, `/plugins`, `/ps`, `/rename`, `/resume`, `/review`,
+  `/rollback`, `/skill-roots`, `/status`, `/stop`, and `/unarchive`. `/fork` is
   implemented only as an extension command backed by Codex `thread/fork`, not
   as required ACP v1 behavior.
 - [x] Return explicit unsupported-command responses for slash commands that are
@@ -1002,6 +1005,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/permissions` | `permissionProfile/list` plus ACP config-option refresh `[implemented]` |
 | `/memory enable` / `/memory disable` / `/memory reset` | `thread/memoryMode/set` or `memory/reset` `[implemented as summary]` |
 | `/features` | `experimentalFeature/list` `[implemented as summary]` |
+| `/feature <name> enable|disable` | `experimentalFeature/enablement/set` `[implemented as summary]` |
 | `/mcp` | `mcpServerStatus/list` `[implemented as summary]` |
 | `/mcp-resource <server> <uri>` | `mcpServer/resource/read` `[implemented as summary]` |
 | `/mcp-tool <server> <tool> [json-arguments]` | `mcpServer/tool/call` `[implemented as summary]` |
@@ -1546,6 +1550,7 @@ Manual flows:
 - [x] Add collaboration mode config options.
 - [x] Add apps/plugins/MCP commands.
 - [x] Add experimental feature flag display.
+- [x] Add experimental feature enable/disable command.
 - [x] Add initial hooks display.
 - [x] Add background terminal list/clean.
 

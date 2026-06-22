@@ -813,6 +813,10 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             ],
         ),
         (
+            "/feature memories disable",
+            &["Feature `memories` is now disabled for this Codex app-server process."],
+        ),
+        (
             "/plugins",
             &["Plugins: 1 entries", "Installed plugins: 1 entries"],
         ),
@@ -1561,6 +1565,19 @@ for line in sys.stdin:
                     },
                 ],
                 "nextCursor": None,
+            },
+        })
+    elif method == "experimentalFeature/enablement/set":
+        assert params == {
+            "enablement": {
+                "memories": False,
+            },
+        }
+        response(message_id, {
+            "result": {
+                "enablement": {
+                    "memories": False,
+                },
             },
         })
     elif method == "mcpServer/resource/read":
