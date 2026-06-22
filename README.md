@@ -65,6 +65,7 @@ The project currently includes:
   `/marketplace-add <source> [ref] [sparsePathsCsv]`,
   `/marketplace-remove <name>`, `/feature <name> enable|disable`,
   `/features`, `/rate-limits`, `/usage`, `/workspace-messages`, `/mcp`,
+  `/mcp-reload`,
   `/mcp-resource <server> <uri>`,
   `/mcp-tool <server> <tool> [json-arguments]`, `/hooks`, `/memory`,
   `/model`, `/permissions`, `/ps`, `/skill-roots`, `/stop`, and `/status`,

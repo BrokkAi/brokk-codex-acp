@@ -900,6 +900,14 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
         ),
         ("/mcp", &["MCP: 1 entries", "- filesystem"]),
         (
+            "/mcp-reload",
+            &[
+                "Reloaded Codex MCP server configuration.",
+                "MCP: 1 entries",
+                "- filesystem",
+            ],
+        ),
+        (
             "/mcp-resource filesystem file:///repo/README.md",
             &[
                 "MCP resource",
@@ -1720,6 +1728,11 @@ for line in sys.stdin:
                     },
                 ],
             },
+        })
+    elif method == "config/mcpServer/reload":
+        assert params == {}
+        response(message_id, {
+            "result": {},
         })
     elif method == "experimentalFeature/list":
         assert params == {

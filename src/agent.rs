@@ -99,6 +99,7 @@ const MARKETPLACE_ADD_COMMAND: &str = "marketplace-add";
 const MARKETPLACE_REMOVE_COMMAND: &str = "marketplace-remove";
 const MEMORY_COMMAND: &str = "memory";
 const MCP_COMMAND: &str = "mcp";
+const MCP_RELOAD_COMMAND: &str = "mcp-reload";
 const MCP_RESOURCE_COMMAND: &str = "mcp-resource";
 const MCP_TOOL_COMMAND: &str = "mcp-tool";
 const MODEL_COMMAND: &str = "model";
@@ -1502,6 +1503,20 @@ impl CodexAcpAgent {
                     .await
                     .map_err(acp_internal_error)?;
                 publish_catalog_message(session_id, "MCP", catalog_summary("MCP", &response), cx)
+            }
+            BuiltinCommand::McpReload => {
+                let response = {
+                    let mut app_server = self.app_server.lock().await;
+                    app_server
+                        .mcp_server_reload()
+                        .await
+                        .map_err(acp_internal_error)?;
+                    app_server
+                        .mcp_server_status_list(thread_id.to_owned())
+                        .await
+                        .map_err(acp_internal_error)?
+                };
+                publish_catalog_message(session_id, "MCP reload", mcp_reload_summary(&response), cx)
             }
             BuiltinCommand::McpResource { server, uri } => {
                 let response = self
@@ -3090,6 +3105,7 @@ enum BuiltinCommand {
     },
     Init,
     Mcp,
+    McpReload,
     McpResource {
         server: String,
         uri: String,
@@ -3175,6 +3191,7 @@ enum CommandHandler {
     Memory,
     Init,
     Mcp,
+    McpReload,
     McpResource,
     McpTool,
     Model,
@@ -3345,6 +3362,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: None,
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::Mcp,
+    },
+    BuiltinCommandSpec {
+        name: MCP_RELOAD_COMMAND,
+        aliases: &[],
+        description: "Reload Codex MCP server configuration",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::McpReload,
     },
     BuiltinCommandSpec {
         name: MCP_RESOURCE_COMMAND,
@@ -3604,6 +3629,9 @@ fn parse_command_from_spec(
         CommandHandler::Memory => parse_memory_command(rest),
         CommandHandler::Init => parse_no_argument_command(rest, spec.name, BuiltinCommand::Init),
         CommandHandler::Mcp => parse_no_argument_command(rest, spec.name, BuiltinCommand::Mcp),
+        CommandHandler::McpReload => {
+            parse_no_argument_command(rest, spec.name, BuiltinCommand::McpReload)
+        }
         CommandHandler::McpResource => parse_mcp_resource_command(rest),
         CommandHandler::McpTool => parse_mcp_tool_command(rest),
         CommandHandler::Model => parse_no_argument_command(rest, spec.name, BuiltinCommand::Model),
@@ -6194,6 +6222,13 @@ fn append_plugin_entries(lines: &mut Vec<String>, title: &str, value: Option<&se
     }
 }
 
+fn mcp_reload_summary(value: &serde_json::Value) -> String {
+    format!(
+        "Reloaded Codex MCP server configuration.\n\n{}",
+        catalog_summary("MCP", value)
+    )
+}
+
 fn mcp_resource_summary(server: &str, uri: &str, value: &serde_json::Value) -> String {
     let mut lines = vec![
         "MCP resource".to_owned(),
@@ -6758,6 +6793,7 @@ mod tests {
             "/marketplace-add owner/repo main plugins,skills",
             "/marketplace-remove debug",
             "/mcp",
+            "/mcp-reload",
             "/memory disable",
             "/mcp-resource filesystem file:///repo/README.md",
             r#"/mcp-tool filesystem read_file {"path":"/repo/README.md"}"#,
@@ -6814,6 +6850,7 @@ mod tests {
                         if marketplace_name == "debug"
                 )),
                 "/mcp" => assert!(matches!(command, BuiltinCommand::Mcp)),
+                "/mcp-reload" => assert!(matches!(command, BuiltinCommand::McpReload)),
                 "/memory disable" => assert!(matches!(
                     command,
                     BuiltinCommand::Memory {
@@ -7323,6 +7360,7 @@ mod tests {
                 "memory",
                 "init",
                 "mcp",
+                "mcp-reload",
                 "mcp-resource",
                 "mcp-tool",
                 "model",
@@ -7508,6 +7546,23 @@ mod tests {
         assert_eq!(
             summary,
             "Installed Codex plugin `github`.\n- Auth policy: {\"type\":\"requireAuthenticated\"}\nApps needing auth: 1 entries\n- GitHub"
+        );
+    }
+
+    #[test]
+    fn mcp_reload_summary_includes_refreshed_catalog() {
+        let summary = mcp_reload_summary(&serde_json::json!({
+            "data": [
+                {
+                    "serverName": "filesystem",
+                    "status": "running"
+                }
+            ]
+        }));
+
+        assert_eq!(
+            summary,
+            "Reloaded Codex MCP server configuration.\n\nMCP: 1 entries\n- filesystem"
         );
     }
 

@@ -843,6 +843,9 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         .await?;
     assert_eq!(mcp_servers["data"][0]["serverName"], "filesystem");
 
+    let mcp_reload = client.mcp_server_reload().await?;
+    assert_eq!(mcp_reload, serde_json::json!({}));
+
     let mcp_resource = client
         .mcp_server_resource_read(
             "thread-1".to_string(),
@@ -1830,6 +1833,9 @@ for line in sys.stdin:
                 },
             ],
         })
+    elif method == "config/mcpServer/reload":
+        assert params == {}
+        response(message_id, {})
     elif method == "mcpServer/resource/read":
         assert params == {
             "threadId": "thread-1",

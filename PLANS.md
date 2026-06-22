@@ -242,11 +242,11 @@ The current repository has the first working ACP/app-server bridge in place:
 - Slash commands:
   - built-in `account`, `archive`, `apps`, `compact`, `config`, `delete`,
     `feature`, `features`, `fork`, `goal`, `hooks`, `init`, `kill`,
-    `marketplace-add`, `marketplace-remove`, `memory`, `mcp`, `model`, `new`,
-    `permissions`, `plan`, `plugins`, `ps`, `rate-limits`, `rename`, `resume`,
-    `review`, `rollback`, `skill-roots`, `status`, `stop`, `unarchive`,
-    `usage`, and `workspace-messages` commands are published through ACP
-    `available_commands_update` alongside enabled skills.
+    `marketplace-add`, `marketplace-remove`, `memory`, `mcp`, `mcp-reload`,
+    `model`, `new`, `permissions`, `plan`, `plugins`, `ps`, `rate-limits`,
+    `rename`, `resume`, `review`, `rollback`, `skill-roots`, `status`, `stop`,
+    `unarchive`, `usage`, and `workspace-messages` commands are published
+    through ACP `available_commands_update` alongside enabled skills.
   - `/archive` is intercepted by the adapter, mapped to `thread/archive`, and
     reflected to ACP clients through `session_info_update._meta`.
   - `/unarchive` is intercepted by the adapter, mapped to `thread/unarchive`,
@@ -277,6 +277,9 @@ The current repository has the first working ACP/app-server bridge in place:
   - `/workspace-messages` is intercepted by the adapter, mapped to
     `account/workspaceMessages/read`, and reflected as a short ACP
     agent-message summary.
+  - `/mcp-reload` is intercepted by the adapter, mapped to
+    `config/mcpServer/reload`, then followed by `mcpServerStatus/list` and
+    reflected as a short ACP agent-message summary.
   - `/feature <name> enable|disable` is intercepted by the adapter, mapped to
     `experimentalFeature/enablement/set`, and reflected as a short ACP
     agent-message summary.
@@ -506,10 +509,10 @@ Tasks:
 - [x] Add an initial parser for leading slash commands, currently `/account`,
   `/archive`, `/apps`, `/compact`, `/config`, `/delete`, `/feature`,
   `/features`, `/fork`, `/goal`, `/hooks`, `/init`, `/kill`, `/marketplace-add`,
-  `/marketplace-remove`, `/memory`, `/mcp`, `/model`, `/new`, `/permissions`,
-  `/plan`, `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`,
-  `/rollback`, `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
-  `/workspace-messages`.
+  `/marketplace-remove`, `/memory`, `/mcp`, `/mcp-reload`, `/model`, `/new`,
+  `/permissions`, `/plan`, `/plugins`, `/ps`, `/rate-limits`, `/rename`,
+  `/resume`, `/review`, `/rollback`, `/skill-roots`, `/status`, `/stop`,
+  `/unarchive`, `/usage`, and `/workspace-messages`.
 - [x] Build the full command registry with aliases, availability, required
   active turn state, and handler metadata.
 - [x] Publish adapter-owned ACP available commands plus skills.
@@ -518,10 +521,10 @@ Tasks:
   `/plugins`, `/hooks`, and `/status`. Implemented so far: `/account`,
   `/archive`, `/apps`, `/compact`, `/config`, `/delete`, `/feature`,
   `/features`, `/fork`, `/goal`, `/hooks`, `/init`, `/kill`, `/marketplace-add`,
-  `/marketplace-remove`, `/memory`, `/mcp`, `/model`, `/new`, `/permissions`,
-  `/plan`, `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`,
-  `/rollback`, `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
-  `/workspace-messages`. `/fork` is implemented only as an extension command
+  `/marketplace-remove`, `/memory`, `/mcp`, `/mcp-reload`, `/model`, `/new`,
+  `/permissions`, `/plan`, `/plugins`, `/ps`, `/rate-limits`, `/rename`,
+  `/resume`, `/review`, `/rollback`, `/skill-roots`, `/status`, `/stop`,
+  `/unarchive`, `/usage`, and `/workspace-messages`. `/fork` is implemented only as an extension command
   backed by Codex `thread/fork`, not as required ACP v1 behavior.
 - [x] Return explicit unsupported-command responses for slash commands that are
   not currently handled by the adapter. `/skill ...` remains a supported
@@ -1033,6 +1036,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/usage` | `account/usage/read` `[implemented as summary]` |
 | `/workspace-messages` | `account/workspaceMessages/read` `[implemented as summary]` |
 | `/mcp` | `mcpServerStatus/list` `[implemented as summary]` |
+| `/mcp-reload` | `config/mcpServer/reload` plus `mcpServerStatus/list` `[implemented as summary]` |
 | `/mcp-resource <server> <uri>` | `mcpServer/resource/read` `[implemented as summary]` |
 | `/mcp-tool <server> <tool> [json-arguments]` | `mcpServer/tool/call` `[implemented as summary]` |
 | `/apps` | `app/list` `[implemented as summary]` |
@@ -1282,6 +1286,8 @@ model prompts:
   an ACP agent-message summary.
 - [x] `/mcp` calls `mcpServerStatus/list` and returns an ACP agent-message
   summary.
+- [x] `/mcp-reload` calls `config/mcpServer/reload`, refreshes
+  `mcpServerStatus/list`, and returns an ACP agent-message summary.
 - [x] `/mcp-resource <server> <uri>` calls `mcpServer/resource/read` for the
   current thread and returns an ACP agent-message summary.
 - [x] `/mcp-tool <server> <tool> [json-arguments]` calls
@@ -1541,6 +1547,7 @@ Manual flows:
 - [x] Implement `/permissions`.
 - [x] Implement `/plan`.
 - [x] Implement `/mcp`.
+- [x] Implement `/mcp-reload`.
 - [x] Implement `/apps`.
 - [x] Implement `/plugins`.
 - [x] Implement `/hooks`.
@@ -1594,6 +1601,7 @@ Manual flows:
 - [x] Add approval policy config options.
 - [x] Add collaboration mode config options.
 - [x] Add apps/plugins/MCP commands.
+- [x] Add MCP config reload command.
 - [x] Add effective config display.
 - [x] Add marketplace add/remove commands.
 - [x] Add account status display.

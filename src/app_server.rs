@@ -536,6 +536,11 @@ impl AppServerClient {
         .await
     }
 
+    pub async fn mcp_server_reload(&mut self) -> anyhow::Result<Value> {
+        self.request("config/mcpServer/reload", EmptyParams {})
+            .await
+    }
+
     pub async fn mcp_server_resource_read(
         &mut self,
         thread_id: String,
