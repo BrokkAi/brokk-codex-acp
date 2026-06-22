@@ -93,6 +93,8 @@ const GOAL_COMMAND: &str = "goal";
 const HOOKS_COMMAND: &str = "hooks";
 const INIT_COMMAND: &str = "init";
 const KILL_COMMAND: &str = "kill";
+const MARKETPLACE_ADD_COMMAND: &str = "marketplace-add";
+const MARKETPLACE_REMOVE_COMMAND: &str = "marketplace-remove";
 const MEMORY_COMMAND: &str = "memory";
 const MCP_COMMAND: &str = "mcp";
 const MCP_RESOURCE_COMMAND: &str = "mcp-resource";
@@ -1581,6 +1583,40 @@ impl CodexAcpAgent {
                     cx,
                 )
             }
+            BuiltinCommand::MarketplaceAdd {
+                source,
+                ref_name,
+                sparse_paths,
+            } => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .marketplace_add(source, ref_name, sparse_paths)
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(
+                    session_id,
+                    "Marketplace add",
+                    marketplace_add_summary(&response),
+                    cx,
+                )
+            }
+            BuiltinCommand::MarketplaceRemove { marketplace_name } => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .marketplace_remove(marketplace_name)
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(
+                    session_id,
+                    "Marketplace remove",
+                    marketplace_remove_summary(&response),
+                    cx,
+                )
+            }
             BuiltinCommand::Plugin {
                 marketplace_path,
                 plugin_name,
@@ -2963,6 +2999,14 @@ enum BuiltinCommand {
     Kill {
         process_id: String,
     },
+    MarketplaceAdd {
+        source: String,
+        ref_name: Option<String>,
+        sparse_paths: Option<Vec<String>>,
+    },
+    MarketplaceRemove {
+        marketplace_name: String,
+    },
     Memory {
         action: MemoryCommandAction,
     },
@@ -3043,6 +3087,8 @@ enum CommandHandler {
     Goal,
     Hooks,
     Kill,
+    MarketplaceAdd,
+    MarketplaceRemove,
     Memory,
     Init,
     Mcp,
@@ -3157,6 +3203,22 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: Some("background terminal process id"),
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::Kill,
+    },
+    BuiltinCommandSpec {
+        name: MARKETPLACE_ADD_COMMAND,
+        aliases: &[],
+        description: "Add a Codex plugin marketplace",
+        input_hint: Some("source [ref] [sparsePathsCsv]"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::MarketplaceAdd,
+    },
+    BuiltinCommandSpec {
+        name: MARKETPLACE_REMOVE_COMMAND,
+        aliases: &[],
+        description: "Remove a Codex plugin marketplace",
+        input_hint: Some("marketplaceName"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::MarketplaceRemove,
     },
     BuiltinCommandSpec {
         name: MEMORY_COMMAND,
@@ -3407,6 +3469,8 @@ fn parse_command_from_spec(
                 process_id: process_id.to_owned(),
             }))
         }
+        CommandHandler::MarketplaceAdd => parse_marketplace_add_command(rest),
+        CommandHandler::MarketplaceRemove => parse_marketplace_remove_command(rest),
         CommandHandler::Memory => parse_memory_command(rest),
         CommandHandler::Init => parse_no_argument_command(rest, spec.name, BuiltinCommand::Init),
         CommandHandler::Mcp => parse_no_argument_command(rest, spec.name, BuiltinCommand::Mcp),
@@ -3520,6 +3584,50 @@ fn parse_feature_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
         name: name.to_owned(),
         enabled,
     }))
+}
+
+fn parse_marketplace_add_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
+    let mut parts = rest.split_whitespace();
+    let source = parts.next().ok_or_else(|| {
+        Error::invalid_params()
+            .data("/marketplace-add requires a source, optional ref, and optional sparse paths")
+    })?;
+    let ref_name = parts.next().map(str::to_owned);
+    let sparse_paths = parts.next().map(parse_comma_separated_values).transpose()?;
+    if parts.next().is_some() {
+        return Err(Error::invalid_params().data(
+            "/marketplace-add accepts only source, optional ref, and optional sparse paths",
+        ));
+    }
+
+    Ok(Some(BuiltinCommand::MarketplaceAdd {
+        source: source.to_owned(),
+        ref_name,
+        sparse_paths,
+    }))
+}
+
+fn parse_marketplace_remove_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
+    let marketplace_name = rest.trim();
+    if marketplace_name.is_empty() || marketplace_name.split_whitespace().count() != 1 {
+        return Err(Error::invalid_params().data("/marketplace-remove requires a marketplace name"));
+    }
+    Ok(Some(BuiltinCommand::MarketplaceRemove {
+        marketplace_name: marketplace_name.to_owned(),
+    }))
+}
+
+fn parse_comma_separated_values(value: &str) -> Result<Vec<String>, Error> {
+    let values = value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if values.is_empty() {
+        return Err(Error::invalid_params().data("comma-separated values cannot be empty"));
+    }
+    Ok(values)
 }
 
 fn parse_goal_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
@@ -5705,6 +5813,28 @@ fn plugin_install_summary(plugin_name: &str, value: &serde_json::Value) -> Strin
     lines.join("\n")
 }
 
+fn marketplace_add_summary(response: &crate::app_server::MarketplaceAddResponse) -> String {
+    let action = if response.already_added {
+        "already configured"
+    } else {
+        "added"
+    };
+    format!(
+        "Marketplace `{}` {action} at `{}`.",
+        response.marketplace_name, response.installed_root
+    )
+}
+
+fn marketplace_remove_summary(response: &crate::app_server::MarketplaceRemoveResponse) -> String {
+    match response.installed_root.as_deref() {
+        Some(installed_root) => format!(
+            "Removed Codex marketplace `{}` from `{installed_root}`.",
+            response.marketplace_name
+        ),
+        None => format!("Removed Codex marketplace `{}`.", response.marketplace_name),
+    }
+}
+
 fn first_string_at_paths<'a>(value: &'a serde_json::Value, paths: &[&[&str]]) -> Option<&'a str> {
     paths
         .iter()
@@ -6295,6 +6425,8 @@ mod tests {
             "/fork",
             "/hooks",
             "/init",
+            "/marketplace-add owner/repo main plugins,skills",
+            "/marketplace-remove debug",
             "/mcp",
             "/memory disable",
             "/mcp-resource filesystem file:///repo/README.md",
@@ -6327,6 +6459,21 @@ mod tests {
                 "/fork" => assert!(matches!(command, BuiltinCommand::Fork)),
                 "/hooks" => assert!(matches!(command, BuiltinCommand::Hooks)),
                 "/init" => assert!(matches!(command, BuiltinCommand::Init)),
+                "/marketplace-add owner/repo main plugins,skills" => assert!(matches!(
+                    command,
+                    BuiltinCommand::MarketplaceAdd {
+                        source,
+                        ref_name,
+                        sparse_paths
+                    } if source == "owner/repo"
+                        && ref_name.as_deref() == Some("main")
+                        && sparse_paths == Some(vec!["plugins".to_owned(), "skills".to_owned()])
+                )),
+                "/marketplace-remove debug" => assert!(matches!(
+                    command,
+                    BuiltinCommand::MarketplaceRemove { marketplace_name }
+                        if marketplace_name == "debug"
+                )),
                 "/mcp" => assert!(matches!(command, BuiltinCommand::Mcp)),
                 "/memory disable" => assert!(matches!(
                     command,
@@ -6570,6 +6717,36 @@ mod tests {
     }
 
     #[test]
+    fn parse_builtin_command_rejects_invalid_marketplace_arguments() {
+        let error = parse_builtin_command("/marketplace-add").unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("/marketplace-add requires a source, optional ref, and optional sparse paths")
+        );
+
+        let error =
+            parse_builtin_command("/marketplace-add owner/repo main plugins extra").unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("/marketplace-add accepts only source, optional ref, and optional sparse paths")
+        );
+
+        let error = parse_builtin_command("/marketplace-add owner/repo main ,").unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("comma-separated values cannot be empty")
+        );
+
+        for text in ["/marketplace-remove", "/marketplace-remove debug extra"] {
+            let error = parse_builtin_command(text).unwrap_err();
+            assert_eq!(
+                error.data.as_ref().and_then(serde_json::Value::as_str),
+                Some("/marketplace-remove requires a marketplace name")
+            );
+        }
+    }
+
+    #[test]
     fn parse_builtin_command_rejects_invalid_rollback_count() {
         let error = parse_builtin_command("/rollback").unwrap_err();
         assert_eq!(
@@ -6795,6 +6972,8 @@ mod tests {
                 "goal",
                 "hooks",
                 "kill",
+                "marketplace-add",
+                "marketplace-remove",
                 "memory",
                 "init",
                 "mcp",

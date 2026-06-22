@@ -795,6 +795,24 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     let plugin_uninstall = client.plugin_uninstall("github@openai".to_string()).await?;
     assert_eq!(plugin_uninstall, serde_json::json!({}));
 
+    let marketplace_add = client
+        .marketplace_add(
+            "owner/repo".to_string(),
+            Some("main".to_string()),
+            Some(vec!["plugins".to_string(), "skills".to_string()]),
+        )
+        .await?;
+    assert_eq!(marketplace_add.marketplace_name, "debug");
+    assert_eq!(marketplace_add.installed_root, "/codex/marketplaces/debug");
+    assert!(!marketplace_add.already_added);
+
+    let marketplace_remove = client.marketplace_remove("debug".to_string()).await?;
+    assert_eq!(marketplace_remove.marketplace_name, "debug");
+    assert_eq!(
+        marketplace_remove.installed_root.as_deref(),
+        Some("/codex/marketplaces/debug")
+    );
+
     let mcp_servers = client
         .mcp_server_status_list("thread-1".to_string())
         .await?;
@@ -1659,6 +1677,25 @@ for line in sys.stdin:
             "pluginId": "github@openai",
         }
         response(message_id, {})
+    elif method == "marketplace/add":
+        assert params == {
+            "source": "owner/repo",
+            "refName": "main",
+            "sparsePaths": ["plugins", "skills"],
+        }
+        response(message_id, {
+            "marketplaceName": "debug",
+            "installedRoot": "/codex/marketplaces/debug",
+            "alreadyAdded": False,
+        })
+    elif method == "marketplace/remove":
+        assert params == {
+            "marketplaceName": "debug",
+        }
+        response(message_id, {
+            "marketplaceName": "debug",
+            "installedRoot": "/codex/marketplaces/debug",
+        })
     elif method == "mcpServerStatus/list":
         assert params == {
             "threadId": "thread-1",

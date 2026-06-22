@@ -458,6 +458,34 @@ impl AppServerClient {
             .await
     }
 
+    pub async fn marketplace_add(
+        &mut self,
+        source: String,
+        ref_name: Option<String>,
+        sparse_paths: Option<Vec<String>>,
+    ) -> anyhow::Result<MarketplaceAddResponse> {
+        self.request(
+            "marketplace/add",
+            MarketplaceAddParams {
+                source,
+                ref_name,
+                sparse_paths,
+            },
+        )
+        .await
+    }
+
+    pub async fn marketplace_remove(
+        &mut self,
+        marketplace_name: String,
+    ) -> anyhow::Result<MarketplaceRemoveResponse> {
+        self.request(
+            "marketplace/remove",
+            MarketplaceRemoveParams { marketplace_name },
+        )
+        .await
+    }
+
     pub async fn hooks_list(&mut self, cwd: String) -> anyhow::Result<Value> {
         self.request("hooks/list", HooksListParams { cwds: vec![cwd] })
             .await
@@ -1913,6 +1941,37 @@ struct PluginInstallParams {
 #[serde(rename_all = "camelCase")]
 struct PluginUninstallParams {
     plugin_id: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MarketplaceAddParams {
+    source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ref_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sparse_paths: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceAddResponse {
+    pub marketplace_name: String,
+    pub installed_root: String,
+    pub already_added: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MarketplaceRemoveParams {
+    marketplace_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceRemoveResponse {
+    pub marketplace_name: String,
+    pub installed_root: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

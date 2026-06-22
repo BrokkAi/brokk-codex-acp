@@ -841,6 +841,14 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             "/plugin-uninstall github@openai",
             &["Uninstalled Codex plugin `github@openai`."],
         ),
+        (
+            "/marketplace-add owner/repo main plugins,skills",
+            &["Marketplace `debug` added at `/codex/marketplaces/debug`."],
+        ),
+        (
+            "/marketplace-remove debug",
+            &["Removed Codex marketplace `debug` from `/codex/marketplaces/debug`."],
+        ),
         ("/mcp", &["MCP: 1 entries", "- filesystem"]),
         (
             "/mcp-resource filesystem file:///repo/README.md",
@@ -1519,6 +1527,29 @@ for line in sys.stdin:
         }
         response(message_id, {
             "result": {},
+        })
+    elif method == "marketplace/add":
+        assert params == {
+            "source": "owner/repo",
+            "refName": "main",
+            "sparsePaths": ["plugins", "skills"],
+        }
+        response(message_id, {
+            "result": {
+                "marketplaceName": "debug",
+                "installedRoot": "/codex/marketplaces/debug",
+                "alreadyAdded": False,
+            },
+        })
+    elif method == "marketplace/remove":
+        assert params == {
+            "marketplaceName": "debug",
+        }
+        response(message_id, {
+            "result": {
+                "marketplaceName": "debug",
+                "installedRoot": "/codex/marketplaces/debug",
+            },
         })
     elif method == "mcpServerStatus/list":
         assert params == {
