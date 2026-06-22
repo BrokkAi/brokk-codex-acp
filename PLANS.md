@@ -303,9 +303,14 @@ The current repository has the first working ACP/app-server bridge in place:
 This baseline intentionally supports only text and resource-link prompt blocks
 as input, and advertises stable ACP v1 `sessionCapabilities.list`, `.resume`,
 `.close`, and `.delete`. It also advertises the Rust crate's unstable session
-fork and elicitation extensions. Rich ACP UI for dynamic tool callbacks,
-terminal embedding, exact per-tool diff objects, and ACP-facing skills
-configuration remain planned work.
+fork and elicitation extensions. Session config options are populated from
+app-server models, collaboration modes, permission profiles, and thread
+settings. Rich ACP UI for dynamic tool callbacks, native realtime audio
+playback, exact per-tool diff objects, and the remaining history fidelity edges
+remain planned work. ACP terminal content is projected through app-server
+command events today; true `terminal/create` embedding should only be added if
+app-server exposes a client-terminal handoff for commands it does not execute
+itself.
 
 ## Immediate Roadmap
 
@@ -388,7 +393,8 @@ Tasks:
 - [x] Add rich ACP UI bridging for MCP elicitation.
 - [x] Add rich ACP UI bridging for request-user-input requests.
 - [ ] Add rich ACP UI bridging for dynamic tool requests.
-- [ ] Add terminal embedding once ACP terminal creation is wired.
+- [ ] Add ACP terminal embedding if app-server exposes client-terminal handoff
+  events instead of owning command execution itself.
 
 Acceptance criteria:
 
@@ -413,6 +419,9 @@ Acceptance criteria:
   the client can answer them.
 - [ ] Dynamic tool requests route through a rich ACP request surface when one
   is available.
+- [x] Terminal work is documented as waiting on app-server handoff events;
+  current command execution continues to stream through app-server-owned tool
+  events.
 
 ### Milestone B: Skills Catalog and Invocation
 
@@ -1293,6 +1302,9 @@ Remaining approval work:
 
 - Add rich dynamic tool request handling once the adapter has an ACP-compatible
   request surface.
+- Do not route app-server-owned command execution through ACP `terminal/create`
+  without an app-server handoff event; the adapter would otherwise duplicate
+  execution outside Codex's approval and policy owner.
 
 Do not invent approval policies in the adapter. Policies should come from
 Codex config, app-server thread settings, or explicit ACP session options.
@@ -1535,3 +1547,9 @@ Keep PRs small enough to review against fake app-server tests.
      client
    - keep the current cancel/empty/failure fallback for clients that cannot
      render the request
+
+2. ACP terminal handoff, only after app-server exposes a command event that asks
+   the adapter/client to own execution:
+   - call `terminal/create` when the ACP client advertises terminal support
+   - embed the returned terminal id in the related tool call before releasing it
+   - keep app-server-owned command execution on the existing command-event path

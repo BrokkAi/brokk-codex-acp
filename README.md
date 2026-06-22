@@ -109,9 +109,11 @@ The project currently includes:
   `thread/status/changed`, `thread/goal/updated`, `thread/goal/cleared`, or
   `thread/settings/updated` notifications are observed.
 
-The adapter is not complete yet. Rich ACP UI for dynamic tool callbacks, exact
-terminal embedding, native realtime audio playback, and remaining
-full-fidelity history edge cases are still planned work.
+The adapter is not complete yet. Rich ACP UI for dynamic tool callbacks,
+native realtime audio playback, and remaining full-fidelity history edge cases
+are still planned work. Terminal content is currently projected through Codex
+app-server command events; ACP terminal embedding can be added when app-server
+exposes a client-terminal handoff instead of owning command execution itself.
 
 ## Usage
 
