@@ -778,6 +778,11 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     assert_eq!(config["config"]["sandbox_mode"], "workspace-write");
     assert_eq!(config["layers"].as_array().map(Vec::len), Some(1));
 
+    let account = client.account_read(false).await?;
+    assert_eq!(account["account"]["type"], "chatgpt");
+    assert_eq!(account["account"]["email"], "user@example.com");
+    assert_eq!(account["requiresOpenaiAuth"], true);
+
     let rate_limits = client.account_rate_limits_read().await?;
     assert_eq!(rate_limits["rateLimits"]["primary"]["usedPercent"], 42);
     assert_eq!(
@@ -1662,6 +1667,18 @@ for line in sys.stdin:
                     "config": {"model": "gpt-5-codex"},
                 },
             ],
+        })
+    elif method == "account/read":
+        assert params == {
+            "refreshToken": False,
+        }
+        response(message_id, {
+            "account": {
+                "type": "chatgpt",
+                "email": "user@example.com",
+                "planType": "pro",
+            },
+            "requiresOpenaiAuth": True,
         })
     elif method == "account/rateLimits/read":
         assert params == {}

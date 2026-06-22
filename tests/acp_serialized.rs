@@ -803,6 +803,16 @@ async fn serialized_close_interrupts_active_prompt_before_unsubscribe() -> anyho
 #[tokio::test]
 async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Result<()> {
     for (command, expected_fragments) in [
+        (
+            "/account",
+            &[
+                "Account: current status",
+                "- Requires OpenAI auth: true",
+                "- Auth mode: Chatgpt",
+                "- Email: \"user@example.com\"",
+                "- Plan type: \"pro\"",
+            ][..],
+        ),
         ("/apps", &["Apps: 1 entries", "- GitHub"][..]),
         (
             "/config /repo",
@@ -1523,6 +1533,20 @@ for line in sys.stdin:
                         "config": {"model": "gpt-5-codex"},
                     },
                 ],
+            },
+        })
+    elif method == "account/read":
+        assert params == {
+            "refreshToken": False,
+        }
+        response(message_id, {
+            "result": {
+                "account": {
+                    "type": "chatgpt",
+                    "email": "user@example.com",
+                    "planType": "pro",
+                },
+                "requiresOpenaiAuth": True,
             },
         })
     elif method == "account/rateLimits/read":

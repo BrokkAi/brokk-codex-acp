@@ -400,6 +400,11 @@ impl AppServerClient {
         .await
     }
 
+    pub async fn account_read(&mut self, refresh_token: bool) -> anyhow::Result<Value> {
+        self.request("account/read", AccountReadParams { refresh_token })
+            .await
+    }
+
     pub async fn account_rate_limits_read(&mut self) -> anyhow::Result<Value> {
         self.request("account/rateLimits/read", EmptyParams {})
             .await
@@ -1913,6 +1918,12 @@ struct ConfigReadParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     cwd: Option<String>,
     include_layers: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AccountReadParams {
+    refresh_token: bool,
 }
 
 #[derive(Debug, Serialize)]

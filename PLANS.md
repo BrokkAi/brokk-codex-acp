@@ -240,12 +240,12 @@ The current repository has the first working ACP/app-server bridge in place:
     ACP permission options and preserves app-server's blocking request
     semantics while awaiting the ACP client.
 - Slash commands:
-  - built-in `archive`, `apps`, `compact`, `config`, `delete`, `feature`,
-    `features`, `fork`, `goal`, `hooks`, `init`, `kill`, `marketplace-add`,
-    `marketplace-remove`, `memory`, `mcp`, `model`, `new`, `permissions`,
-    `plan`, `plugins`, `ps`, `rate-limits`, `rename`, `resume`, `review`,
-    `rollback`, `skill-roots`, `status`, `stop`, `unarchive`, `usage`, and
-    `workspace-messages` commands are published through ACP
+  - built-in `account`, `archive`, `apps`, `compact`, `config`, `delete`,
+    `feature`, `features`, `fork`, `goal`, `hooks`, `init`, `kill`,
+    `marketplace-add`, `marketplace-remove`, `memory`, `mcp`, `model`, `new`,
+    `permissions`, `plan`, `plugins`, `ps`, `rate-limits`, `rename`, `resume`,
+    `review`, `rollback`, `skill-roots`, `status`, `stop`, `unarchive`,
+    `usage`, and `workspace-messages` commands are published through ACP
     `available_commands_update` alongside enabled skills.
   - `/archive` is intercepted by the adapter, mapped to `thread/archive`, and
     reflected to ACP clients through `session_info_update._meta`.
@@ -267,6 +267,8 @@ The current repository has the first working ACP/app-server bridge in place:
   - `/features` is intercepted by the adapter, mapped to
     `experimentalFeature/list` for the current thread, and reflected as a short
     ACP agent-message summary.
+  - `/account` is intercepted by the adapter, mapped to `account/read`, and
+    reflected as a short ACP agent-message summary.
   - `/rate-limits` is intercepted by the adapter, mapped to
     `account/rateLimits/read`, and reflected as a short ACP agent-message
     summary.
@@ -501,9 +503,9 @@ client behavior, not model prompts.
 
 Tasks:
 
-- [x] Add an initial parser for leading slash commands, currently `/archive`,
-  `/apps`, `/compact`, `/config`, `/delete`, `/feature`, `/features`, `/fork`,
-  `/goal`, `/hooks`, `/init`, `/kill`, `/marketplace-add`,
+- [x] Add an initial parser for leading slash commands, currently `/account`,
+  `/archive`, `/apps`, `/compact`, `/config`, `/delete`, `/feature`,
+  `/features`, `/fork`, `/goal`, `/hooks`, `/init`, `/kill`, `/marketplace-add`,
   `/marketplace-remove`, `/memory`, `/mcp`, `/model`, `/new`, `/permissions`,
   `/plan`, `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`,
   `/rollback`, `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
@@ -513,9 +515,9 @@ Tasks:
 - [x] Publish adapter-owned ACP available commands plus skills.
 - Implement backend commands first: `/new`, `/resume`, `/review`,
   `/compact`, `/rename`, `/model`, `/permissions`, `/mcp`, `/apps`,
-  `/plugins`, `/hooks`, and `/status`. Implemented so far: `/archive`,
-  `/apps`, `/compact`, `/config`, `/delete`, `/feature`, `/features`, `/fork`,
-  `/goal`, `/hooks`, `/init`, `/kill`, `/marketplace-add`,
+  `/plugins`, `/hooks`, and `/status`. Implemented so far: `/account`,
+  `/archive`, `/apps`, `/compact`, `/config`, `/delete`, `/feature`,
+  `/features`, `/fork`, `/goal`, `/hooks`, `/init`, `/kill`, `/marketplace-add`,
   `/marketplace-remove`, `/memory`, `/mcp`, `/model`, `/new`, `/permissions`,
   `/plan`, `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`,
   `/rollback`, `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
@@ -1021,6 +1023,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/goal ...` | `thread/goal/*` `[implemented for get, clear, and objective updates]` |
 | `/plan` | `thread/settings/update` with collaboration mode `[implemented]` |
 | `/config [cwd]` | `config/read` `[implemented as summary]` |
+| `/account` | `account/read` `[implemented as summary]` |
 | `/model` | `model/list` plus ACP config-option refresh `[implemented]` |
 | `/permissions` | `permissionProfile/list` plus ACP config-option refresh `[implemented]` |
 | `/memory enable` / `/memory disable` / `/memory reset` | `thread/memoryMode/set` or `memory/reset` `[implemented as summary]` |
@@ -1258,6 +1261,7 @@ model prompts:
 - [x] `/apps` calls `app/list` and returns an ACP agent-message summary.
 - [x] `/config [cwd]` calls `config/read` and returns an ACP agent-message
   summary.
+- [x] `/account` calls `account/read` and returns an ACP agent-message summary.
 - [x] `/plugins` calls `plugin/list` and `plugin/installed` and returns an ACP
   agent-message summary.
 - [x] `/plugin <pluginName@marketplacePath>` calls `plugin/read` and returns an
@@ -1543,6 +1547,7 @@ Manual flows:
 - [x] Implement `/status`.
 - [x] Implement `/ps`.
 - [x] Implement `/stop`.
+- [x] Implement `/account`.
 - [x] Implement `/rate-limits`.
 - [x] Implement `/usage`.
 - [x] Implement `/workspace-messages`.
@@ -1591,6 +1596,7 @@ Manual flows:
 - [x] Add apps/plugins/MCP commands.
 - [x] Add effective config display.
 - [x] Add marketplace add/remove commands.
+- [x] Add account status display.
 - [x] Add experimental feature flag display.
 - [x] Add experimental feature enable/disable command.
 - [x] Add initial hooks display.

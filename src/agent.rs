@@ -82,6 +82,7 @@ const DEFAULT_APPROVAL_POLICY: &str = "on-request";
 const SKILL_ENABLED_VALUE: &str = "enabled";
 const SKILL_DISABLED_VALUE: &str = "disabled";
 const DYNAMIC_TOOL_CALL_METHOD: &str = "_brokk_codex_acp/dynamic_tool_call";
+const ACCOUNT_COMMAND: &str = "account";
 const ARCHIVE_COMMAND: &str = "archive";
 const APPS_COMMAND: &str = "apps";
 const COMPACT_COMMAND: &str = "compact";
@@ -1263,6 +1264,16 @@ impl CodexAcpAgent {
         cx: &ConnectionTo<Client>,
     ) -> Result<PromptResponse, Error> {
         match command {
+            BuiltinCommand::Account => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .account_read(false)
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(session_id, "Account", account_summary(&response), cx)
+            }
             BuiltinCommand::Archive => {
                 self.app_server
                     .lock()
@@ -3043,6 +3054,7 @@ struct SkillInvocation {
 
 #[derive(Debug)]
 enum BuiltinCommand {
+    Account,
     Archive,
     Apps,
     Compact,
@@ -3146,6 +3158,7 @@ enum CommandAvailability {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CommandHandler {
+    Account,
     Archive,
     Apps,
     Compact,
@@ -3197,6 +3210,14 @@ struct BuiltinCommandSpec {
 }
 
 const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
+    BuiltinCommandSpec {
+        name: ACCOUNT_COMMAND,
+        aliases: &[],
+        description: "Show Codex account status",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Account,
+    },
     BuiltinCommandSpec {
         name: ARCHIVE_COMMAND,
         aliases: &[],
@@ -3548,6 +3569,9 @@ fn parse_command_from_spec(
     rest: &str,
 ) -> Result<Option<BuiltinCommand>, Error> {
     match spec.handler {
+        CommandHandler::Account => {
+            parse_no_argument_command(rest, spec.name, BuiltinCommand::Account)
+        }
         CommandHandler::Archive => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Archive)
         }
@@ -5852,6 +5876,45 @@ fn config_summary(cwd: Option<&str>, value: &serde_json::Value) -> String {
     lines.join("\n")
 }
 
+fn account_summary(value: &serde_json::Value) -> String {
+    let mut lines = vec!["Account: current status".to_owned()];
+
+    if let Some(requires_auth) = value
+        .get("requiresOpenaiAuth")
+        .and_then(serde_json::Value::as_bool)
+    {
+        lines.push(format!("- Requires OpenAI auth: {requires_auth}"));
+    }
+
+    match value.get("account") {
+        Some(serde_json::Value::Null) | None => lines.push("- Account: not signed in".to_owned()),
+        Some(account) => {
+            if let Some(account_type) = account.get("type").and_then(serde_json::Value::as_str) {
+                lines.push(format!(
+                    "- Auth mode: {}",
+                    humanize_identifier(account_type)
+                ));
+            } else {
+                lines.push(format!("- Account: {}", compact_json(account)));
+            }
+
+            for (label, key) in [
+                ("Email", "email"),
+                ("Plan type", "planType"),
+                ("Credential source", "credentialSource"),
+            ] {
+                if let Some(field) = account.get(key)
+                    && !field.is_null()
+                {
+                    lines.push(format!("- {label}: {}", compact_json(field)));
+                }
+            }
+        }
+    }
+
+    lines.join("\n")
+}
+
 fn rate_limits_summary(value: &serde_json::Value) -> String {
     let rate_limits = value.get("rateLimits").unwrap_or(value);
     let mut lines = vec!["Rate limits: current account".to_owned()];
@@ -6683,6 +6746,7 @@ mod tests {
     #[test]
     fn parse_builtin_command_recognizes_catalog_commands() {
         for text in [
+            "/account",
             "/apps",
             "/config /repo with spaces",
             "/delete",
@@ -6717,6 +6781,7 @@ mod tests {
         ] {
             let command = parse_builtin_command(text).unwrap().unwrap();
             match text {
+                "/account" => assert!(matches!(command, BuiltinCommand::Account)),
                 "/apps" => assert!(matches!(command, BuiltinCommand::Apps)),
                 "/config /repo with spaces" => assert!(matches!(
                     command,
@@ -7241,6 +7306,7 @@ mod tests {
                 .map(|command| command.name.as_str())
                 .collect::<Vec<_>>(),
             vec![
+                "account",
                 "archive",
                 "apps",
                 "compact",
@@ -7305,6 +7371,23 @@ mod tests {
         );
 
         assert_eq!(summary, "Apps: 2 entries\n- Linear\n- GitHub");
+    }
+
+    #[test]
+    fn account_summary_lists_auth_state() {
+        let summary = account_summary(&serde_json::json!({
+            "account": {
+                "type": "chatgpt",
+                "email": "user@example.com",
+                "planType": "pro"
+            },
+            "requiresOpenaiAuth": true
+        }));
+
+        assert_eq!(
+            summary,
+            "Account: current status\n- Requires OpenAI auth: true\n- Auth mode: Chatgpt\n- Email: \"user@example.com\"\n- Plan type: \"pro\""
+        );
     }
 
     #[test]

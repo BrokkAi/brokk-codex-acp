@@ -58,7 +58,7 @@ The project currently includes:
   roots are process-local and not persisted by Codex app-server.
 - Initial slash-command routing for `/rename <title>`, `/archive`, `/goal`,
   `/compact`, `/config [cwd]`, `/review`, `/init`, `/new`, `/resume`,
-  `/fork`, `/delete`, `/apps`, `/plugins`,
+  `/fork`, `/delete`, `/account`, `/apps`, `/plugins`,
   `/plugin <pluginName@marketplacePath>`,
   `/plugin-install <pluginName@marketplacePath>`,
   `/plugin-uninstall <pluginId>`,
