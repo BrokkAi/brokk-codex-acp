@@ -1065,7 +1065,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/features` | `experimentalFeature/list` `[implemented as summary]` |
 | `/feature <name> enable|disable` | `experimentalFeature/enablement/set` `[implemented as summary]` |
 | `/rate-limits` | `account/rateLimits/read` `[implemented as summary]` |
-| `/remote-control` | `remoteControl/status/read` `[implemented as summary]` |
+| `/remote-control [status\|enable\|disable]` | `remoteControl/status/read`, `remoteControl/enable`, or `remoteControl/disable` `[implemented as summary]` |
 | `/usage` | `account/usage/read` `[implemented as summary]` |
 | `/workspace-messages` | `account/workspaceMessages/read` `[implemented as summary]` |
 | `/mcp` | `mcpServerStatus/list` `[implemented as summary]` |
@@ -1326,8 +1326,9 @@ model prompts:
   ACP agent-message summary.
 - [x] `/rate-limits` calls `account/rateLimits/read` and returns an ACP
   agent-message summary.
-- [x] `/remote-control` calls `remoteControl/status/read` and returns an ACP
-  agent-message summary.
+- [x] `/remote-control [status|enable|disable]` calls
+  `remoteControl/status/read`, `remoteControl/enable`, or
+  `remoteControl/disable` and returns an ACP agent-message summary.
 - [x] `/usage` calls `account/usage/read` and returns an ACP agent-message
   summary.
 - [x] `/workspace-messages` calls `account/workspaceMessages/read` and returns
@@ -1671,7 +1672,7 @@ Manual flows:
 - [x] Add account login/logout commands.
 - [x] Add experimental feature flag display.
 - [x] Add experimental feature enable/disable command.
-- [x] Add remote-control status display.
+- [x] Add remote-control status, enable, and disable commands.
 - [x] Add initial hooks display.
 - [x] Add background terminal list/clean.
 - [x] Add account rate limit display.

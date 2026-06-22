@@ -813,6 +813,16 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     assert_eq!(remote_control.server_name, "Codex Remote");
     assert_eq!(remote_control.environment_id.as_deref(), Some("env-123"));
 
+    let remote_control = client.remote_control_enable().await?;
+    assert_eq!(remote_control.status, "connecting");
+    assert_eq!(remote_control.server_name, "Codex Remote");
+    assert_eq!(remote_control.environment_id.as_deref(), Some("env-123"));
+
+    let remote_control = client.remote_control_disable().await?;
+    assert_eq!(remote_control.status, "disabled");
+    assert_eq!(remote_control.server_name, "Codex Remote");
+    assert_eq!(remote_control.environment_id.as_deref(), Some("env-123"));
+
     let plugins = client.plugin_list().await?;
     assert_eq!(plugins["data"][0]["name"], "github");
 
@@ -1823,6 +1833,22 @@ for line in sys.stdin:
         assert params is None
         response(message_id, {
             "status": "connected",
+            "serverName": "Codex Remote",
+            "installationId": "install-123",
+            "environmentId": "env-123",
+        })
+    elif method == "remoteControl/enable":
+        assert params is None
+        response(message_id, {
+            "status": "connecting",
+            "serverName": "Codex Remote",
+            "installationId": "install-123",
+            "environmentId": "env-123",
+        })
+    elif method == "remoteControl/disable":
+        assert params is None
+        response(message_id, {
+            "status": "disabled",
             "serverName": "Codex Remote",
             "installationId": "install-123",
             "environmentId": "env-123",

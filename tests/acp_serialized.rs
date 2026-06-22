@@ -925,6 +925,22 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             ],
         ),
         (
+            "/remote-control enable",
+            &[
+                "Remote control enable requested.",
+                "Codex remote control status: connecting on `Codex Remote`.",
+                "Environment: `env-123`.",
+            ],
+        ),
+        (
+            "/remote-control disable",
+            &[
+                "Remote control disable requested.",
+                "Codex remote control status: disabled on `Codex Remote`.",
+                "Environment: `env-123`.",
+            ],
+        ),
+        (
             "/features",
             &[
                 "Features: 2 entries",
@@ -1781,6 +1797,26 @@ for line in sys.stdin:
         response(message_id, {
             "result": {
                 "status": "connected",
+                "serverName": "Codex Remote",
+                "installationId": "install-123",
+                "environmentId": "env-123",
+            },
+        })
+    elif method == "remoteControl/enable":
+        assert params is None
+        response(message_id, {
+            "result": {
+                "status": "connecting",
+                "serverName": "Codex Remote",
+                "installationId": "install-123",
+                "environmentId": "env-123",
+            },
+        })
+    elif method == "remoteControl/disable":
+        assert params is None
+        response(message_id, {
+            "result": {
+                "status": "disabled",
                 "serverName": "Codex Remote",
                 "installationId": "install-123",
                 "environmentId": "env-123",

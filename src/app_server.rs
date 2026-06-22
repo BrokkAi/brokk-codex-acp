@@ -447,11 +447,25 @@ impl AppServerClient {
         let response: RemoteControlStatusReadResponse = self
             .request("remoteControl/status/read", Option::<EmptyParams>::None)
             .await?;
-        Ok(AppServerRemoteControlStatusUpdate {
-            status: response.status,
-            server_name: response.server_name,
-            environment_id: response.environment_id,
-        })
+        Ok(response.into())
+    }
+
+    pub async fn remote_control_enable(
+        &mut self,
+    ) -> anyhow::Result<AppServerRemoteControlStatusUpdate> {
+        let response: RemoteControlStatusReadResponse = self
+            .request("remoteControl/enable", Option::<EmptyParams>::None)
+            .await?;
+        Ok(response.into())
+    }
+
+    pub async fn remote_control_disable(
+        &mut self,
+    ) -> anyhow::Result<AppServerRemoteControlStatusUpdate> {
+        let response: RemoteControlStatusReadResponse = self
+            .request("remoteControl/disable", Option::<EmptyParams>::None)
+            .await?;
+        Ok(response.into())
     }
 
     pub async fn experimental_feature_list(
@@ -2042,6 +2056,16 @@ struct RemoteControlStatusReadResponse {
     server_name: String,
     #[serde(default)]
     environment_id: Option<String>,
+}
+
+impl From<RemoteControlStatusReadResponse> for AppServerRemoteControlStatusUpdate {
+    fn from(response: RemoteControlStatusReadResponse) -> Self {
+        Self {
+            status: response.status,
+            server_name: response.server_name,
+            environment_id: response.environment_id,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]

@@ -1913,20 +1913,32 @@ impl CodexAcpAgent {
                     cx,
                 )
             }
-            BuiltinCommand::RemoteControl => {
-                let response = self
-                    .app_server
-                    .lock()
-                    .await
-                    .remote_control_status_read()
-                    .await
-                    .map_err(|error| {
-                        acp_app_server_method_error("remoteControl/status/read", error)
-                    })?;
+            BuiltinCommand::RemoteControl { action } => {
+                let response = {
+                    let mut app_server = self.app_server.lock().await;
+                    match action {
+                        RemoteControlAction::Status => app_server
+                            .remote_control_status_read()
+                            .await
+                            .map_err(|error| {
+                                acp_app_server_method_error("remoteControl/status/read", error)
+                            })?,
+                        RemoteControlAction::Enable => {
+                            app_server.remote_control_enable().await.map_err(|error| {
+                                acp_app_server_method_error("remoteControl/enable", error)
+                            })?
+                        }
+                        RemoteControlAction::Disable => {
+                            app_server.remote_control_disable().await.map_err(|error| {
+                                acp_app_server_method_error("remoteControl/disable", error)
+                            })?
+                        }
+                    }
+                };
                 publish_catalog_message(
                     session_id,
                     "Remote control",
-                    remote_control_status_message(&response),
+                    remote_control_command_summary(action, &response),
                     cx,
                 )
             }
@@ -3479,7 +3491,9 @@ enum BuiltinCommand {
     Plugins,
     Ps,
     RateLimits,
-    RemoteControl,
+    RemoteControl {
+        action: RemoteControlAction,
+    },
     Rename {
         title: String,
     },
@@ -3511,6 +3525,13 @@ enum MemoryCommandAction {
     Enable,
     Disable,
     Reset,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RemoteControlAction {
+    Status,
+    Enable,
+    Disable,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3881,8 +3902,8 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
     BuiltinCommandSpec {
         name: REMOTE_CONTROL_COMMAND,
         aliases: &[],
-        description: "Show Codex remote-control status",
-        input_hint: None,
+        description: "Show or change Codex remote-control status",
+        input_hint: Some("status, enable, or disable"),
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::RemoteControl,
     },
@@ -4093,9 +4114,7 @@ fn parse_command_from_spec(
         CommandHandler::RateLimits => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::RateLimits)
         }
-        CommandHandler::RemoteControl => {
-            parse_no_argument_command(rest, spec.name, BuiltinCommand::RemoteControl)
-        }
+        CommandHandler::RemoteControl => parse_remote_control_command(rest),
         CommandHandler::Rename => {
             let title = rest.trim();
             if title.is_empty() {
@@ -4172,6 +4191,26 @@ fn parse_memory_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
         }
     };
     Ok(Some(BuiltinCommand::Memory { action }))
+}
+
+fn parse_remote_control_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
+    let mut parts = rest.split_whitespace();
+    let action = match parts.next() {
+        None | Some("status") => RemoteControlAction::Status,
+        Some("enable") => RemoteControlAction::Enable,
+        Some("disable") => RemoteControlAction::Disable,
+        Some(_) => {
+            return Err(Error::invalid_params()
+                .data("/remote-control accepts only `status`, `enable`, or `disable`"));
+        }
+    };
+
+    if parts.next().is_some() {
+        return Err(Error::invalid_params()
+            .data("/remote-control accepts only `status`, `enable`, or `disable`"));
+    }
+
+    Ok(Some(BuiltinCommand::RemoteControl { action }))
 }
 
 fn parse_login_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
@@ -6075,6 +6114,23 @@ fn remote_control_status_message(update: &AppServerRemoteControlStatusUpdate) ->
     parts.join(" ")
 }
 
+fn remote_control_command_summary(
+    action: RemoteControlAction,
+    update: &AppServerRemoteControlStatusUpdate,
+) -> String {
+    match action {
+        RemoteControlAction::Status => remote_control_status_message(update),
+        RemoteControlAction::Enable => format!(
+            "Remote control enable requested.\n{}",
+            remote_control_status_message(update)
+        ),
+        RemoteControlAction::Disable => format!(
+            "Remote control disable requested.\n{}",
+            remote_control_status_message(update)
+        ),
+    }
+}
+
 fn fuzzy_file_search_message(update: &AppServerFuzzyFileSearchUpdate) -> String {
     match update {
         AppServerFuzzyFileSearchUpdate::SessionUpdated {
@@ -7564,6 +7620,8 @@ mod tests {
             "/ps",
             "/rate-limits",
             "/remote-control",
+            "/remote-control enable",
+            "/remote-control disable",
             "/rollback 2",
             "/skill-roots /repo/.codex/skills,/shared/skills",
             "/status",
@@ -7692,7 +7750,24 @@ mod tests {
                 "/plugins" => assert!(matches!(command, BuiltinCommand::Plugins)),
                 "/ps" => assert!(matches!(command, BuiltinCommand::Ps)),
                 "/rate-limits" => assert!(matches!(command, BuiltinCommand::RateLimits)),
-                "/remote-control" => assert!(matches!(command, BuiltinCommand::RemoteControl)),
+                "/remote-control" => assert!(matches!(
+                    command,
+                    BuiltinCommand::RemoteControl {
+                        action: RemoteControlAction::Status
+                    }
+                )),
+                "/remote-control enable" => assert!(matches!(
+                    command,
+                    BuiltinCommand::RemoteControl {
+                        action: RemoteControlAction::Enable
+                    }
+                )),
+                "/remote-control disable" => assert!(matches!(
+                    command,
+                    BuiltinCommand::RemoteControl {
+                        action: RemoteControlAction::Disable
+                    }
+                )),
                 "/rollback 2" => assert!(matches!(
                     command,
                     BuiltinCommand::Rollback { num_turns } if num_turns == 2
@@ -7865,6 +7940,21 @@ mod tests {
     }
 
     #[test]
+    fn parse_builtin_command_rejects_invalid_remote_control_action() {
+        for text in [
+            "/remote-control now",
+            "/remote-control enable extra",
+            "/remote-control status extra",
+        ] {
+            let error = parse_builtin_command(text).unwrap_err();
+            assert_eq!(
+                error.data.as_ref().and_then(serde_json::Value::as_str),
+                Some("/remote-control accepts only `status`, `enable`, or `disable`")
+            );
+        }
+    }
+
+    #[test]
     fn parse_builtin_command_rejects_invalid_feature_action() {
         let error = parse_builtin_command("/feature").unwrap_err();
         assert_eq!(
@@ -7996,10 +8086,6 @@ mod tests {
             ("/plan now", "/plan does not accept arguments"),
             ("/plugins now", "/plugins does not accept arguments"),
             ("/ps now", "/ps does not accept arguments"),
-            (
-                "/remote-control now",
-                "/remote-control does not accept arguments",
-            ),
             ("/status now", "/status does not accept arguments"),
             ("/stop now", "/stop does not accept arguments"),
             ("/unarchive now", "/unarchive does not accept arguments"),

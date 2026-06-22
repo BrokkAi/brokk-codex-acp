@@ -71,7 +71,7 @@ The project currently includes:
   `/marketplace-add <source> [ref] [sparsePathsCsv]`,
   `/marketplace-remove <name>`, `/marketplace-upgrade [name]`,
   `/feature <name> enable|disable`,
-  `/features`, `/rate-limits`, `/remote-control`, `/usage`,
+  `/features`, `/rate-limits`, `/remote-control [status|enable|disable]`, `/usage`,
   `/workspace-messages`, `/mcp`,
   `/mcp-reload`,
   `/mcp-resource <server> <uri>`,
