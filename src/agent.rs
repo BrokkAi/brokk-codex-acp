@@ -9,7 +9,7 @@ use agent_client_protocol::schema::{
     AgentCapabilities, AgentRequest, AvailableCommand, AvailableCommandInput,
     AvailableCommandsUpdate, CancelNotification, CloseSessionRequest, CloseSessionResponse,
     ConfigOptionUpdate, ContentBlock, ContentChunk, CreateElicitationRequest, DeleteSessionRequest,
-    DeleteSessionResponse, ElicitationAction, ElicitationContentValue, ElicitationFormMode,
+    DeleteSessionResponse, Diff, ElicitationAction, ElicitationContentValue, ElicitationFormMode,
     ElicitationMode, ElicitationSchema, ElicitationSessionScope, ElicitationUrlMode, EnumOption,
     ExtRequest, ForkSessionRequest, ForkSessionResponse, InitializeRequest, InitializeResponse,
     ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse, MessageId,
@@ -4078,6 +4078,9 @@ fn send_prompt_event(
                 output.push_str(&output_text);
                 fields.content = Some(vec![text_tool_content(output.clone())]);
             }
+            if !update.diffs.is_empty() {
+                fields.content = Some(update.diffs.into_iter().map(diff_tool_content).collect());
+            }
             fields.raw_output = update.raw;
             send_session_update(
                 cx,
@@ -5317,6 +5320,10 @@ fn agent_message_chunk(message: AppServerAgentMessageDelta) -> ContentChunk {
 
 fn text_tool_content(text: String) -> ToolCallContent {
     ToolCallContent::from(ContentBlock::Text(TextContent::new(text)))
+}
+
+fn diff_tool_content(diff: crate::app_server::AppServerFileDiff) -> ToolCallContent {
+    ToolCallContent::from(Diff::new(diff.path, diff.diff))
 }
 
 fn skill_command(skill: AppServerSkill) -> AvailableCommand {

@@ -107,6 +107,9 @@ The project currently includes:
   (`_brokk_codex_acp/dynamic_tool_call`) when the client can answer, with the
   existing explicit failure response kept as the fallback for clients that do
   not implement the extension.
+- File-change tool updates emit structured ACP `diff` content for app-server
+  `{path, diff}` entries, while turn-level unified diff previews remain text
+  because app-server does not attach per-file old/new content to those events.
 - Background app-server response/notification dispatch, including refresh of
   skill commands, session titles, and session config options when
   `skills/changed`, `thread/name/updated`, `thread/archived`,

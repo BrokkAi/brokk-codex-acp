@@ -2472,7 +2472,14 @@ pub struct AppServerToolCallUpdate {
     pub kind: Option<AppServerToolKind>,
     pub status: Option<AppServerToolStatus>,
     pub output_delta: Option<String>,
+    pub diffs: Vec<AppServerFileDiff>,
     pub raw: Option<Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppServerFileDiff {
+    pub path: String,
+    pub diff: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2988,6 +2995,7 @@ fn decode_prompt_event(
                     kind: None,
                     status: None,
                     output_delta: Some(delta),
+                    diffs: Vec::new(),
                     raw: None,
                 },
             )))
@@ -4104,22 +4112,29 @@ fn collect_text_fragments(value: Option<&Value>, parts: &mut Vec<String>) {
 }
 
 fn file_change_diff(item: &Value) -> Option<String> {
-    let changes = item.get("changes")?.as_array()?;
-    let diff = changes
-        .iter()
-        .filter_map(|change| {
-            let path = change
-                .get("path")
-                .and_then(Value::as_str)
-                .unwrap_or("<unknown>");
-            change
-                .get("diff")
-                .and_then(Value::as_str)
-                .map(|diff| format!("### {path}\n{diff}"))
-        })
+    let diff = file_change_diffs(item)
+        .into_iter()
+        .map(|change| format!("### {}\n{}", change.path, change.diff))
         .collect::<Vec<_>>()
         .join("\n");
     (!diff.trim().is_empty()).then_some(diff)
+}
+
+fn file_change_diffs(item: &Value) -> Vec<AppServerFileDiff> {
+    let Some(changes) = item.get("changes").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    changes
+        .iter()
+        .filter_map(|change| {
+            let path = change.get("path").and_then(Value::as_str)?;
+            let diff = change.get("diff").and_then(Value::as_str)?;
+            Some(AppServerFileDiff {
+                path: path.to_owned(),
+                diff: diff.to_owned(),
+            })
+        })
+        .collect()
 }
 
 fn matches_thread(params: &Value, active_thread_id: &str) -> bool {
@@ -4215,12 +4230,19 @@ fn decode_completed_item(item: &Value) -> Option<AppServerToolCallUpdate> {
         _ => None,
     }?;
 
+    let diffs = file_change_diffs(item);
+    let output_delta = if diffs.is_empty() {
+        final_item_output(item)
+    } else {
+        None
+    };
     Some(AppServerToolCallUpdate {
         id,
         title: None,
         kind: None,
         status: Some(status),
-        output_delta: final_item_output(item),
+        output_delta,
+        diffs,
         raw: Some(item.clone()),
     })
 }

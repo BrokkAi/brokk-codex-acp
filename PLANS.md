@@ -307,11 +307,12 @@ as input, and advertises stable ACP v1 `sessionCapabilities.list`, `.resume`,
 fork and elicitation extensions. Session config options are populated from
 app-server models, collaboration modes, permission profiles, and thread
 settings. Dynamic tool callbacks route through a custom ACP extension request
-with app-server fallback semantics. Native realtime audio playback, exact
-per-tool diff objects, and the remaining history fidelity edges remain planned
-work. ACP terminal content is projected through app-server command events
-today; true `terminal/create` embedding should only be added if app-server
-exposes a client-terminal handoff for commands it does not execute itself.
+with app-server fallback semantics, and file-change items emit structured ACP
+diff content when app-server provides per-file paths. Native realtime audio
+playback and the remaining history fidelity edges remain planned work. ACP
+terminal content is projected through app-server command events today; true
+`terminal/create` embedding should only be added if app-server exposes a
+client-terminal handoff for commands it does not execute itself.
 
 ## Immediate Roadmap
 
@@ -915,9 +916,9 @@ app-server item id -> ACP tool call id / message stream id
 | `item/agentMessage/delta` | `agent_message_chunk` | Already handled for the active prompt path. |
 | `item/reasoning/summaryTextDelta` / `item/reasoning/textDelta` | `agent_thought_chunk` | Stable ACP v1 supports thought chunks. |
 | `item/started` | `tool_call` or internal item state | Depends on item subtype. |
-| `item/completed` | `tool_call_update` | Mark final status and attach final content. |
+| `item/completed` | `tool_call_update` | Mark final status and attach final content. File-change items attach ACP `diff` content for each `{path, diff}` entry. |
 | `item/commandExecution/outputDelta` | `tool_call_update` content | Preserve stdout/stderr boundaries if present. |
-| `turn/diff/updated` | `tool_call_update` with diff content | Useful for file edit previews. |
+| `turn/diff/updated` | `tool_call_update` with text diff content | Useful for file edit previews. This remains text because the app-server event carries a turn-level unified diff without per-file old/new text. |
 | `turn/plan/updated` | `plan` | Send the full plan every time. |
 | `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` | `session/request_permission` | Implemented for simple decisions; rich command `availableDecisions` such as exec-policy and network-policy amendments keep their original app-server payload under ACP option metadata and are returned unchanged when selected. App-server remains blocked until the ACP client answers. |
 | `item/permissions/requestApproval` | `session/request_permission` | Implemented for full requested-profile grants, rejection, generated partial-grant options for individual requested network/filesystem units scoped to turn/session, and readable request content. |

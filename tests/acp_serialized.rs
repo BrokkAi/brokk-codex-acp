@@ -134,6 +134,17 @@ async fn serialized_load_replays_history_before_response() -> anyhow::Result<()>
         }),
         "session/load should replay historical MCP tool calls: {notifications:#?}"
     );
+    assert!(
+        notifications.iter().any(|notification| {
+            let update = &notification["params"]["update"];
+            update["sessionUpdate"] == "tool_call_update"
+                && update["toolCallId"] == "load-file"
+                && update["content"][0]["type"] == "diff"
+                && update["content"][0]["path"] == "src/lib.rs"
+                && update["content"][0]["newText"] == "@@ -1 +1 @@"
+        }),
+        "session/load should replay file changes as ACP diff content: {notifications:#?}"
+    );
 
     Ok(())
 }
@@ -204,6 +215,9 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
             update["sessionUpdate"] == "tool_call_update"
                 && update["toolCallId"] == "file-1"
                 && update["status"] == "completed"
+                && update["content"][0]["type"] == "diff"
+                && update["content"][0]["path"] == "src/lib.rs"
+                && update["content"][0]["newText"] == "@@ -1 +1 @@"
         }),
         "session updates: {session_updates:#?}"
     );
@@ -1254,6 +1268,18 @@ for line in sys.stdin:
                                     "status": "completed",
                                     "content": [
                                         {"type": "text", "text": "README contents"},
+                                    ],
+                                },
+                                {
+                                    "type": "fileChange",
+                                    "id": "load-file",
+                                    "status": "completed",
+                                    "changes": [
+                                        {
+                                            "path": "src/lib.rs",
+                                            "kind": "update",
+                                            "diff": "@@ -1 +1 @@",
+                                        },
                                     ],
                                 },
                                 {
