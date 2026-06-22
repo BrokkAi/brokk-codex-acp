@@ -1199,6 +1199,11 @@ ACP clients should not reimplement.
 | `fs/*` | Not exposed; direct host filesystem mutation should go through Codex tools/turns or MCP resources, not ad hoc ACP slash commands. |
 | `fs/watch` / `fs/unwatch` | Not exposed; ACP v1 has no watch subscription projection used by this adapter. |
 | `environment/add` | Not exposed; remote execution environment selection needs a separate client capability and trust contract. |
+| `config/value/write` / `config/batchWrite` | Not exposed as slash commands; arbitrary config mutation needs product-specific confirmation UX. Supported ACP settings go through typed `session/set_config_option` mappings. |
+| `externalAgentConfig/*` | Not exposed; importing another agent's config, skills, and AGENTS.md needs a migration UX and user confirmation outside ACP v1. |
+| `windowsSandbox/setupStart` | Not exposed as a command; setup initiation is platform/product UX. `windowsSandbox/setupCompleted` notifications are projected when app-server emits results. |
+| `account/rateLimitResetCredit/consume` | Not exposed; spending account credits requires product-specific confirmation. `/rate-limits` only reads status. |
+| `account/sendAddCreditsNudgeEmail` | Not exposed; email nudges are account/product UX outside the adapter's ACP surface. |
 | `remoteControl/pairing/*` | Not exposed; pairing is product UX and account-management flow beyond status/enable/disable. |
 | `remoteControl/client/*` | Not exposed; controller-device account management needs product-specific confirmation and selection UI. |
 | `feedback/upload` | Not exposed; requires product-specific feedback classification, log attachment, and privacy UX. |
