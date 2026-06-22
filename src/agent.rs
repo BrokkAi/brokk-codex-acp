@@ -47,17 +47,18 @@ use crate::app_server::{
     AppServerFuzzyFileSearchUpdate, AppServerHistoryEvent, AppServerInteractiveRequest,
     AppServerMcpElicitationRequest, AppServerMcpServerOAuthLoginCompletedUpdate,
     AppServerMcpServerStartupStatusUpdate, AppServerMessage, AppServerModel,
-    AppServerModelReroutedUpdate, AppServerModelVerificationUpdate, AppServerPermissionProfile,
-    AppServerPlanStatus, AppServerPromptCompletion, AppServerPromptEvent,
-    AppServerRealtimeAudioDelta, AppServerRealtimeUpdate, AppServerSkill, AppServerThread,
-    AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
+    AppServerModelReroutedUpdate, AppServerModelSafetyBufferingUpdate,
+    AppServerModelVerificationUpdate, AppServerPermissionProfile, AppServerPlanStatus,
+    AppServerPromptCompletion, AppServerPromptEvent, AppServerRealtimeAudioDelta,
+    AppServerRealtimeUpdate, AppServerSkill, AppServerThread, AppServerThreadSettingsUpdate,
+    AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
     AppServerTurnModerationMetadataUpdate, AppServerTurnStartInput, AppServerUserInputQuestion,
     AppServerUserInputRequest, AppServerWarningUpdate, AppServerWindowsSandboxSetupUpdate,
     ThreadSettingsUpdateParams, decode_account_login_completed, decode_account_rate_limits_updated,
     decode_account_updated, decode_config_warning, decode_error, decode_fuzzy_file_search_update,
     decode_mcp_server_oauth_login_completed, decode_mcp_server_startup_status_updated,
-    decode_model_rerouted, decode_model_verification, decode_realtime_update,
-    decode_thread_archived, decode_thread_closed, decode_thread_deleted,
+    decode_model_rerouted, decode_model_safety_buffering_updated, decode_model_verification,
+    decode_realtime_update, decode_thread_archived, decode_thread_closed, decode_thread_deleted,
     decode_thread_goal_cleared, decode_thread_goal_updated, decode_thread_name_updated,
     decode_thread_settings_updated, decode_thread_status_changed, decode_thread_unarchived,
     decode_turn_moderation_metadata, decode_warning, decode_windows_sandbox_setup_completed,
@@ -635,6 +636,21 @@ impl CodexAcpAgent {
                 }
                 let session_id = SessionId::new(update.thread_id.clone());
                 publish_agent_message(&session_id, model_rerouted_message(&update), cx)
+                    .map_err(acp_internal_error)?;
+            }
+            "model/safetyBuffering/updated" => {
+                let update =
+                    decode_model_safety_buffering_updated(&params).map_err(acp_internal_error)?;
+                if self
+                    .active_prompts
+                    .lock()
+                    .await
+                    .contains_key(&update.thread_id)
+                {
+                    return Ok(());
+                }
+                let session_id = SessionId::new(update.thread_id.clone());
+                publish_agent_message(&session_id, model_safety_buffering_message(&update), cx)
                     .map_err(acp_internal_error)?;
             }
             "model/verification" => {
@@ -4279,6 +4295,11 @@ fn send_prompt_event(
             session_id,
             SessionUpdate::AgentMessageChunk(text_chunk(model_rerouted_message(&update))),
         ),
+        AppServerPromptEvent::ModelSafetyBuffering(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(model_safety_buffering_message(&update))),
+        ),
         AppServerPromptEvent::ModelVerification(update) => send_session_update(
             cx,
             session_id,
@@ -5050,6 +5071,20 @@ fn model_rerouted_message(update: &AppServerModelReroutedUpdate) -> String {
         update.to_model,
         json_value_label(&update.reason)
     )
+}
+
+fn model_safety_buffering_message(update: &AppServerModelSafetyBufferingUpdate) -> String {
+    let mut parts = vec![format!(
+        "Codex safety buffering is active for model `{}`.",
+        update.model
+    )];
+    if let Some(use_cases) = readable_label_list(update.use_cases.clone()) {
+        parts.push(format!("Use cases: {use_cases}."));
+    }
+    if let Some(reasons) = readable_label_list(update.reasons.clone()) {
+        parts.push(format!("Reasons: {reasons}."));
+    }
+    parts.join(" ")
 }
 
 fn model_verification_message(update: &AppServerModelVerificationUpdate) -> String {

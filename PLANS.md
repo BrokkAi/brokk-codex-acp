@@ -175,8 +175,9 @@ The current repository has the first working ACP/app-server bridge in place:
   - `thread/tokenUsage/updated` -> ACP usage updates through the unstable
     `unstable_session_usage` crate feature
   - `turn/completed` -> ACP prompt response completion
-  - `model/verification` -> ACP agent-message diagnostics for additional
-    account verification requirements.
+  - `model/safetyBuffering/updated` and `model/verification` -> ACP
+    agent-message diagnostics for safety buffering and additional account
+    verification requirements.
   - `turn/moderationMetadata` -> ACP agent-message diagnostics for backend
     moderation metadata intended for client-side presentation.
   - `mcpServer/startupStatus/updated` -> ACP agent-message diagnostics for
@@ -296,8 +297,9 @@ The current repository has the first working ACP/app-server bridge in place:
     `session_info_update._meta`, preserving the full app-server status payload.
   - `thread/deleted` and `thread/closed` app-server notifications are projected
     to ACP `session_info_update._meta` as adapter lifecycle metadata.
-  - `warning`, `error`, and `model/rerouted` app-server notifications are
-    projected to ACP agent-message chunks for user-visible diagnostics.
+  - `warning`, `error`, `model/rerouted`, and
+    `model/safetyBuffering/updated` app-server notifications are projected to
+    ACP agent-message chunks for user-visible diagnostics.
   - `thread/goal/updated` and `thread/goal/cleared` app-server notifications are
     projected to ACP `session_info_update._meta`.
 
@@ -933,6 +935,7 @@ app-server item id -> ACP tool call id / message stream id
 | `thread/status/changed` | `session_info_update._meta` | Implemented through the background app-server notification dispatcher; preserves the full app-server status payload under adapter metadata. |
 | `thread/deleted` / `thread/closed` | `session_info_update._meta` | Implemented through adapter lifecycle metadata so ACP clients can react to app-server lifecycle events. |
 | `model/rerouted` | `agent_message_chunk` | Implemented as a non-invasive user-visible diagnostic chunk. |
+| `model/safetyBuffering/updated` | `agent_message_chunk` | Implemented as a user-visible diagnostic chunk summarizing active buffering model, use cases, and reasons. |
 | `model/verification` | `agent_message_chunk` | Implemented as a user-visible diagnostic chunk summarizing additional verification requirements. |
 | `turn/moderationMetadata` | `agent_message_chunk` | Implemented as a user-visible diagnostic chunk preserving the metadata payload as compact JSON. |
 | `mcpServer/startupStatus/updated` | `agent_message_chunk` | Implemented for thread-scoped MCP startup diagnostics and app-scoped updates published to known sessions. |

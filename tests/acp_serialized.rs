@@ -268,6 +268,7 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
         "spawn ENOENT",
         "MCP server `global-cache` startup status: Ready.",
         "Codex rerouted the model from `gpt-5-codex` to `gpt-5` (High Risk Cyber Activity) for this turn.",
+        "Codex safety buffering is active for model `gpt-5-codex`. Use cases: cyber. Reasons: high risk.",
         "Codex requires additional verification: Trusted Access For Cyber.",
         "Codex moderation metadata: {\"category\":\"cyber\",\"severity\":\"medium\"}.",
         "Codex realtime session started: `realtime-serialized`.",
@@ -1971,6 +1972,16 @@ for line in sys.stdin:
                     "fromModel": "gpt-5-codex",
                     "toModel": "gpt-5",
                     "reason": "highRiskCyberActivity",
+                },
+            })
+            send({
+                "method": "model/safetyBuffering/updated",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "model": "gpt-5-codex",
+                    "useCases": ["cyber"],
+                    "reasons": ["high risk"],
                 },
             })
             send({

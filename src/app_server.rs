@@ -977,6 +977,7 @@ impl AppServerClient {
                 | "thread/tokenUsage/updated"
                 | "warning"
                 | "error"
+                | "model/safetyBuffering/updated"
                 | "model/rerouted"
                 | "model/verification"
                 | "turn/moderationMetadata"
@@ -2219,6 +2220,7 @@ pub enum AppServerPromptEvent {
     ThreadSettingsUpdated(AppServerThreadSettingsUpdate),
     Warning(AppServerWarningUpdate),
     Error(AppServerErrorUpdate),
+    ModelSafetyBuffering(AppServerModelSafetyBufferingUpdate),
     ModelRerouted(AppServerModelReroutedUpdate),
     ModelVerification(AppServerModelVerificationUpdate),
     TurnModerationMetadata(AppServerTurnModerationMetadataUpdate),
@@ -2649,6 +2651,15 @@ pub struct AppServerModelReroutedUpdate {
 }
 
 #[derive(Debug, Clone)]
+pub struct AppServerModelSafetyBufferingUpdate {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub model: String,
+    pub use_cases: Vec<String>,
+    pub reasons: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct AppServerModelVerificationUpdate {
     pub thread_id: String,
     pub turn_id: String,
@@ -2810,6 +2821,16 @@ struct ModelReroutedNotification {
     from_model: String,
     to_model: String,
     reason: Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelSafetyBufferingUpdatedNotification {
+    thread_id: String,
+    turn_id: String,
+    model: String,
+    use_cases: Vec<String>,
+    reasons: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3115,6 +3136,15 @@ fn decode_prompt_event(
                 return Ok(None);
             }
             Ok(Some(AppServerPromptEvent::ModelRerouted(update)))
+        }
+        "model/safetyBuffering/updated" => {
+            let update = decode_model_safety_buffering_updated(params)?;
+            if update.thread_id != active_thread_id
+                || Some(update.turn_id.as_str()) != active_turn_id
+            {
+                return Ok(None);
+            }
+            Ok(Some(AppServerPromptEvent::ModelSafetyBuffering(update)))
         }
         "model/verification" => {
             let update = decode_model_verification(params)?;
@@ -3568,6 +3598,20 @@ pub fn decode_model_rerouted(params: &Value) -> anyhow::Result<AppServerModelRer
         from_model: notification.from_model,
         to_model: notification.to_model,
         reason: notification.reason,
+    })
+}
+
+pub fn decode_model_safety_buffering_updated(
+    params: &Value,
+) -> anyhow::Result<AppServerModelSafetyBufferingUpdate> {
+    let notification: ModelSafetyBufferingUpdatedNotification =
+        serde_json::from_value(params.clone())?;
+    Ok(AppServerModelSafetyBufferingUpdate {
+        thread_id: notification.thread_id,
+        turn_id: notification.turn_id,
+        model: notification.model,
+        use_cases: notification.use_cases,
+        reasons: notification.reasons,
     })
 }
 

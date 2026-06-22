@@ -406,6 +406,14 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
                             update.from_model, update.to_model
                         ));
                     }
+                    AppServerPromptEvent::ModelSafetyBuffering(update) => {
+                        events.push(format!(
+                            "model-safety:{}:{}:{}",
+                            update.model,
+                            update.use_cases.join(","),
+                            update.reasons.join(",")
+                        ));
+                    }
                     AppServerPromptEvent::ModelVerification(update) => {
                         events.push(format!("model-verification:{}", update.verifications));
                     }
@@ -462,6 +470,7 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
             "usage:42/100",
             "skills-changed",
             "settings:thread-1:gpt-5-codex:high:priority",
+            "model-safety:gpt-5-codex:cyber:high risk",
             "realtime-started:session-1",
             "realtime-sdp:10",
             "realtime-item:{\"kind\":\"handoff_request\",\"target\":\"browser\"}",
@@ -955,6 +964,12 @@ fn summarize_prompt_event(event: AppServerPromptEvent) -> String {
         AppServerPromptEvent::ModelRerouted(update) => {
             format!("model-rerouted:{}:{}", update.from_model, update.to_model)
         }
+        AppServerPromptEvent::ModelSafetyBuffering(update) => format!(
+            "model-safety:{}:{}:{}",
+            update.model,
+            update.use_cases.join(","),
+            update.reasons.join(",")
+        ),
         AppServerPromptEvent::ModelVerification(update) => {
             format!("model-verification:{}", update.verifications)
         }
@@ -2047,6 +2062,16 @@ for line in sys.stdin:
                         },
                         "activePermissionProfile": {"id": ":workspace"},
                     },
+                },
+            })
+            send({
+                "method": "model/safetyBuffering/updated",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "model": "gpt-5-codex",
+                    "useCases": ["cyber"],
+                    "reasons": ["high risk"],
                 },
             })
             send({

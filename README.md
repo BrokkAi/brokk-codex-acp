@@ -95,8 +95,8 @@ The project currently includes:
   as user-visible ACP diagnostic messages for every known session.
 - Fuzzy file search session progress and completion notifications are
   projected as compact user-visible ACP diagnostic messages.
-- Model verification notifications are projected as user-visible ACP
-  diagnostic messages.
+- Model reroute, safety-buffering, and verification notifications are projected
+  as user-visible ACP diagnostic messages.
 - Turn moderation metadata notifications are projected as user-visible ACP
   diagnostic messages.
 - Thread realtime lifecycle, SDP, raw item, transcript text, and output-audio
