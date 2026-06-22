@@ -212,6 +212,11 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
         "Codex rerouted the model from `gpt-5-codex` to `gpt-5` (High Risk Cyber Activity) for this turn.",
         "Codex requires additional verification: Trusted Access For Cyber.",
         "Codex moderation metadata: {\"category\":\"cyber\",\"severity\":\"medium\"}.",
+        "Codex realtime session started: `realtime-serialized`.",
+        "Codex realtime transcript delta (assistant): live",
+        "Codex realtime transcript complete (assistant): live final",
+        "Codex realtime error: backend unavailable",
+        "Codex realtime session closed: complete.",
         "Codex error (retrying): transient failure",
         "retry details",
         "Code: Rate Limit",
@@ -1241,6 +1246,43 @@ for line in sys.stdin:
                         "category": "cyber",
                         "severity": "medium",
                     },
+                },
+            })
+            send({
+                "method": "thread/realtime/started",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "realtimeSessionId": "realtime-serialized",
+                },
+            })
+            send({
+                "method": "thread/realtime/transcript/delta",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "role": "assistant",
+                    "delta": "live",
+                },
+            })
+            send({
+                "method": "thread/realtime/transcript/done",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "role": "assistant",
+                    "text": "live final",
+                },
+            })
+            send({
+                "method": "thread/realtime/error",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "message": "backend unavailable",
+                },
+            })
+            send({
+                "method": "thread/realtime/closed",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "reason": "complete",
                 },
             })
             send({

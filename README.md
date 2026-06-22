@@ -73,6 +73,9 @@ The project currently includes:
   diagnostic messages.
 - Turn moderation metadata notifications are projected as user-visible ACP
   diagnostic messages.
+- Thread realtime lifecycle and transcript text notifications are projected as
+  user-visible ACP diagnostic messages. Realtime audio chunks and raw realtime
+  items are still out of scope.
 - Initial ACP session config options for `model`, `reasoning_effort`,
   `service_tier`, `approval_policy`, `collaboration_mode`, and
   `permission_profile`, populated from app-server `model/list`,
@@ -85,10 +88,11 @@ The project currently includes:
   `thread/settings/updated` notifications are observed.
 
 The adapter is not complete yet. Rich ACP UI for MCP elicitations, dynamic tool
-callbacks, and user-input requests, exact terminal embedding, remaining slash
-command routing, plugin install/read actions, direct MCP resource/tool UI,
-fine-grained partial permission grants, and paginated/full-fidelity history
-replay are still planned work.
+callbacks, and user-input requests, exact terminal embedding, realtime audio
+and raw realtime item projection, remaining slash command routing, plugin
+install/read actions, direct MCP resource/tool UI, fine-grained partial
+permission grants, and paginated/full-fidelity history replay are still planned
+work.
 
 ## Usage
 

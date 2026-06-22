@@ -3,8 +3,9 @@ use std::fs;
 use brokk_codex_acp::app_server::{
     AppServerApprovalDecision, AppServerClient, AppServerCollaborationMode, AppServerCommand,
     AppServerHistoryEvent, AppServerMessage, AppServerPromptCompletion, AppServerPromptEvent,
-    AppServerTurnHistory, AppServerTurnInput, ThreadSettingsUpdateParams, history_events,
-    history_events_for_turns, is_app_server_method_unavailable, is_app_server_overloaded,
+    AppServerRealtimeUpdate, AppServerTurnHistory, AppServerTurnInput, ThreadSettingsUpdateParams,
+    history_events, history_events_for_turns, is_app_server_method_unavailable,
+    is_app_server_overloaded,
 };
 use tempfile::TempDir;
 use tokio::{sync::oneshot, time};
@@ -403,6 +404,9 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
                     AppServerPromptEvent::McpServerStartupStatus(update) => {
                         events.push(format!("mcp-startup:{}:{}", update.name, update.status));
                     }
+                    AppServerPromptEvent::Realtime(update) => {
+                        events.push(realtime_summary(&update));
+                    }
                 }
                 Ok(())
             },
@@ -420,6 +424,11 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
             "usage:42/100",
             "skills-changed",
             "settings:thread-1:gpt-5-codex:high:priority",
+            "realtime-started:session-1",
+            "realtime-delta:assistant:live",
+            "realtime-done:assistant:live final",
+            "realtime-error:network interrupted",
+            "realtime-closed:client stopped",
             "message:fake response",
         ]
     );
@@ -794,6 +803,31 @@ fn summarize_prompt_event(event: AppServerPromptEvent) -> String {
         }
         AppServerPromptEvent::McpServerStartupStatus(update) => {
             format!("mcp-startup:{}:{}", update.name, update.status)
+        }
+        AppServerPromptEvent::Realtime(update) => realtime_summary(&update),
+    }
+}
+
+fn realtime_summary(update: &AppServerRealtimeUpdate) -> String {
+    match update {
+        AppServerRealtimeUpdate::Started {
+            realtime_session_id,
+            ..
+        } => format!(
+            "realtime-started:{}",
+            realtime_session_id.as_deref().unwrap_or_default()
+        ),
+        AppServerRealtimeUpdate::TranscriptDelta { role, delta, .. } => {
+            format!("realtime-delta:{role}:{delta}")
+        }
+        AppServerRealtimeUpdate::TranscriptDone { role, text, .. } => {
+            format!("realtime-done:{role}:{text}")
+        }
+        AppServerRealtimeUpdate::Error { message, .. } => {
+            format!("realtime-error:{message}")
+        }
+        AppServerRealtimeUpdate::Closed { reason, .. } => {
+            format!("realtime-closed:{reason}")
         }
     }
 }
@@ -1714,6 +1748,43 @@ for line in sys.stdin:
                         },
                         "activePermissionProfile": {"id": ":workspace"},
                     },
+                },
+            })
+            send({
+                "method": "thread/realtime/started",
+                "params": {
+                    "threadId": "thread-1",
+                    "realtimeSessionId": "session-1",
+                },
+            })
+            send({
+                "method": "thread/realtime/transcript/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "role": "assistant",
+                    "delta": "live",
+                },
+            })
+            send({
+                "method": "thread/realtime/transcript/done",
+                "params": {
+                    "threadId": "thread-1",
+                    "role": "assistant",
+                    "text": "live final",
+                },
+            })
+            send({
+                "method": "thread/realtime/error",
+                "params": {
+                    "threadId": "thread-1",
+                    "message": "network interrupted",
+                },
+            })
+            send({
+                "method": "thread/realtime/closed",
+                "params": {
+                    "threadId": "thread-1",
+                    "reason": "client stopped",
                 },
             })
             send({

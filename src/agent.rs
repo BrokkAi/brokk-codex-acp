@@ -36,15 +36,16 @@ use crate::app_server::{
     AppServerCollaborationModeMask, AppServerCollaborationModeSettings, AppServerErrorUpdate,
     AppServerHistoryEvent, AppServerMcpServerStartupStatusUpdate, AppServerMessage, AppServerModel,
     AppServerModelReroutedUpdate, AppServerModelVerificationUpdate, AppServerPermissionProfile,
-    AppServerPlanStatus, AppServerPromptCompletion, AppServerPromptEvent, AppServerSkill,
-    AppServerThread, AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus,
-    AppServerTurnInput, AppServerTurnModerationMetadataUpdate, AppServerWarningUpdate,
-    ThreadSettingsUpdateParams, decode_error, decode_mcp_server_startup_status_updated,
-    decode_model_rerouted, decode_model_verification, decode_thread_archived, decode_thread_closed,
-    decode_thread_deleted, decode_thread_goal_cleared, decode_thread_goal_updated,
-    decode_thread_name_updated, decode_thread_settings_updated, decode_thread_status_changed,
-    decode_thread_unarchived, decode_turn_moderation_metadata, decode_warning,
-    history_events_for_turns, is_app_server_method_unavailable,
+    AppServerPlanStatus, AppServerPromptCompletion, AppServerPromptEvent, AppServerRealtimeUpdate,
+    AppServerSkill, AppServerThread, AppServerThreadSettingsUpdate, AppServerToolKind,
+    AppServerToolStatus, AppServerTurnInput, AppServerTurnModerationMetadataUpdate,
+    AppServerWarningUpdate, ThreadSettingsUpdateParams, decode_error,
+    decode_mcp_server_startup_status_updated, decode_model_rerouted, decode_model_verification,
+    decode_realtime_update, decode_thread_archived, decode_thread_closed, decode_thread_deleted,
+    decode_thread_goal_cleared, decode_thread_goal_updated, decode_thread_name_updated,
+    decode_thread_settings_updated, decode_thread_status_changed, decode_thread_unarchived,
+    decode_turn_moderation_metadata, decode_warning, history_events_for_turns,
+    is_app_server_method_unavailable,
 };
 
 const MODEL_CONFIG_ID: &str = "model";
@@ -583,6 +584,20 @@ impl CodexAcpAgent {
                 }
                 let session_id = SessionId::new(thread_id.clone());
                 publish_agent_message(&session_id, mcp_startup_status_message(&update), cx)
+                    .map_err(acp_internal_error)?;
+            }
+            "thread/realtime/started"
+            | "thread/realtime/transcript/delta"
+            | "thread/realtime/transcript/done"
+            | "thread/realtime/error"
+            | "thread/realtime/closed" => {
+                let update = decode_realtime_update(method, &params).map_err(acp_internal_error)?;
+                let thread_id = update.thread_id();
+                if self.active_prompts.lock().await.contains_key(thread_id) {
+                    return Ok(());
+                }
+                let session_id = SessionId::new(thread_id.to_owned());
+                publish_agent_message(&session_id, realtime_message(&update), cx)
                     .map_err(acp_internal_error)?;
             }
             _ => {}
@@ -3634,6 +3649,11 @@ fn send_prompt_event(
             session_id,
             SessionUpdate::AgentMessageChunk(text_chunk(mcp_startup_status_message(&update))),
         ),
+        AppServerPromptEvent::Realtime(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(realtime_message(&update))),
+        ),
         AppServerPromptEvent::SkillsChanged | AppServerPromptEvent::ThreadSettingsUpdated(_) => {
             Ok(())
         }
@@ -3927,6 +3947,35 @@ fn mcp_startup_status_message(update: &AppServerMcpServerStartupStatusUpdate) ->
         message.push_str(error);
     }
     message
+}
+
+fn realtime_message(update: &AppServerRealtimeUpdate) -> String {
+    match update {
+        AppServerRealtimeUpdate::Started {
+            realtime_session_id,
+            ..
+        } => {
+            if let Some(session_id) = realtime_session_id.as_deref()
+                && !session_id.trim().is_empty()
+            {
+                format!("Codex realtime session started: `{session_id}`.")
+            } else {
+                "Codex realtime session started.".to_owned()
+            }
+        }
+        AppServerRealtimeUpdate::TranscriptDelta { role, delta, .. } => {
+            format!("Codex realtime transcript delta ({role}): {delta}")
+        }
+        AppServerRealtimeUpdate::TranscriptDone { role, text, .. } => {
+            format!("Codex realtime transcript complete ({role}): {text}")
+        }
+        AppServerRealtimeUpdate::Error { message, .. } => {
+            format!("Codex realtime error: {message}")
+        }
+        AppServerRealtimeUpdate::Closed { reason, .. } => {
+            format!("Codex realtime session closed: {reason}.")
+        }
+    }
 }
 
 fn json_value_label(value: &serde_json::Value) -> String {

@@ -783,7 +783,12 @@ impl AppServerClient {
                 | "model/rerouted"
                 | "model/verification"
                 | "turn/moderationMetadata"
-                | "mcpServer/startupStatus/updated" => {
+                | "mcpServer/startupStatus/updated"
+                | "thread/realtime/started"
+                | "thread/realtime/transcript/delta"
+                | "thread/realtime/transcript/done"
+                | "thread/realtime/error"
+                | "thread/realtime/closed" => {
                     if let Some(event) = decode_prompt_event(
                         method.as_str(),
                         &params,
@@ -1938,6 +1943,7 @@ pub enum AppServerPromptEvent {
     ModelVerification(AppServerModelVerificationUpdate),
     TurnModerationMetadata(AppServerTurnModerationMetadataUpdate),
     McpServerStartupStatus(AppServerMcpServerStartupStatusUpdate),
+    Realtime(AppServerRealtimeUpdate),
 }
 
 pub enum AppServerHistoryEvent {
@@ -2230,6 +2236,44 @@ pub struct AppServerMcpServerStartupStatusUpdate {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub enum AppServerRealtimeUpdate {
+    Started {
+        thread_id: String,
+        realtime_session_id: Option<String>,
+    },
+    TranscriptDelta {
+        thread_id: String,
+        role: String,
+        delta: String,
+    },
+    TranscriptDone {
+        thread_id: String,
+        role: String,
+        text: String,
+    },
+    Error {
+        thread_id: String,
+        message: String,
+    },
+    Closed {
+        thread_id: String,
+        reason: String,
+    },
+}
+
+impl AppServerRealtimeUpdate {
+    pub fn thread_id(&self) -> &str {
+        match self {
+            Self::Started { thread_id, .. }
+            | Self::TranscriptDelta { thread_id, .. }
+            | Self::TranscriptDone { thread_id, .. }
+            | Self::Error { thread_id, .. }
+            | Self::Closed { thread_id, .. } => thread_id,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ThreadArchivedNotification {
@@ -2335,6 +2379,43 @@ struct McpServerStartupStatusUpdatedNotification {
     status: String,
     #[serde(default)]
     error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RealtimeStartedNotification {
+    thread_id: String,
+    realtime_session_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RealtimeTranscriptDeltaNotification {
+    thread_id: String,
+    role: String,
+    delta: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RealtimeTranscriptDoneNotification {
+    thread_id: String,
+    role: String,
+    text: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RealtimeErrorNotification {
+    thread_id: String,
+    message: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RealtimeClosedNotification {
+    thread_id: String,
+    reason: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2497,6 +2578,17 @@ fn decode_prompt_event(
                 return Ok(None);
             }
             Ok(Some(AppServerPromptEvent::McpServerStartupStatus(update)))
+        }
+        "thread/realtime/started"
+        | "thread/realtime/transcript/delta"
+        | "thread/realtime/transcript/done"
+        | "thread/realtime/error"
+        | "thread/realtime/closed" => {
+            let update = decode_realtime_update(method, params)?;
+            if update.thread_id() != active_thread_id {
+                return Ok(None);
+            }
+            Ok(Some(AppServerPromptEvent::Realtime(update)))
         }
         _ => Ok(None),
     }
@@ -2723,6 +2815,54 @@ pub fn decode_mcp_server_startup_status_updated(
         status: notification.status,
         error: notification.error,
     })
+}
+
+pub fn decode_realtime_update(
+    method: &str,
+    params: &Value,
+) -> anyhow::Result<AppServerRealtimeUpdate> {
+    match method {
+        "thread/realtime/started" => {
+            let notification: RealtimeStartedNotification = serde_json::from_value(params.clone())?;
+            Ok(AppServerRealtimeUpdate::Started {
+                thread_id: notification.thread_id,
+                realtime_session_id: notification.realtime_session_id,
+            })
+        }
+        "thread/realtime/transcript/delta" => {
+            let notification: RealtimeTranscriptDeltaNotification =
+                serde_json::from_value(params.clone())?;
+            Ok(AppServerRealtimeUpdate::TranscriptDelta {
+                thread_id: notification.thread_id,
+                role: notification.role,
+                delta: notification.delta,
+            })
+        }
+        "thread/realtime/transcript/done" => {
+            let notification: RealtimeTranscriptDoneNotification =
+                serde_json::from_value(params.clone())?;
+            Ok(AppServerRealtimeUpdate::TranscriptDone {
+                thread_id: notification.thread_id,
+                role: notification.role,
+                text: notification.text,
+            })
+        }
+        "thread/realtime/error" => {
+            let notification: RealtimeErrorNotification = serde_json::from_value(params.clone())?;
+            Ok(AppServerRealtimeUpdate::Error {
+                thread_id: notification.thread_id,
+                message: notification.message,
+            })
+        }
+        "thread/realtime/closed" => {
+            let notification: RealtimeClosedNotification = serde_json::from_value(params.clone())?;
+            Ok(AppServerRealtimeUpdate::Closed {
+                thread_id: notification.thread_id,
+                reason: notification.reason,
+            })
+        }
+        _ => anyhow::bail!("unsupported realtime notification `{method}`"),
+    }
 }
 
 fn decode_thread_settings_updated_for_thread(
