@@ -640,6 +640,8 @@ Return:
 - additional directories when `sessionCapabilities.additionalDirectories` is
   supported and app-server provides them
 - title/name if available
+- ACP `updatedAt` converted from app-server Unix seconds to an ISO 8601 UTC
+  timestamp when app-server provides `updatedAt`
 - app-server preview, status, model-provider, timestamp, recency, agent, and
   parent-thread fields under `_meta.brokk_codex_acp`
 - adapter-specific archived/deleted metadata only under `_meta`; stable
@@ -649,8 +651,6 @@ Still pending:
 
 - additional directories when `sessionCapabilities.additionalDirectories` is
   supported and app-server provides them
-- ACP `updatedAt` once app-server exposes a documented ISO 8601 value or the
-  adapter adds a deliberate timestamp conversion policy
 
 ### session/close
 

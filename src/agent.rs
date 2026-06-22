@@ -3239,6 +3239,7 @@ fn session_info_from_app_server_thread(thread: AppServerThread) -> Option<Sessio
     Some(
         SessionInfo::new(SessionId::new(thread.id), cwd)
             .title(title)
+            .updated_at(thread.updated_at.map(unix_timestamp_to_utc_iso8601))
             .meta(meta),
     )
 }
@@ -3310,6 +3311,37 @@ fn insert_optional_value(
     if let Some(value) = value {
         meta.insert(key.to_owned(), value.clone());
     }
+}
+
+fn unix_timestamp_to_utc_iso8601(timestamp: i64) -> String {
+    let days = timestamp.div_euclid(86_400);
+    let seconds_of_day = timestamp.rem_euclid(86_400);
+    let hour = seconds_of_day / 3_600;
+    let minute = (seconds_of_day % 3_600) / 60;
+    let second = seconds_of_day % 60;
+    let (year, month, day) = civil_from_unix_days(days);
+
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+fn civil_from_unix_days(days: i64) -> (i64, i64, i64) {
+    let shifted_days = days + 719_468;
+    let era = if shifted_days >= 0 {
+        shifted_days
+    } else {
+        shifted_days - 146_096
+    } / 146_097;
+    let day_of_era = shifted_days - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+    let year = year + if month <= 2 { 1 } else { 0 };
+
+    (year, month, day)
 }
 
 #[derive(Default)]
@@ -4470,6 +4502,7 @@ mod tests {
         assert_eq!(session.session_id.0.as_ref(), "thread-1");
         assert_eq!(session.cwd, std::path::PathBuf::from("/repo"));
         assert_eq!(session.title.as_deref(), Some("Recent work summary"));
+        assert_eq!(session.updated_at.as_deref(), Some("2023-11-14T22:15:00Z"));
 
         let adapter_meta = session
             .meta
@@ -4483,6 +4516,16 @@ mod tests {
         assert_eq!(adapter_meta["modelProvider"], "openai");
         assert_eq!(adapter_meta["updatedAt"], 1_700_000_100);
         assert_eq!(adapter_meta["parentThreadId"], "thread-parent");
+    }
+
+    #[test]
+    fn unix_timestamp_to_utc_iso8601_formats_utc_seconds() {
+        assert_eq!(unix_timestamp_to_utc_iso8601(0), "1970-01-01T00:00:00Z");
+        assert_eq!(
+            unix_timestamp_to_utc_iso8601(1_700_000_100),
+            "2023-11-14T22:15:00Z"
+        );
+        assert_eq!(unix_timestamp_to_utc_iso8601(-1), "1969-12-31T23:59:59Z");
     }
 
     #[test]
