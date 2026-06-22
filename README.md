@@ -65,6 +65,8 @@ The project currently includes:
   payload and are returned unchanged when selected.
 - Server-initiated `currentTime/read` requests are answered with the adapter
   host's current Unix timestamp so external-clock reminders do not block turns.
+- Unsupported server-initiated app-server requests receive explicit JSON-RPC
+  method-not-found errors instead of being silently ignored.
 - Initial ACP session config options for `model`, `reasoning_effort`,
   `service_tier`, `approval_policy`, `collaboration_mode`, and
   `permission_profile`, populated from app-server `model/list`,

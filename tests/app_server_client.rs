@@ -639,6 +639,13 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         vec!["message:reported current time"]
     );
 
+    let unsupported_request_summaries =
+        run_text_turn_and_collect_messages(&mut client, "unsupported server request").await?;
+    assert_eq!(
+        unsupported_request_summaries,
+        vec!["message:rejected unsupported server request"]
+    );
+
     let (cancel_tx, cancel_rx) = oneshot::channel();
     tokio::spawn(async move {
         time::sleep(time::Duration::from_millis(50)).await;
@@ -2036,6 +2043,40 @@ for line in sys.stdin:
                 "params": {
                     "threadId": "thread-1",
                     "turn": {"id": "turn-current-time", "status": "completed"},
+                },
+            })
+        elif params["input"] == [{"type": "text", "text": "unsupported server request"}]:
+            response(message_id, {"turn": {"id": "turn-unsupported-request", "status": "running"}})
+            send({
+                "id": "unsupported-request-1",
+                "method": "future/request",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-unsupported-request",
+                },
+            })
+            unsupported_response = json.loads(sys.stdin.readline())
+            assert unsupported_response == {
+                "id": "unsupported-request-1",
+                "error": {
+                    "code": -32601,
+                    "message": "unsupported app-server request `future/request`",
+                },
+            }
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-unsupported-request",
+                    "itemId": "item-unsupported-request",
+                    "delta": "rejected unsupported server request",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {"id": "turn-unsupported-request", "status": "completed"},
                 },
             })
         elif params["input"] == [{"type": "text", "text": "cancel me"}]:

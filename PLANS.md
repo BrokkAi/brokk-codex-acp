@@ -180,6 +180,9 @@ The current repository has the first working ACP/app-server bridge in place:
   - `mcpServer/elicitation/request`, `item/tool/requestUserInput`, and
     `item/tool/call` -> explicit cancel/empty/failure fallback responses when
     no ACP-compatible rich UI is available.
+  - Unsupported server-initiated app-server requests receive a JSON-RPC
+    method-not-found error instead of being ignored, so the backend is not left
+    waiting indefinitely.
 - Approval routing:
   - `item/commandExecution/requestApproval` and
     `item/fileChange/requestApproval` -> ACP `session/request_permission`
@@ -344,7 +347,8 @@ Tasks:
   the full requested profile for a turn/session or rejecting it.
 - [x] Add non-blocking fallback responses for current-time reads, MCP
   elicitation, dynamic tool requests, and `request_user_input` when no
-  ACP-compatible UI is available.
+  ACP-compatible UI is available, plus explicit JSON-RPC errors for unsupported
+  app-server requests.
 - [ ] Add rich ACP UI bridging for MCP elicitation and dynamic tool requests.
 - [ ] Add terminal embedding once ACP terminal creation is wired.
 
@@ -363,6 +367,8 @@ Acceptance criteria:
 - [x] Current-time reads, MCP elicitation, dynamic tool, and
   `request_user_input` requests receive explicit responses instead of blocking
   app-server.
+- [x] Unknown server-initiated app-server requests receive explicit JSON-RPC
+  errors instead of blocking app-server.
 - [ ] MCP elicitation and dynamic tool requests route through a rich ACP
   request surface when one is available.
 

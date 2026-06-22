@@ -17,6 +17,7 @@ use tokio::time::{Duration, sleep};
 use tracing::{debug, trace, warn};
 
 const APP_SERVER_OVERLOADED_CODE: i64 = -32001;
+const JSON_RPC_METHOD_NOT_FOUND: i64 = -32601;
 const APP_SERVER_OVERLOAD_MAX_RETRIES: usize = 3;
 const APP_SERVER_OVERLOAD_INITIAL_RETRY_DELAY: Duration = Duration::from_millis(25);
 const APP_SERVER_MESSAGE_BUFFER_CAPACITY: usize = 16 * 1024;
@@ -707,7 +708,17 @@ impl AppServerClient {
                         {
                             self.write_request_response(id, response).await?;
                         } else {
-                            trace!(method, ?params, "ignoring app-server request during turn");
+                            trace!(
+                                method,
+                                ?params,
+                                "rejecting unsupported app-server request during turn"
+                            );
+                            self.write_request_error(
+                                id,
+                                JSON_RPC_METHOD_NOT_FOUND,
+                                format!("unsupported app-server request `{method}`"),
+                            )
+                            .await?;
                         }
                     }
                     continue;
@@ -931,6 +942,22 @@ impl AppServerClient {
         let response = json!({
             "id": request_id,
             "result": result,
+        });
+        self.write_message(&response).await
+    }
+
+    async fn write_request_error(
+        &self,
+        request_id: Value,
+        code: i64,
+        message: String,
+    ) -> anyhow::Result<()> {
+        let response = json!({
+            "id": request_id,
+            "error": {
+                "code": code,
+                "message": message,
+            },
         });
         self.write_message(&response).await
     }
