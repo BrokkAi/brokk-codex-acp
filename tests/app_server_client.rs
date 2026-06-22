@@ -827,6 +827,14 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         .await?;
     assert_eq!(terminated_terminal["terminated"], true);
 
+    client
+        .thread_memory_mode_set(
+            "thread-1".to_string(),
+            brokk_codex_acp::app_server::ThreadMemoryMode::Disabled,
+        )
+        .await?;
+    client.memory_reset().await?;
+
     let user_input_summaries =
         run_text_turn_and_collect_messages(&mut client, "user input callback").await?;
     assert_eq!(user_input_summaries, vec!["message:empty user input"]);
@@ -1690,6 +1698,15 @@ for line in sys.stdin:
             "processId": "42",
         }
         response(message_id, {"terminated": True})
+    elif method == "thread/memoryMode/set":
+        assert params == {
+            "threadId": "thread-1",
+            "mode": "disabled",
+        }
+        response(message_id, {})
+    elif method == "memory/reset":
+        assert params == {}
+        response(message_id, {})
     elif method == "thread/rollback":
         assert params == {
             "threadId": "thread-1",

@@ -321,6 +321,22 @@ impl AppServerClient {
             .await
     }
 
+    pub async fn thread_memory_mode_set(
+        &mut self,
+        thread_id: String,
+        mode: ThreadMemoryMode,
+    ) -> anyhow::Result<ThreadMemoryModeSetResponse> {
+        self.request(
+            "thread/memoryMode/set",
+            ThreadMemoryModeSetParams { thread_id, mode },
+        )
+        .await
+    }
+
+    pub async fn memory_reset(&mut self) -> anyhow::Result<MemoryResetResponse> {
+        self.request("memory/reset", EmptyParams {}).await
+    }
+
     pub async fn skills_list(
         &mut self,
         cwd: String,
@@ -1734,6 +1750,28 @@ struct ThreadGoalClearParams {
 pub struct ThreadGoalClearResponse {
     pub cleared: bool,
 }
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ThreadMemoryMode {
+    Enabled,
+    Disabled,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadMemoryModeSetParams {
+    thread_id: String,
+    mode: ThreadMemoryMode,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadMemoryModeSetResponse {}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryResetResponse {}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

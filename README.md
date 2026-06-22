@@ -61,7 +61,7 @@ The project currently includes:
   `/apps`, `/plugins`, `/plugin <pluginName@marketplacePath>`,
   `/plugin-install <pluginName@marketplacePath>`,
   `/plugin-uninstall <pluginId>`, `/mcp`, `/mcp-resource <server> <uri>`,
-  `/mcp-tool <server> <tool> [json-arguments]`, `/hooks`, `/model`,
+  `/mcp-tool <server> <tool> [json-arguments]`, `/hooks`, `/memory`, `/model`,
   `/permissions`, `/ps`, `/skill-roots`, `/stop`, and `/status`, mapped to
   app-server thread, review, catalog, and config endpoints with ACP session
   update, turn-stream,

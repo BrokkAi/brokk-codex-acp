@@ -858,6 +858,17 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             "/kill 42",
             &["Terminated background terminal process `42`."],
         ),
+        (
+            "/memory disable",
+            &["Codex memory is now disabled for this thread."],
+        ),
+        (
+            "/memory reset",
+            &[
+                "Reset Codex global memory data.",
+                "Thread memory modes were preserved.",
+            ],
+        ),
         ("/delete", &["Deleted Codex session `thread-serialized`."]),
         ("/plan", &["Plan mode enabled for subsequent Codex turns."]),
         (
@@ -1597,6 +1608,19 @@ for line in sys.stdin:
             "result": {
                 "terminated": True,
             },
+        })
+    elif method == "thread/memoryMode/set":
+        assert params == {
+            "threadId": "thread-serialized",
+            "mode": "disabled",
+        }
+        response(message_id, {
+            "result": {},
+        })
+    elif method == "memory/reset":
+        assert params == {}
+        response(message_id, {
+            "result": {},
         })
     elif method == "thread/rollback":
         assert params == {

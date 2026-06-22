@@ -56,9 +56,9 @@ use crate::app_server::{
     AppServerThread, AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus,
     AppServerTurnInput, AppServerTurnModerationMetadataUpdate, AppServerTurnStartInput,
     AppServerUserInputQuestion, AppServerUserInputRequest, AppServerWarningUpdate,
-    AppServerWindowsSandboxSetupUpdate, ThreadSettingsUpdateParams, decode_account_login_completed,
-    decode_account_rate_limits_updated, decode_account_updated, decode_app_list_updated,
-    decode_config_warning, decode_error, decode_fuzzy_file_search_update,
+    AppServerWindowsSandboxSetupUpdate, ThreadMemoryMode, ThreadSettingsUpdateParams,
+    decode_account_login_completed, decode_account_rate_limits_updated, decode_account_updated,
+    decode_app_list_updated, decode_config_warning, decode_error, decode_fuzzy_file_search_update,
     decode_guardian_approval_review_update, decode_mcp_server_oauth_login_completed,
     decode_mcp_server_startup_status_updated, decode_model_rerouted,
     decode_model_safety_buffering_updated, decode_model_verification, decode_realtime_update,
@@ -91,6 +91,7 @@ const GOAL_COMMAND: &str = "goal";
 const HOOKS_COMMAND: &str = "hooks";
 const INIT_COMMAND: &str = "init";
 const KILL_COMMAND: &str = "kill";
+const MEMORY_COMMAND: &str = "memory";
 const MCP_COMMAND: &str = "mcp";
 const MCP_RESOURCE_COMMAND: &str = "mcp-resource";
 const MCP_TOOL_COMMAND: &str = "mcp-tool";
@@ -1366,6 +1367,55 @@ impl CodexAcpAgent {
                 };
                 publish_catalog_message(session_id, "Kill", message, cx)
             }
+            BuiltinCommand::Memory { action } => match action {
+                MemoryCommandAction::Enable => {
+                    self.app_server
+                        .lock()
+                        .await
+                        .thread_memory_mode_set(thread_id.to_owned(), ThreadMemoryMode::Enabled)
+                        .await
+                        .map_err(|error| {
+                            acp_app_server_method_error("thread/memoryMode/set", error)
+                        })?;
+                    publish_catalog_message(
+                        session_id,
+                        "Memory",
+                        "Codex memory is now enabled for this thread.".to_owned(),
+                        cx,
+                    )
+                }
+                MemoryCommandAction::Disable => {
+                    self.app_server
+                        .lock()
+                        .await
+                        .thread_memory_mode_set(thread_id.to_owned(), ThreadMemoryMode::Disabled)
+                        .await
+                        .map_err(|error| {
+                            acp_app_server_method_error("thread/memoryMode/set", error)
+                        })?;
+                    publish_catalog_message(
+                        session_id,
+                        "Memory",
+                        "Codex memory is now disabled for this thread.".to_owned(),
+                        cx,
+                    )
+                }
+                MemoryCommandAction::Reset => {
+                    self.app_server
+                        .lock()
+                        .await
+                        .memory_reset()
+                        .await
+                        .map_err(|error| acp_app_server_method_error("memory/reset", error))?;
+                    publish_catalog_message(
+                        session_id,
+                        "Memory",
+                        "Reset Codex global memory data. Thread memory modes were preserved."
+                            .to_owned(),
+                        cx,
+                    )
+                }
+            },
             BuiltinCommand::Init => {
                 let input = PromptTurnInput {
                     input: vec![AppServerTurnInput::Text {
@@ -2876,6 +2926,9 @@ enum BuiltinCommand {
     Kill {
         process_id: String,
     },
+    Memory {
+        action: MemoryCommandAction,
+    },
     Init,
     Mcp,
     McpResource {
@@ -2929,6 +2982,13 @@ enum BuiltinTurnCommand {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MemoryCommandAction {
+    Enable,
+    Disable,
+    Reset,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CommandAvailability {
     RequiresSession,
     RequiresNoActiveTurn,
@@ -2944,6 +3004,7 @@ enum CommandHandler {
     Goal,
     Hooks,
     Kill,
+    Memory,
     Init,
     Mcp,
     McpResource,
@@ -3041,6 +3102,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: Some("background terminal process id"),
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::Kill,
+    },
+    BuiltinCommandSpec {
+        name: MEMORY_COMMAND,
+        aliases: &[],
+        description: "Set or reset Codex memory for this thread",
+        input_hint: Some("enable, disable, or reset"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Memory,
     },
     BuiltinCommandSpec {
         name: INIT_COMMAND,
@@ -3279,6 +3348,7 @@ fn parse_command_from_spec(
                 process_id: process_id.to_owned(),
             }))
         }
+        CommandHandler::Memory => parse_memory_command(rest),
         CommandHandler::Init => parse_no_argument_command(rest, spec.name, BuiltinCommand::Init),
         CommandHandler::Mcp => parse_no_argument_command(rest, spec.name, BuiltinCommand::Mcp),
         CommandHandler::McpResource => parse_mcp_resource_command(rest),
@@ -3343,6 +3413,24 @@ fn parse_no_argument_command(
         );
     }
     Ok(Some(command))
+}
+
+fn parse_memory_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
+    let action = match rest.trim() {
+        "enable" => MemoryCommandAction::Enable,
+        "disable" => MemoryCommandAction::Disable,
+        "reset" => MemoryCommandAction::Reset,
+        "" => {
+            return Err(
+                Error::invalid_params().data("/memory requires `enable`, `disable`, or `reset`")
+            );
+        }
+        _ => {
+            return Err(Error::invalid_params()
+                .data("/memory accepts only `enable`, `disable`, or `reset`"));
+        }
+    };
+    Ok(Some(BuiltinCommand::Memory { action }))
 }
 
 fn parse_goal_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
@@ -5980,6 +6068,33 @@ mod tests {
     }
 
     #[test]
+    fn parse_builtin_command_recognizes_memory_variants() {
+        let command = parse_builtin_command("/memory enable").unwrap().unwrap();
+        assert!(matches!(
+            command,
+            BuiltinCommand::Memory {
+                action: MemoryCommandAction::Enable
+            }
+        ));
+
+        let command = parse_builtin_command("/memory disable").unwrap().unwrap();
+        assert!(matches!(
+            command,
+            BuiltinCommand::Memory {
+                action: MemoryCommandAction::Disable
+            }
+        ));
+
+        let command = parse_builtin_command("/memory reset").unwrap().unwrap();
+        assert!(matches!(
+            command,
+            BuiltinCommand::Memory {
+                action: MemoryCommandAction::Reset
+            }
+        ));
+    }
+
+    #[test]
     fn parse_builtin_command_recognizes_rollback() {
         let command = parse_builtin_command("/rollback 2").unwrap().unwrap();
 
@@ -6026,6 +6141,7 @@ mod tests {
             "/hooks",
             "/init",
             "/mcp",
+            "/memory disable",
             "/mcp-resource filesystem file:///repo/README.md",
             r#"/mcp-tool filesystem read_file {"path":"/repo/README.md"}"#,
             "/model",
@@ -6051,6 +6167,12 @@ mod tests {
                 "/hooks" => assert!(matches!(command, BuiltinCommand::Hooks)),
                 "/init" => assert!(matches!(command, BuiltinCommand::Init)),
                 "/mcp" => assert!(matches!(command, BuiltinCommand::Mcp)),
+                "/memory disable" => assert!(matches!(
+                    command,
+                    BuiltinCommand::Memory {
+                        action: MemoryCommandAction::Disable
+                    }
+                )),
                 "/mcp-resource filesystem file:///repo/README.md" => assert!(matches!(
                     command,
                     BuiltinCommand::McpResource { server, uri }
@@ -6241,6 +6363,21 @@ mod tests {
         assert_eq!(
             error.data.as_ref().and_then(serde_json::Value::as_str),
             Some("/kill requires a process id")
+        );
+    }
+
+    #[test]
+    fn parse_builtin_command_rejects_invalid_memory_action() {
+        let error = parse_builtin_command("/memory").unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("/memory requires `enable`, `disable`, or `reset`")
+        );
+
+        let error = parse_builtin_command("/memory maybe").unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("/memory accepts only `enable`, `disable`, or `reset`")
         );
     }
 
@@ -6468,6 +6605,7 @@ mod tests {
                 "goal",
                 "hooks",
                 "kill",
+                "memory",
                 "init",
                 "mcp",
                 "mcp-resource",

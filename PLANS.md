@@ -152,6 +152,8 @@ The current repository has the first working ACP/app-server bridge in place:
     `thread/settings/update.permissions`
   - `session/prompt` -> `turn/start`
   - `session/prompt` text beginning with `!` -> `thread/shellCommand`
+  - `session/prompt` `/memory enable|disable|reset` -> `thread/memoryMode/set`
+    or `memory/reset`
   - `session/cancel` -> `turn/interrupt`
 - Catalog/config projection:
   - `model/list` -> ACP `model`, `reasoning_effort`, and `service_tier`
@@ -284,6 +286,9 @@ The current repository has the first working ACP/app-server bridge in place:
   - `/kill <process-id>` is intercepted by the adapter, mapped to
     `thread/backgroundTerminals/terminate`, and reflected as a short ACP
     agent-message summary.
+  - `/memory enable`, `/memory disable`, and `/memory reset` are intercepted by
+    the adapter, mapped to `thread/memoryMode/set` or `memory/reset`, and
+    reflected as short ACP agent-message summaries.
   - `/model` and `/permissions` are intercepted by the adapter, refresh
     app-server-backed config catalogs, publish ACP `config_option_update`, and
     send a short ACP agent-message summary.
@@ -475,20 +480,20 @@ client behavior, not model prompts.
 Tasks:
 
 - [x] Add an initial parser for leading slash commands, currently `/archive`,
-  `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/kill`, `/mcp`,
-  `/model`, `/new`, `/permissions`, `/plan`, `/plugins`, `/ps`, `/rename`,
-  `/resume`, `/review`, `/rollback`, `/skill-roots`, `/status`, `/stop`, and
-  `/unarchive`.
+  `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/kill`,
+  `/memory`, `/mcp`, `/model`, `/new`, `/permissions`, `/plan`, `/plugins`,
+  `/ps`, `/rename`, `/resume`, `/review`, `/rollback`, `/skill-roots`,
+  `/status`, `/stop`, and `/unarchive`.
 - [x] Build the full command registry with aliases, availability, required
   active turn state, and handler metadata.
 - [x] Publish adapter-owned ACP available commands plus skills.
 - Implement backend commands first: `/new`, `/resume`, `/review`,
   `/compact`, `/rename`, `/model`, `/permissions`, `/mcp`, `/apps`,
   `/plugins`, `/hooks`, and `/status`. Implemented so far: `/archive`,
-  `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/kill`, `/mcp`,
-  `/model`, `/new`, `/permissions`, `/plan`, `/plugins`, `/ps`, `/rename`,
-  `/resume`, `/review`, `/rollback`, `/skill-roots`, `/status`, `/stop`, and
-  `/unarchive`. `/fork` is
+  `/apps`, `/compact`, `/fork`, `/goal`, `/hooks`, `/init`, `/kill`,
+  `/memory`, `/mcp`, `/model`, `/new`, `/permissions`, `/plan`, `/plugins`,
+  `/ps`, `/rename`, `/resume`, `/review`, `/rollback`, `/skill-roots`,
+  `/status`, `/stop`, and `/unarchive`. `/fork` is
   implemented only as an extension command backed by Codex `thread/fork`, not
   as required ACP v1 behavior.
 - [x] Return explicit unsupported-command responses for slash commands that are
@@ -992,6 +997,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/plan` | `thread/settings/update` with collaboration mode `[implemented]` |
 | `/model` | `model/list` plus ACP config-option refresh `[implemented]` |
 | `/permissions` | `permissionProfile/list` plus ACP config-option refresh `[implemented]` |
+| `/memory enable` / `/memory disable` / `/memory reset` | `thread/memoryMode/set` or `memory/reset` `[implemented as summary]` |
 | `/mcp` | `mcpServerStatus/list` `[implemented as summary]` |
 | `/mcp-resource <server> <uri>` | `mcpServer/resource/read` `[implemented as summary]` |
 | `/mcp-tool <server> <tool> [json-arguments]` | `mcpServer/tool/call` `[implemented as summary]` |
