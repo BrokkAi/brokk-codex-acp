@@ -962,6 +962,15 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             "/marketplace-remove debug",
             &["Removed Codex marketplace `debug` from `/codex/marketplaces/debug`."],
         ),
+        (
+            "/marketplace-upgrade debug",
+            &[
+                "Marketplace upgrade",
+                "- Selected: debug",
+                "- Upgraded roots: 1",
+                "- /codex/marketplaces/debug",
+            ],
+        ),
         ("/mcp", &["MCP: 1 entries", "- filesystem"]),
         (
             "/mcp-reload",
@@ -1841,6 +1850,17 @@ for line in sys.stdin:
             "result": {
                 "marketplaceName": "debug",
                 "installedRoot": "/codex/marketplaces/debug",
+            },
+        })
+    elif method == "marketplace/upgrade":
+        assert params == {
+            "marketplaceName": "debug",
+        }
+        response(message_id, {
+            "result": {
+                "selectedMarketplaces": ["debug"],
+                "upgradedRoots": ["/codex/marketplaces/debug"],
+                "errors": [],
             },
         })
     elif method == "mcpServerStatus/list":

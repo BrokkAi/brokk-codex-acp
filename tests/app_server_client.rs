@@ -870,6 +870,16 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         Some("/codex/marketplaces/debug")
     );
 
+    let marketplace_upgrade = client
+        .marketplace_upgrade(Some("debug".to_string()))
+        .await?;
+    assert_eq!(marketplace_upgrade.selected_marketplaces, vec!["debug"]);
+    assert_eq!(
+        marketplace_upgrade.upgraded_roots,
+        vec!["/codex/marketplaces/debug"]
+    );
+    assert!(marketplace_upgrade.errors.is_empty());
+
     let mcp_servers = client
         .mcp_server_status_list("thread-1".to_string())
         .await?;
@@ -1902,6 +1912,15 @@ for line in sys.stdin:
         response(message_id, {
             "marketplaceName": "debug",
             "installedRoot": "/codex/marketplaces/debug",
+        })
+    elif method == "marketplace/upgrade":
+        assert params == {
+            "marketplaceName": "debug",
+        }
+        response(message_id, {
+            "selectedMarketplaces": ["debug"],
+            "upgradedRoots": ["/codex/marketplaces/debug"],
+            "errors": [],
         })
     elif method == "mcpServerStatus/list":
         assert params == {

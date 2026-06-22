@@ -245,11 +245,11 @@ The current repository has the first working ACP/app-server bridge in place:
   - built-in `account`, `archive`, `apps`, `compact`, `config`,
     `config-requirements`, `delete`, `feature`, `features`, `fork`, `goal`,
     `hooks`, `init`, `kill`, `login`, `login-cancel`, `logout`,
-    `marketplace-add`, `marketplace-remove`, `memory`, `mcp`, `mcp-reload`,
-    `model`, `model-provider`, `new`, `permissions`, `plan`, `plugins`, `ps`,
-    `rate-limits`, `rename`, `resume`, `review`, `rollback`, `skill-roots`,
-    `status`, `stop`, `unarchive`, `usage`, and `workspace-messages` commands
-    are published through ACP
+    `marketplace-add`, `marketplace-remove`, `marketplace-upgrade`, `memory`,
+    `mcp`, `mcp-reload`, `model`, `model-provider`, `new`, `permissions`,
+    `plan`, `plugins`, `ps`, `rate-limits`, `rename`, `resume`, `review`,
+    `rollback`, `skill-roots`, `status`, `stop`, `unarchive`, `usage`, and
+    `workspace-messages` commands are published through ACP
     `available_commands_update` alongside enabled skills.
   - `/archive` is intercepted by the adapter, mapped to `thread/archive`, and
     reflected to ACP clients through `session_info_update._meta`.
@@ -298,9 +298,10 @@ The current repository has the first working ACP/app-server bridge in place:
   - `/feature <name> enable|disable` is intercepted by the adapter, mapped to
     `experimentalFeature/enablement/set`, and reflected as a short ACP
     agent-message summary.
-  - `/marketplace-add <source> [ref] [sparsePathsCsv]` and
-    `/marketplace-remove <name>` are intercepted by the adapter, mapped to
-    `marketplace/add` and `marketplace/remove`, and reflected as short ACP
+  - `/marketplace-add <source> [ref] [sparsePathsCsv]`,
+    `/marketplace-remove <name>`, and `/marketplace-upgrade [name]` are
+    intercepted by the adapter, mapped to `marketplace/add`,
+    `marketplace/remove`, and `marketplace/upgrade`, and reflected as short ACP
     agent-message summaries.
   - `/goal`, `/goal get`, `/goal clear`, and `/goal <objective>` are
     intercepted by the adapter, mapped to `thread/goal/get`,
@@ -529,9 +530,9 @@ Tasks:
   `/archive`, `/apps`, `/compact`, `/config`, `/config-requirements`,
   `/delete`, `/feature`, `/features`, `/fork`, `/goal`, `/hooks`, `/init`,
   `/kill`, `/login`, `/login-cancel`, `/logout`, `/marketplace-add`,
-  `/marketplace-remove`, `/memory`, `/mcp`, `/mcp-reload`, `/model`,
-  `/model-provider`, `/new`, `/permissions`, `/plan`, `/plugins`, `/ps`,
-  `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
+  `/marketplace-remove`, `/marketplace-upgrade`, `/memory`, `/mcp`,
+  `/mcp-reload`, `/model`, `/model-provider`, `/new`, `/permissions`, `/plan`,
+  `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
   `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
   `/workspace-messages`.
 - [x] Build the full command registry with aliases, availability, required
@@ -543,9 +544,9 @@ Tasks:
   `/archive`, `/apps`, `/compact`, `/config`, `/config-requirements`,
   `/delete`, `/feature`, `/features`, `/fork`, `/goal`, `/hooks`, `/init`,
   `/kill`, `/login`, `/login-cancel`, `/logout`, `/marketplace-add`,
-  `/marketplace-remove`, `/memory`, `/mcp`, `/mcp-reload`, `/model`,
-  `/model-provider`, `/new`, `/permissions`, `/plan`, `/plugins`, `/ps`,
-  `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
+  `/marketplace-remove`, `/marketplace-upgrade`, `/memory`, `/mcp`,
+  `/mcp-reload`, `/model`, `/model-provider`, `/new`, `/permissions`, `/plan`,
+  `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
   `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
   `/workspace-messages`. `/fork` is implemented only as an extension command
   backed by Codex `thread/fork`, not as required ACP v1 behavior.
@@ -1077,6 +1078,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/plugin-uninstall <pluginId>` | `plugin/uninstall` `[implemented as summary]` |
 | `/marketplace-add <source> [ref] [sparsePathsCsv]` | `marketplace/add` `[implemented as summary]` |
 | `/marketplace-remove <name>` | `marketplace/remove` `[implemented as summary]` |
+| `/marketplace-upgrade [name]` | `marketplace/upgrade` `[implemented as summary]` |
 | `/hooks` | `hooks/list` `[implemented as summary]` |
 | `/skill-roots <paths...>` | `skills/extraRoots/set` plus `skills/list(forceReload)` `[implemented as process-local summary]` |
 | `/ps` | `thread/backgroundTerminals/list` `[implemented as summary]` |
@@ -1315,6 +1317,8 @@ model prompts:
 - [x] `/marketplace-add <source> [ref] [sparsePathsCsv]` calls
   `marketplace/add` and returns an ACP agent-message summary.
 - [x] `/marketplace-remove <name>` calls `marketplace/remove` and returns an
+  ACP agent-message summary.
+- [x] `/marketplace-upgrade [name]` calls `marketplace/upgrade` and returns an
   ACP agent-message summary.
 - [x] `/rate-limits` calls `account/rateLimits/read` and returns an ACP
   agent-message summary.
@@ -1656,6 +1660,7 @@ Manual flows:
 - [x] Add effective config display.
 - [x] Add config requirements display.
 - [x] Add marketplace add/remove commands.
+- [x] Add marketplace upgrade command.
 - [x] Add account status display.
 - [x] Add account login/logout commands.
 - [x] Add experimental feature flag display.

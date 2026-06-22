@@ -542,6 +542,17 @@ impl AppServerClient {
         .await
     }
 
+    pub async fn marketplace_upgrade(
+        &mut self,
+        marketplace_name: Option<String>,
+    ) -> anyhow::Result<MarketplaceUpgradeResponse> {
+        self.request(
+            "marketplace/upgrade",
+            MarketplaceUpgradeParams { marketplace_name },
+        )
+        .await
+    }
+
     pub async fn hooks_list(&mut self, cwd: String) -> anyhow::Result<Value> {
         self.request("hooks/list", HooksListParams { cwds: vec![cwd] })
             .await
@@ -2088,6 +2099,28 @@ struct MarketplaceRemoveParams {
 pub struct MarketplaceRemoveResponse {
     pub marketplace_name: String,
     pub installed_root: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MarketplaceUpgradeParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    marketplace_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceUpgradeResponse {
+    pub selected_marketplaces: Vec<String>,
+    pub upgraded_roots: Vec<String>,
+    pub errors: Vec<MarketplaceUpgradeErrorInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceUpgradeErrorInfo {
+    pub marketplace_name: String,
+    pub message: String,
 }
 
 #[derive(Debug, Serialize)]

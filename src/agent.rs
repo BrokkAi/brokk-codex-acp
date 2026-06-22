@@ -102,6 +102,7 @@ const LOGIN_CANCEL_COMMAND: &str = "login-cancel";
 const LOGOUT_COMMAND: &str = "logout";
 const MARKETPLACE_ADD_COMMAND: &str = "marketplace-add";
 const MARKETPLACE_REMOVE_COMMAND: &str = "marketplace-remove";
+const MARKETPLACE_UPGRADE_COMMAND: &str = "marketplace-upgrade";
 const MEMORY_COMMAND: &str = "memory";
 const MCP_COMMAND: &str = "mcp";
 const MCP_RELOAD_COMMAND: &str = "mcp-reload";
@@ -1773,6 +1774,21 @@ impl CodexAcpAgent {
                     cx,
                 )
             }
+            BuiltinCommand::MarketplaceUpgrade { marketplace_name } => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .marketplace_upgrade(marketplace_name)
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(
+                    session_id,
+                    "Marketplace upgrade",
+                    marketplace_upgrade_summary(&response),
+                    cx,
+                )
+            }
             BuiltinCommand::Plugin {
                 marketplace_path,
                 plugin_name,
@@ -3374,6 +3390,9 @@ enum BuiltinCommand {
     MarketplaceRemove {
         marketplace_name: String,
     },
+    MarketplaceUpgrade {
+        marketplace_name: Option<String>,
+    },
     Memory {
         action: MemoryCommandAction,
     },
@@ -3467,6 +3486,7 @@ enum CommandHandler {
     Logout,
     MarketplaceAdd,
     MarketplaceRemove,
+    MarketplaceUpgrade,
     Memory,
     Init,
     Mcp,
@@ -3650,6 +3670,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: Some("marketplaceName"),
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::MarketplaceRemove,
+    },
+    BuiltinCommandSpec {
+        name: MARKETPLACE_UPGRADE_COMMAND,
+        aliases: &[],
+        description: "Upgrade Codex plugin marketplaces",
+        input_hint: Some("optional marketplaceName"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::MarketplaceUpgrade,
     },
     BuiltinCommandSpec {
         name: MEMORY_COMMAND,
@@ -3965,6 +3993,7 @@ fn parse_command_from_spec(
         }
         CommandHandler::MarketplaceAdd => parse_marketplace_add_command(rest),
         CommandHandler::MarketplaceRemove => parse_marketplace_remove_command(rest),
+        CommandHandler::MarketplaceUpgrade => parse_marketplace_upgrade_command(rest),
         CommandHandler::Memory => parse_memory_command(rest),
         CommandHandler::Init => parse_no_argument_command(rest, spec.name, BuiltinCommand::Init),
         CommandHandler::Mcp => parse_no_argument_command(rest, spec.name, BuiltinCommand::Mcp),
@@ -4152,6 +4181,18 @@ fn parse_marketplace_remove_command(rest: &str) -> Result<Option<BuiltinCommand>
     }
     Ok(Some(BuiltinCommand::MarketplaceRemove {
         marketplace_name: marketplace_name.to_owned(),
+    }))
+}
+
+fn parse_marketplace_upgrade_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
+    let mut parts = rest.split_whitespace();
+    let marketplace_name = parts.next().map(str::to_owned);
+    if parts.next().is_some() {
+        return Err(Error::invalid_params()
+            .data("/marketplace-upgrade accepts at most one marketplace name"));
+    }
+    Ok(Some(BuiltinCommand::MarketplaceUpgrade {
+        marketplace_name,
     }))
 }
 
@@ -6663,6 +6704,41 @@ fn marketplace_remove_summary(response: &crate::app_server::MarketplaceRemoveRes
     }
 }
 
+fn marketplace_upgrade_summary(response: &crate::app_server::MarketplaceUpgradeResponse) -> String {
+    let mut lines = vec!["Marketplace upgrade".to_owned()];
+    if response.selected_marketplaces.is_empty() {
+        lines.push("- Selected: none".to_owned());
+    } else {
+        lines.push(format!(
+            "- Selected: {}",
+            response.selected_marketplaces.join(", ")
+        ));
+    }
+    lines.push(format!(
+        "- Upgraded roots: {}",
+        response.upgraded_roots.len()
+    ));
+    for root in response.upgraded_roots.iter().take(5) {
+        lines.push(format!("  - {root}"));
+    }
+    if response.upgraded_roots.len() > 5 {
+        lines.push(format!(
+            "  - ... {} more",
+            response.upgraded_roots.len() - 5
+        ));
+    }
+    if !response.errors.is_empty() {
+        lines.push(format!("- Errors: {}", response.errors.len()));
+        for error in response.errors.iter().take(5) {
+            lines.push(format!("  - {}: {}", error.marketplace_name, error.message));
+        }
+        if response.errors.len() > 5 {
+            lines.push(format!("  - ... {} more", response.errors.len() - 5));
+        }
+    }
+    lines.join("\n")
+}
+
 fn first_string_at_paths<'a>(value: &'a serde_json::Value, paths: &[&[&str]]) -> Option<&'a str> {
     paths
         .iter()
@@ -7344,6 +7420,7 @@ mod tests {
             "/logout",
             "/marketplace-add owner/repo main plugins,skills",
             "/marketplace-remove debug",
+            "/marketplace-upgrade debug",
             "/mcp",
             "/mcp-reload",
             "/memory disable",
@@ -7421,6 +7498,11 @@ mod tests {
                     command,
                     BuiltinCommand::MarketplaceRemove { marketplace_name }
                         if marketplace_name == "debug"
+                )),
+                "/marketplace-upgrade debug" => assert!(matches!(
+                    command,
+                    BuiltinCommand::MarketplaceUpgrade { marketplace_name }
+                        if marketplace_name.as_deref() == Some("debug")
                 )),
                 "/mcp" => assert!(matches!(command, BuiltinCommand::Mcp)),
                 "/mcp-reload" => assert!(matches!(command, BuiltinCommand::McpReload)),
@@ -7699,6 +7781,12 @@ mod tests {
                 Some("/marketplace-remove requires a marketplace name")
             );
         }
+
+        let error = parse_builtin_command("/marketplace-upgrade debug extra").unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("/marketplace-upgrade accepts at most one marketplace name")
+        );
     }
 
     #[test]
@@ -7965,6 +8053,7 @@ mod tests {
                 "logout",
                 "marketplace-add",
                 "marketplace-remove",
+                "marketplace-upgrade",
                 "memory",
                 "init",
                 "mcp",
@@ -8208,6 +8297,23 @@ mod tests {
         assert_eq!(
             summary,
             "Installed Codex plugin `github`.\n- Auth policy: {\"type\":\"requireAuthenticated\"}\nApps needing auth: 1 entries\n- GitHub"
+        );
+    }
+
+    #[test]
+    fn marketplace_upgrade_summary_lists_roots_and_errors() {
+        let summary = marketplace_upgrade_summary(&crate::app_server::MarketplaceUpgradeResponse {
+            selected_marketplaces: vec!["openai".to_owned(), "local".to_owned()],
+            upgraded_roots: vec!["/codex/marketplaces/openai".to_owned()],
+            errors: vec![crate::app_server::MarketplaceUpgradeErrorInfo {
+                marketplace_name: "local".to_owned(),
+                message: "not a git repository".to_owned(),
+            }],
+        });
+
+        assert_eq!(
+            summary,
+            "Marketplace upgrade\n- Selected: openai, local\n- Upgraded roots: 1\n  - /codex/marketplaces/openai\n- Errors: 1\n  - local: not a git repository"
         );
     }
 
