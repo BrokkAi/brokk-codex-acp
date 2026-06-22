@@ -431,6 +431,9 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
                     AppServerPromptEvent::McpServerOAuthLoginCompleted(update) => {
                         events.push(format!("mcp-oauth:{}:{}", update.name, update.success));
                     }
+                    AppServerPromptEvent::FuzzyFileSearch(update) => {
+                        events.push(fuzzy_file_search_summary(&update));
+                    }
                 }
                 Ok(())
             },
@@ -852,6 +855,28 @@ fn summarize_prompt_event(event: AppServerPromptEvent) -> String {
         }
         AppServerPromptEvent::McpServerOAuthLoginCompleted(update) => {
             format!("mcp-oauth:{}:{}", update.name, update.success)
+        }
+        AppServerPromptEvent::FuzzyFileSearch(update) => fuzzy_file_search_summary(&update),
+    }
+}
+
+fn fuzzy_file_search_summary(
+    update: &brokk_codex_acp::app_server::AppServerFuzzyFileSearchUpdate,
+) -> String {
+    match update {
+        brokk_codex_acp::app_server::AppServerFuzzyFileSearchUpdate::SessionUpdated {
+            session_id,
+            query,
+            files,
+        } => format!(
+            "fuzzy-updated:{session_id}:{query}:{}",
+            files.as_array().map(Vec::len).unwrap_or_default()
+        ),
+        brokk_codex_acp::app_server::AppServerFuzzyFileSearchUpdate::SessionCompleted {
+            session_id,
+            query,
+        } => {
+            format!("fuzzy-completed:{session_id}:{query}")
         }
     }
 }

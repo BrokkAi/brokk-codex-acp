@@ -218,6 +218,8 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
         "Codex account rate limits updated: {\"primary\":{\"percentRemaining\":50}}.",
         "MCP server `github` OAuth login failed.",
         "browser closed",
+        "Codex fuzzy file search `fuzzy-1` updated for `lib`: 2 results.",
+        "Codex fuzzy file search `fuzzy-1` completed for `lib`.",
         "Codex warning: limited skills loaded",
         "MCP server `filesystem` startup status: Failed.",
         "spawn ENOENT",
@@ -1128,6 +1130,24 @@ for line in sys.stdin:
                     "name": "github",
                     "success": False,
                     "error": "browser closed",
+                },
+            })
+            send({
+                "method": "fuzzyFileSearch/sessionUpdated",
+                "params": {
+                    "sessionId": "fuzzy-1",
+                    "query": "lib",
+                    "files": [
+                        {"path": "src/lib.rs"},
+                        {"path": "src/main.rs"},
+                    ],
+                },
+            })
+            send({
+                "method": "fuzzyFileSearch/sessionCompleted",
+                "params": {
+                    "sessionId": "fuzzy-1",
+                    "query": "lib",
                 },
             })
             send({

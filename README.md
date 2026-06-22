@@ -75,6 +75,8 @@ The project currently includes:
   user-visible ACP diagnostic messages for every known session.
 - Global account, rate-limit, and MCP OAuth login notifications are projected
   as user-visible ACP diagnostic messages for every known session.
+- Fuzzy file search session progress and completion notifications are
+  projected as compact user-visible ACP diagnostic messages.
 - Model verification notifications are projected as user-visible ACP
   diagnostic messages.
 - Turn moderation metadata notifications are projected as user-visible ACP

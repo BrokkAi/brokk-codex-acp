@@ -35,17 +35,17 @@ use crate::app_server::{
     AppServerAccountUpdatedUpdate, AppServerActivePermissionProfile, AppServerApprovalChoice,
     AppServerApprovalDecision, AppServerApprovalOption, AppServerApprovalRequest, AppServerClient,
     AppServerCollaborationMode, AppServerCollaborationModeMask, AppServerCollaborationModeSettings,
-    AppServerConfigWarningUpdate, AppServerErrorUpdate, AppServerHistoryEvent,
-    AppServerMcpServerOAuthLoginCompletedUpdate, AppServerMcpServerStartupStatusUpdate,
-    AppServerMessage, AppServerModel, AppServerModelReroutedUpdate,
-    AppServerModelVerificationUpdate, AppServerPermissionProfile, AppServerPlanStatus,
-    AppServerPromptCompletion, AppServerPromptEvent, AppServerRealtimeAudioDelta,
-    AppServerRealtimeUpdate, AppServerSkill, AppServerThread, AppServerThreadSettingsUpdate,
-    AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
+    AppServerConfigWarningUpdate, AppServerErrorUpdate, AppServerFuzzyFileSearchUpdate,
+    AppServerHistoryEvent, AppServerMcpServerOAuthLoginCompletedUpdate,
+    AppServerMcpServerStartupStatusUpdate, AppServerMessage, AppServerModel,
+    AppServerModelReroutedUpdate, AppServerModelVerificationUpdate, AppServerPermissionProfile,
+    AppServerPlanStatus, AppServerPromptCompletion, AppServerPromptEvent,
+    AppServerRealtimeAudioDelta, AppServerRealtimeUpdate, AppServerSkill, AppServerThread,
+    AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
     AppServerTurnModerationMetadataUpdate, AppServerWarningUpdate,
     AppServerWindowsSandboxSetupUpdate, ThreadSettingsUpdateParams, decode_account_login_completed,
     decode_account_rate_limits_updated, decode_account_updated, decode_config_warning,
-    decode_error, decode_mcp_server_oauth_login_completed,
+    decode_error, decode_fuzzy_file_search_update, decode_mcp_server_oauth_login_completed,
     decode_mcp_server_startup_status_updated, decode_model_rerouted, decode_model_verification,
     decode_realtime_update, decode_thread_archived, decode_thread_closed, decode_thread_deleted,
     decode_thread_goal_cleared, decode_thread_goal_updated, decode_thread_name_updated,
@@ -551,6 +551,15 @@ impl CodexAcpAgent {
                     decode_mcp_server_oauth_login_completed(&params).map_err(acp_internal_error)?;
                 self.publish_global_agent_message_to_inactive(
                     mcp_oauth_login_completed_message(&update),
+                    cx,
+                )
+                .await?;
+            }
+            "fuzzyFileSearch/sessionUpdated" | "fuzzyFileSearch/sessionCompleted" => {
+                let update =
+                    decode_fuzzy_file_search_update(method, &params).map_err(acp_internal_error)?;
+                self.publish_global_agent_message_to_inactive(
+                    fuzzy_file_search_message(&update),
                     cx,
                 )
                 .await?;
@@ -3762,6 +3771,11 @@ fn send_prompt_event(
                 &update,
             ))),
         ),
+        AppServerPromptEvent::FuzzyFileSearch(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(fuzzy_file_search_message(&update))),
+        ),
         AppServerPromptEvent::SkillsChanged | AppServerPromptEvent::ThreadSettingsUpdated(_) => {
             Ok(())
         }
@@ -4083,6 +4097,30 @@ fn mcp_oauth_login_completed_message(
         message.push_str(error);
     }
     message
+}
+
+fn fuzzy_file_search_message(update: &AppServerFuzzyFileSearchUpdate) -> String {
+    match update {
+        AppServerFuzzyFileSearchUpdate::SessionUpdated {
+            session_id,
+            query,
+            files,
+        } => {
+            let result_count = files.as_array().map(Vec::len);
+            let result_summary = result_count
+                .map(|count| {
+                    let label = if count == 1 { "result" } else { "results" };
+                    format!("{count} {label}")
+                })
+                .unwrap_or_else(|| "unknown results".to_owned());
+            format!(
+                "Codex fuzzy file search `{session_id}` updated for `{query}`: {result_summary}."
+            )
+        }
+        AppServerFuzzyFileSearchUpdate::SessionCompleted { session_id, query } => {
+            format!("Codex fuzzy file search `{session_id}` completed for `{query}`.")
+        }
+    }
 }
 
 fn error_message(update: &AppServerErrorUpdate) -> String {

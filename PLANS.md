@@ -188,6 +188,9 @@ The current repository has the first working ACP/app-server bridge in place:
     `account/rateLimits/updated`, and `mcpServer/oauthLogin/completed` -> ACP
     agent-message diagnostics for app-scoped auth, rate-limit, and MCP OAuth
     state changes.
+  - `fuzzyFileSearch/sessionUpdated` and
+    `fuzzyFileSearch/sessionCompleted` -> ACP agent-message diagnostics for
+    fuzzy file search progress and completion.
   - `thread/realtime/started`, `thread/realtime/sdp`,
     `thread/realtime/itemAdded`, `thread/realtime/transcript/delta`,
     `thread/realtime/transcript/done`, `thread/realtime/outputAudio/delta`,
@@ -895,6 +898,7 @@ app-server item id -> ACP tool call id / message stream id
 | `configWarning` | `agent_message_chunk` | Implemented for known sessions because app-server emits this warning without a thread id. |
 | `windowsSandbox/setupCompleted` | `agent_message_chunk` | Implemented for known sessions because app-server emits this event without a thread id. |
 | `account/login/completed` / `account/updated` / `account/rateLimits/updated` / `mcpServer/oauthLogin/completed` | `agent_message_chunk` | Implemented for known sessions because app-server emits these account/OAuth events without a thread id. |
+| `fuzzyFileSearch/sessionUpdated` / `fuzzyFileSearch/sessionCompleted` | `agent_message_chunk` | Implemented as compact progress/completion diagnostics for known sessions. |
 | `thread/realtime/started` / `thread/realtime/sdp` / `thread/realtime/itemAdded` / `thread/realtime/transcript/delta` / `thread/realtime/transcript/done` / `thread/realtime/outputAudio/delta` / `thread/realtime/error` / `thread/realtime/closed` | `agent_message_chunk` | Implemented as user-visible diagnostics for realtime lifecycle, SDP, raw item, text transcript, audio metadata, and transport events. Native audio playback remains pending because ACP v1 has no realtime audio stream. |
 | `warning` / `error` | `agent_message_chunk` | Implemented with retry/details/error-code text when app-server provides it. |
 

@@ -790,6 +790,8 @@ impl AppServerClient {
                 | "account/updated"
                 | "account/rateLimits/updated"
                 | "mcpServer/oauthLogin/completed"
+                | "fuzzyFileSearch/sessionUpdated"
+                | "fuzzyFileSearch/sessionCompleted"
                 | "thread/realtime/started"
                 | "thread/realtime/sdp"
                 | "thread/realtime/itemAdded"
@@ -1959,6 +1961,7 @@ pub enum AppServerPromptEvent {
     AccountUpdated(AppServerAccountUpdatedUpdate),
     AccountRateLimitsUpdated(AppServerAccountRateLimitsUpdatedUpdate),
     McpServerOAuthLoginCompleted(AppServerMcpServerOAuthLoginCompletedUpdate),
+    FuzzyFileSearch(AppServerFuzzyFileSearchUpdate),
 }
 
 pub enum AppServerHistoryEvent {
@@ -2004,6 +2007,19 @@ pub struct AppServerMcpServerOAuthLoginCompletedUpdate {
     pub name: String,
     pub success: bool,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum AppServerFuzzyFileSearchUpdate {
+    SessionUpdated {
+        session_id: String,
+        query: String,
+        files: Value,
+    },
+    SessionCompleted {
+        session_id: String,
+        query: String,
+    },
 }
 
 pub enum AppServerPromptCompletion {
@@ -2619,6 +2635,21 @@ struct McpServerOAuthLoginCompletedNotification {
     error: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FuzzyFileSearchSessionUpdatedNotification {
+    session_id: String,
+    query: String,
+    files: Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FuzzyFileSearchSessionCompletedNotification {
+    session_id: String,
+    query: String,
+}
+
 fn decode_prompt_event(
     method: &str,
     params: &Value,
@@ -2771,6 +2802,10 @@ fn decode_prompt_event(
             Ok(Some(AppServerPromptEvent::McpServerOAuthLoginCompleted(
                 update,
             )))
+        }
+        "fuzzyFileSearch/sessionUpdated" | "fuzzyFileSearch/sessionCompleted" => {
+            let update = decode_fuzzy_file_search_update(method, params)?;
+            Ok(Some(AppServerPromptEvent::FuzzyFileSearch(update)))
         }
         "thread/realtime/started"
         | "thread/realtime/sdp"
@@ -3016,6 +3051,32 @@ pub fn decode_mcp_server_oauth_login_completed(
         success: notification.success,
         error: notification.error,
     })
+}
+
+pub fn decode_fuzzy_file_search_update(
+    method: &str,
+    params: &Value,
+) -> anyhow::Result<AppServerFuzzyFileSearchUpdate> {
+    match method {
+        "fuzzyFileSearch/sessionUpdated" => {
+            let notification: FuzzyFileSearchSessionUpdatedNotification =
+                serde_json::from_value(params.clone())?;
+            Ok(AppServerFuzzyFileSearchUpdate::SessionUpdated {
+                session_id: notification.session_id,
+                query: notification.query,
+                files: notification.files,
+            })
+        }
+        "fuzzyFileSearch/sessionCompleted" => {
+            let notification: FuzzyFileSearchSessionCompletedNotification =
+                serde_json::from_value(params.clone())?;
+            Ok(AppServerFuzzyFileSearchUpdate::SessionCompleted {
+                session_id: notification.session_id,
+                query: notification.query,
+            })
+        }
+        _ => anyhow::bail!("unsupported fuzzy file search notification `{method}`"),
+    }
 }
 
 pub fn decode_error(params: &Value) -> anyhow::Result<AppServerErrorUpdate> {
