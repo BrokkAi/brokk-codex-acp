@@ -43,8 +43,9 @@ The project currently includes:
   ACP agent message chunks.
 - Text, resource-link, embedded resource, and image prompt blocks routed to
   Codex app-server `turn/start` inputs. Embedded resources are passed through
-  app-server `additionalContext`; audio prompt blocks remain unsupported until
-  app-server exposes a matching user-input variant.
+  app-server `additionalContext`. ACP `ContentBlock::Audio` is not advertised
+  because app-server `turn/start` has no matching user-input variant; realtime
+  audio is exposed through the `/realtime` commands instead.
 - Initial turn event projection for reasoning chunks and summary boundaries,
   command/file/tool item lifecycles, command output, structured plan updates,
   plan text deltas, turn diffs, and usage updates.
@@ -148,12 +149,14 @@ The project currently includes:
   `thread/status/changed`, `thread/goal/updated`, `thread/goal/cleared`, or
   `thread/settings/updated` notifications are observed.
 
-The adapter is not complete yet. Native realtime audio playback and remaining
-full-fidelity history edge cases are still planned work. Terminal content is
-currently projected through Codex app-server command output and terminal
-interaction events; ACP `terminal/create` embedding should only be added if
-app-server exposes a client-terminal handoff instead of owning command
-execution itself.
+Native realtime audio playback remains deferred because ACP v1 has no realtime
+audio stream surface; output-audio events are summarized as diagnostics today.
+History replay converts the known app-server item variants and falls back to
+raw diagnostics for newly added variants until they get first-class ACP
+projections. Terminal content is currently projected through Codex app-server
+command output and terminal interaction events; ACP `terminal/create` embedding
+should only be added if app-server exposes a client-terminal handoff instead of
+owning command execution itself.
 
 ## Usage
 

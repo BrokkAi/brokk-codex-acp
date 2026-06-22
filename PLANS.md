@@ -376,9 +376,14 @@ structured ACP diff content when app-server provides per-file paths, including
 live file-change patch updates. Text prompts that invoke apps or installed
 plugins with `$app-slug` or `@plugin-name` are enriched with app-server
 `mention` input items when the app/plugin catalogs can resolve the target, with
-plain-text fallback otherwise. Native realtime audio playback, audio prompt
-blocks, and the remaining history
-fidelity edges remain planned work. ACP terminal content is projected through
+plain-text fallback otherwise. ACP `ContentBlock::Audio` prompt blocks are not
+advertised because app-server `turn/start` has no matching user-input variant;
+thread realtime audio input is exposed through the `/realtime audio` command
+instead. Native realtime audio playback remains deferred because ACP v1 has no
+realtime audio stream surface, so output-audio events are summarized as
+diagnostics today. History replay converts known app-server item variants and
+falls back to raw diagnostics for newly added variants until they get
+first-class ACP projections. ACP terminal content is projected through
 app-server command output and terminal interaction events today; true
 `terminal/create` embedding should only be added if app-server exposes a
 client-terminal handoff for commands it does not execute itself.
@@ -1185,8 +1190,10 @@ ACP clients should not reimplement.
 | App-server API | Adapter status |
 | --- | --- |
 | `turn/steer` | Deferred until ACP has explicit active-turn steering semantics or a client extension names that behavior. |
+| `thread/turns/items/list` | Not exposed because upstream currently reserves the API shape but returns unsupported-method errors. History replay uses `thread/turns/list` plus `thread/read` fallback. |
 | `thread/inject_items` | Not exposed; mutates model-visible history without a user turn and has no stable ACP v1 equivalent. |
 | `thread/metadata/update` | Not exposed; currently limited to persisted metadata patches such as git info, which ACP clients do not provide here. |
+| ACP `ContentBlock::Audio` prompt input | Not advertised; app-server `turn/start` has no matching audio user-input variant. Thread realtime audio is exposed separately through `/realtime audio`. |
 | `command/exec*` | Not exposed as generic commands; Codex-owned command execution already streams through turn item events, preserving approval policy. |
 | `process/*` | Not exposed; raw host process control is outside ACP agent behavior and would bypass Codex turn semantics. |
 | `fs/*` | Not exposed; direct host filesystem mutation should go through Codex tools/turns or MCP resources, not ad hoc ACP slash commands. |
@@ -1756,6 +1763,8 @@ Manual flows:
 
 ## Deferred Future Work
 
+- ACP realtime audio playback remains deferred until ACP has a native realtime
+  audio stream surface or a client extension names that behavior.
 - ACP terminal handoff remains deferred until app-server exposes a command event
   that asks the adapter or client to own execution. Until then, command
   execution stays app-server-owned and is projected through command item events,
