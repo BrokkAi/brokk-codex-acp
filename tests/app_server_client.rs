@@ -918,6 +918,9 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         "https://example.test/mcp/oauth"
     );
 
+    let mcp_refresh = client.mcp_server_refresh().await?;
+    assert_eq!(mcp_refresh, serde_json::json!({}));
+
     let model_provider = client.model_provider_capabilities_read().await?;
     assert_eq!(model_provider["namespaceTools"], true);
     assert_eq!(model_provider["imageGeneration"], false);
@@ -2011,6 +2014,9 @@ for line in sys.stdin:
         response(message_id, {
             "authorizationUrl": "https://example.test/mcp/oauth",
         })
+    elif method == "mcpServer/refresh":
+        assert params is None
+        response(message_id, {})
     elif method == "modelProvider/capabilities/read":
         assert params == {}
         response(message_id, {

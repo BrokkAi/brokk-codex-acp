@@ -72,7 +72,7 @@ The project currently includes:
   `/marketplace-remove <name>`, `/marketplace-upgrade [name]`,
   `/feature <name> enable|disable`,
   `/features`, `/rate-limits`, `/remote-control [status|enable|disable]`, `/usage`,
-  `/workspace-messages`, `/mcp`, `/mcp-login <server>`,
+  `/workspace-messages`, `/mcp`, `/mcp-login <server>`, `/mcp-refresh`,
   `/mcp-reload`,
   `/mcp-resource <server> <uri>`,
   `/mcp-tool <server> <tool> [json-arguments]`, `/hooks`, `/memory`,

@@ -106,6 +106,7 @@ const MARKETPLACE_UPGRADE_COMMAND: &str = "marketplace-upgrade";
 const MEMORY_COMMAND: &str = "memory";
 const MCP_COMMAND: &str = "mcp";
 const MCP_LOGIN_COMMAND: &str = "mcp-login";
+const MCP_REFRESH_COMMAND: &str = "mcp-refresh";
 const MCP_RELOAD_COMMAND: &str = "mcp-reload";
 const MCP_RESOURCE_COMMAND: &str = "mcp-resource";
 const MCP_TOOL_COMMAND: &str = "mcp-tool";
@@ -1612,6 +1613,25 @@ impl CodexAcpAgent {
                     session_id,
                     "MCP login",
                     mcp_login_summary(&server, &response),
+                    cx,
+                )
+            }
+            BuiltinCommand::McpRefresh => {
+                let response = {
+                    let mut app_server = self.app_server.lock().await;
+                    app_server
+                        .mcp_server_refresh()
+                        .await
+                        .map_err(|error| acp_app_server_method_error("mcpServer/refresh", error))?;
+                    app_server
+                        .mcp_server_status_list(thread_id.to_owned())
+                        .await
+                        .map_err(acp_internal_error)?
+                };
+                publish_catalog_message(
+                    session_id,
+                    "MCP refresh",
+                    mcp_refresh_summary(&response),
                     cx,
                 )
             }
@@ -3476,6 +3496,7 @@ enum BuiltinCommand {
     McpLogin {
         server: String,
     },
+    McpRefresh,
     McpReload,
     McpResource {
         server: String,
@@ -3584,6 +3605,7 @@ enum CommandHandler {
     Init,
     Mcp,
     McpLogin,
+    McpRefresh,
     McpReload,
     McpResource,
     McpTool,
@@ -3806,6 +3828,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: Some("server"),
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::McpLogin,
+    },
+    BuiltinCommandSpec {
+        name: MCP_REFRESH_COMMAND,
+        aliases: &[],
+        description: "Refresh loaded Codex MCP servers",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::McpRefresh,
     },
     BuiltinCommandSpec {
         name: MCP_RELOAD_COMMAND,
@@ -4118,6 +4148,9 @@ fn parse_command_from_spec(
         CommandHandler::Init => parse_no_argument_command(rest, spec.name, BuiltinCommand::Init),
         CommandHandler::Mcp => parse_no_argument_command(rest, spec.name, BuiltinCommand::Mcp),
         CommandHandler::McpLogin => parse_mcp_login_command(rest),
+        CommandHandler::McpRefresh => {
+            parse_no_argument_command(rest, spec.name, BuiltinCommand::McpRefresh)
+        }
         CommandHandler::McpReload => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::McpReload)
         }
@@ -6998,6 +7031,13 @@ fn mcp_reload_summary(value: &serde_json::Value) -> String {
     )
 }
 
+fn mcp_refresh_summary(value: &serde_json::Value) -> String {
+    format!(
+        "Refreshed loaded Codex MCP servers.\n\n{}",
+        catalog_summary("MCP", value)
+    )
+}
+
 fn mcp_login_summary(
     server: &str,
     response: &crate::app_server::McpServerOAuthLoginResponse,
@@ -7654,6 +7694,7 @@ mod tests {
             "/marketplace-upgrade debug",
             "/mcp",
             "/mcp-login github",
+            "/mcp-refresh",
             "/mcp-reload",
             "/memory disable",
             "/mcp-resource filesystem file:///repo/README.md",
@@ -7745,6 +7786,7 @@ mod tests {
                     command,
                     BuiltinCommand::McpLogin { server } if server == "github"
                 )),
+                "/mcp-refresh" => assert!(matches!(command, BuiltinCommand::McpRefresh)),
                 "/mcp-reload" => assert!(matches!(command, BuiltinCommand::McpReload)),
                 "/memory disable" => assert!(matches!(
                     command,
@@ -8135,6 +8177,7 @@ mod tests {
             ("/init now", "/init does not accept arguments"),
             ("/logout now", "/logout does not accept arguments"),
             ("/mcp now", "/mcp does not accept arguments"),
+            ("/mcp-refresh now", "/mcp-refresh does not accept arguments"),
             ("/model now", "/model does not accept arguments"),
             ("/new now", "/new does not accept arguments"),
             ("/permissions now", "/permissions does not accept arguments"),
@@ -8373,6 +8416,7 @@ mod tests {
                 "init",
                 "mcp",
                 "mcp-login",
+                "mcp-refresh",
                 "mcp-reload",
                 "mcp-resource",
                 "mcp-tool",

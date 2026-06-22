@@ -618,6 +618,11 @@ impl AppServerClient {
             .await
     }
 
+    pub async fn mcp_server_refresh(&mut self) -> anyhow::Result<Value> {
+        self.request("mcpServer/refresh", Option::<EmptyParams>::None)
+            .await
+    }
+
     pub async fn mcp_server_oauth_login(
         &mut self,
         name: String,

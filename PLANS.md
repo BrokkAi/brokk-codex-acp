@@ -246,7 +246,7 @@ The current repository has the first working ACP/app-server bridge in place:
     `config-requirements`, `delete`, `feature`, `features`, `fork`, `goal`,
     `hooks`, `init`, `kill`, `login`, `login-cancel`, `logout`,
     `marketplace-add`, `marketplace-remove`, `marketplace-upgrade`, `memory`,
-    `mcp`, `mcp-login`, `mcp-reload`, `model`, `model-provider`, `new`, `permissions`,
+    `mcp`, `mcp-login`, `mcp-refresh`, `mcp-reload`, `model`, `model-provider`, `new`, `permissions`,
     `plan`, `plugin-skill`, `plugins`, `ps`, `rate-limits`, `remote-control`,
     `rename`, `resume`, `review`, `rollback`, `skill-roots`, `status`, `stop`,
     `unarchive`, `usage`, and `workspace-messages` commands are published through ACP
@@ -531,7 +531,7 @@ Tasks:
   `/delete`, `/feature`, `/features`, `/fork`, `/goal`, `/hooks`, `/init`,
   `/kill`, `/login`, `/login-cancel`, `/logout`, `/marketplace-add`,
   `/marketplace-remove`, `/marketplace-upgrade`, `/memory`, `/mcp`,
-  `/mcp-login`, `/mcp-reload`, `/model`, `/model-provider`, `/new`, `/permissions`, `/plan`,
+  `/mcp-login`, `/mcp-refresh`, `/mcp-reload`, `/model`, `/model-provider`, `/new`, `/permissions`, `/plan`,
   `/plugin-skill`, `/plugins`, `/ps`, `/rate-limits`, `/remote-control`,
   `/rename`, `/resume`, `/review`, `/rollback`, `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
   `/workspace-messages`.
@@ -545,7 +545,7 @@ Tasks:
   `/delete`, `/feature`, `/features`, `/fork`, `/goal`, `/hooks`, `/init`,
   `/kill`, `/login`, `/login-cancel`, `/logout`, `/marketplace-add`,
   `/marketplace-remove`, `/marketplace-upgrade`, `/memory`, `/mcp`,
-  `/mcp-login`, `/mcp-reload`, `/model`, `/model-provider`, `/new`, `/permissions`, `/plan`,
+  `/mcp-login`, `/mcp-refresh`, `/mcp-reload`, `/model`, `/model-provider`, `/new`, `/permissions`, `/plan`,
   `/plugin-skill`, `/plugins`, `/ps`, `/rate-limits`, `/remote-control`,
   `/rename`, `/resume`, `/review`, `/rollback`, `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
   `/workspace-messages`. `/fork` is implemented only as an extension command
@@ -1075,6 +1075,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/workspace-messages` | `account/workspaceMessages/read` `[implemented as summary]` |
 | `/mcp` | `mcpServerStatus/list` `[implemented as summary]` |
 | `/mcp-login <server>` | `mcpServer/oauth/login` `[implemented as summary]` |
+| `/mcp-refresh` | `mcpServer/refresh` plus `mcpServerStatus/list` `[implemented as summary]` |
 | `/mcp-reload` | `config/mcpServer/reload` plus `mcpServerStatus/list` `[implemented as summary]` |
 | `/mcp-resource <server> <uri>` | `mcpServer/resource/read` `[implemented as summary]` |
 | `/mcp-tool <server> <tool> [json-arguments]` | `mcpServer/tool/call` `[implemented as summary]` |
@@ -1366,6 +1367,8 @@ model prompts:
   summary.
 - [x] `/mcp-login <server>` calls `mcpServer/oauth/login` and returns an ACP
   agent-message summary with the authorization URL.
+- [x] `/mcp-refresh` calls `mcpServer/refresh`, refreshes
+  `mcpServerStatus/list`, and returns an ACP agent-message summary.
 - [x] `/mcp-reload` calls `config/mcpServer/reload`, refreshes
   `mcpServerStatus/list`, and returns an ACP agent-message summary.
 - [x] `/mcp-resource <server> <uri>` calls `mcpServer/resource/read` for the
@@ -1693,6 +1696,7 @@ Manual flows:
 - [x] Add collaboration mode config options.
 - [x] Add apps/plugins/MCP commands.
 - [x] Add MCP OAuth login command.
+- [x] Add MCP server refresh command.
 - [x] Add MCP config reload command.
 - [x] Add effective config display.
 - [x] Add config requirements display.

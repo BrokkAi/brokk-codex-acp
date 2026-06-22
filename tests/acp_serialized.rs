@@ -1013,6 +1013,14 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             ],
         ),
         (
+            "/mcp-refresh",
+            &[
+                "Refreshed loaded Codex MCP servers.",
+                "MCP: 1 entries",
+                "- filesystem",
+            ],
+        ),
+        (
             "/mcp-reload",
             &[
                 "Reloaded Codex MCP server configuration.",
@@ -1975,6 +1983,11 @@ for line in sys.stdin:
             "result": {
                 "authorizationUrl": "https://example.test/mcp/oauth",
             },
+        })
+    elif method == "mcpServer/refresh":
+        assert params is None
+        response(message_id, {
+            "result": {},
         })
     elif method == "modelProvider/capabilities/read":
         assert params == {}
