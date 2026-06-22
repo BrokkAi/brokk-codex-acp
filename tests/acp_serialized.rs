@@ -816,6 +816,14 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             ],
         ),
         (
+            "/rate-limits",
+            &[
+                "Rate limits: current account",
+                "- Primary: {\"usedPercent\":42,\"resetsAt\":\"2026-06-22T12:00:00Z\"}",
+                "- Secondary: {\"usedPercent\":7}",
+            ],
+        ),
+        (
             "/features",
             &[
                 "Features: 2 entries",
@@ -1495,6 +1503,21 @@ for line in sys.stdin:
                         "config": {"model": "gpt-5-codex"},
                     },
                 ],
+            },
+        })
+    elif method == "account/rateLimits/read":
+        assert params == {}
+        response(message_id, {
+            "result": {
+                "rateLimits": {
+                    "primary": {
+                        "usedPercent": 42,
+                        "resetsAt": "2026-06-22T12:00:00Z",
+                    },
+                    "secondary": {
+                        "usedPercent": 7,
+                    },
+                },
             },
         })
     elif method == "plugin/list":

@@ -778,6 +778,13 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     assert_eq!(config["config"]["sandbox_mode"], "workspace-write");
     assert_eq!(config["layers"].as_array().map(Vec::len), Some(1));
 
+    let rate_limits = client.account_rate_limits_read().await?;
+    assert_eq!(rate_limits["rateLimits"]["primary"]["usedPercent"], 42);
+    assert_eq!(
+        rate_limits["rateLimits"]["primary"]["resetsAt"],
+        "2026-06-22T12:00:00Z"
+    );
+
     let plugins = client.plugin_list().await?;
     assert_eq!(plugins["data"][0]["name"], "github");
 
@@ -1647,6 +1654,19 @@ for line in sys.stdin:
                     "config": {"model": "gpt-5-codex"},
                 },
             ],
+        })
+    elif method == "account/rateLimits/read":
+        assert params == {}
+        response(message_id, {
+            "rateLimits": {
+                "primary": {
+                    "usedPercent": 42,
+                    "resetsAt": "2026-06-22T12:00:00Z",
+                },
+                "secondary": {
+                    "usedPercent": 7,
+                },
+            },
         })
     elif method == "plugin/list":
         assert params == {}

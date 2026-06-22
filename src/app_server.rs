@@ -400,6 +400,11 @@ impl AppServerClient {
         .await
     }
 
+    pub async fn account_rate_limits_read(&mut self) -> anyhow::Result<Value> {
+        self.request("account/rateLimits/read", EmptyParams {})
+            .await
+    }
+
     pub async fn experimental_feature_list(
         &mut self,
         thread_id: String,

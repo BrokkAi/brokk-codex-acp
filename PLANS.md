@@ -243,9 +243,10 @@ The current repository has the first working ACP/app-server bridge in place:
   - built-in `archive`, `apps`, `compact`, `config`, `delete`, `feature`,
     `features`, `fork`, `goal`, `hooks`, `init`, `kill`, `marketplace-add`,
     `marketplace-remove`, `memory`, `mcp`, `model`, `new`, `permissions`,
-    `plan`, `plugins`, `ps`, `rename`, `resume`, `review`, `rollback`,
-    `skill-roots`, `status`, `stop`, and `unarchive` commands are published
-    through ACP `available_commands_update` alongside enabled skills.
+    `plan`, `plugins`, `ps`, `rate-limits`, `rename`, `resume`, `review`,
+    `rollback`, `skill-roots`, `status`, `stop`, and `unarchive` commands are
+    published through ACP `available_commands_update` alongside enabled
+    skills.
   - `/archive` is intercepted by the adapter, mapped to `thread/archive`, and
     reflected to ACP clients through `session_info_update._meta`.
   - `/unarchive` is intercepted by the adapter, mapped to `thread/unarchive`,
@@ -266,6 +267,9 @@ The current repository has the first working ACP/app-server bridge in place:
   - `/features` is intercepted by the adapter, mapped to
     `experimentalFeature/list` for the current thread, and reflected as a short
     ACP agent-message summary.
+  - `/rate-limits` is intercepted by the adapter, mapped to
+    `account/rateLimits/read`, and reflected as a short ACP agent-message
+    summary.
   - `/feature <name> enable|disable` is intercepted by the adapter, mapped to
     `experimentalFeature/enablement/set`, and reflected as a short ACP
     agent-message summary.
@@ -496,8 +500,8 @@ Tasks:
   `/apps`, `/compact`, `/config`, `/delete`, `/feature`, `/features`, `/fork`,
   `/goal`, `/hooks`, `/init`, `/kill`, `/marketplace-add`,
   `/marketplace-remove`, `/memory`, `/mcp`, `/model`, `/new`, `/permissions`,
-  `/plan`, `/plugins`, `/ps`, `/rename`, `/resume`, `/review`, `/rollback`,
-  `/skill-roots`, `/status`, `/stop`, and `/unarchive`.
+  `/plan`, `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`,
+  `/rollback`, `/skill-roots`, `/status`, `/stop`, and `/unarchive`.
 - [x] Build the full command registry with aliases, availability, required
   active turn state, and handler metadata.
 - [x] Publish adapter-owned ACP available commands plus skills.
@@ -507,8 +511,8 @@ Tasks:
   `/apps`, `/compact`, `/config`, `/delete`, `/feature`, `/features`, `/fork`,
   `/goal`, `/hooks`, `/init`, `/kill`, `/marketplace-add`,
   `/marketplace-remove`, `/memory`, `/mcp`, `/model`, `/new`, `/permissions`,
-  `/plan`, `/plugins`, `/ps`, `/rename`, `/resume`, `/review`, `/rollback`,
-  `/skill-roots`, `/status`, `/stop`, and `/unarchive`. `/fork` is
+  `/plan`, `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`,
+  `/rollback`, `/skill-roots`, `/status`, `/stop`, and `/unarchive`. `/fork` is
   implemented only as an extension command backed by Codex `thread/fork`, not
   as required ACP v1 behavior.
 - [x] Return explicit unsupported-command responses for slash commands that are
@@ -1016,6 +1020,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/memory enable` / `/memory disable` / `/memory reset` | `thread/memoryMode/set` or `memory/reset` `[implemented as summary]` |
 | `/features` | `experimentalFeature/list` `[implemented as summary]` |
 | `/feature <name> enable|disable` | `experimentalFeature/enablement/set` `[implemented as summary]` |
+| `/rate-limits` | `account/rateLimits/read` `[implemented as summary]` |
 | `/mcp` | `mcpServerStatus/list` `[implemented as summary]` |
 | `/mcp-resource <server> <uri>` | `mcpServer/resource/read` `[implemented as summary]` |
 | `/mcp-tool <server> <tool> [json-arguments]` | `mcpServer/tool/call` `[implemented as summary]` |
@@ -1257,6 +1262,8 @@ model prompts:
   `marketplace/add` and returns an ACP agent-message summary.
 - [x] `/marketplace-remove <name>` calls `marketplace/remove` and returns an
   ACP agent-message summary.
+- [x] `/rate-limits` calls `account/rateLimits/read` and returns an ACP
+  agent-message summary.
 - [x] `/mcp` calls `mcpServerStatus/list` and returns an ACP agent-message
   summary.
 - [x] `/mcp-resource <server> <uri>` calls `mcpServer/resource/read` for the
@@ -1524,6 +1531,7 @@ Manual flows:
 - [x] Implement `/status`.
 - [x] Implement `/ps`.
 - [x] Implement `/stop`.
+- [x] Implement `/rate-limits`.
 
 ### Phase 4: Skills
 
@@ -1573,6 +1581,7 @@ Manual flows:
 - [x] Add experimental feature enable/disable command.
 - [x] Add initial hooks display.
 - [x] Add background terminal list/clean.
+- [x] Add account rate limit display.
 
 ### Phase 7: Hardening
 

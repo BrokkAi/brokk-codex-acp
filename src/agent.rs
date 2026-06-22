@@ -109,6 +109,7 @@ const PLUGIN_INSTALL_COMMAND: &str = "plugin-install";
 const PLUGIN_UNINSTALL_COMMAND: &str = "plugin-uninstall";
 const PLUGINS_COMMAND: &str = "plugins";
 const PS_COMMAND: &str = "ps";
+const RATE_LIMITS_COMMAND: &str = "rate-limits";
 const RENAME_COMMAND: &str = "rename";
 const RESUME_COMMAND: &str = "resume";
 const REVIEW_COMMAND: &str = "review";
@@ -1716,6 +1717,21 @@ impl CodexAcpAgent {
                     cx,
                 )
             }
+            BuiltinCommand::RateLimits => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .account_rate_limits_read()
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(
+                    session_id,
+                    "Rate limits",
+                    rate_limits_summary(&response),
+                    cx,
+                )
+            }
             BuiltinCommand::SkillRoots { roots } => {
                 let cwd = self
                     .session_cwd(session_id)
@@ -3061,6 +3077,7 @@ enum BuiltinCommand {
     },
     Plugins,
     Ps,
+    RateLimits,
     Rename {
         title: String,
     },
@@ -3127,6 +3144,7 @@ enum CommandHandler {
     PluginUninstall,
     Plugins,
     Ps,
+    RateLimits,
     Rename,
     Resume,
     Review,
@@ -3365,6 +3383,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         handler: CommandHandler::Ps,
     },
     BuiltinCommandSpec {
+        name: RATE_LIMITS_COMMAND,
+        aliases: &[],
+        description: "Show Codex account rate limits",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::RateLimits,
+    },
+    BuiltinCommandSpec {
         name: RENAME_COMMAND,
         aliases: &[],
         description: "Rename this Codex thread",
@@ -3522,6 +3548,9 @@ fn parse_command_from_spec(
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Plugins)
         }
         CommandHandler::Ps => parse_no_argument_command(rest, spec.name, BuiltinCommand::Ps),
+        CommandHandler::RateLimits => {
+            parse_no_argument_command(rest, spec.name, BuiltinCommand::RateLimits)
+        }
         CommandHandler::Rename => {
             let title = rest.trim();
             if title.is_empty() {
@@ -5772,6 +5801,33 @@ fn config_summary(cwd: Option<&str>, value: &serde_json::Value) -> String {
     lines.join("\n")
 }
 
+fn rate_limits_summary(value: &serde_json::Value) -> String {
+    let rate_limits = value.get("rateLimits").unwrap_or(value);
+    let mut lines = vec!["Rate limits: current account".to_owned()];
+
+    for (label, key) in [
+        ("Primary", "primary"),
+        ("Secondary", "secondary"),
+        ("Limits", "limits"),
+        ("Usage", "usage"),
+        ("Plan type", "planType"),
+        ("Resets at", "resetsAt"),
+        ("Reset at", "resetAt"),
+    ] {
+        if let Some(field) = rate_limits.get(key)
+            && !field.is_null()
+        {
+            lines.push(format!("- {label}: {}", compact_json(field)));
+        }
+    }
+
+    if lines.len() == 1 && !rate_limits.is_null() {
+        lines.push(format!("- Response: {}", compact_json(rate_limits)));
+    }
+
+    lines.join("\n")
+}
+
 fn experimental_features_summary(
     response: &crate::app_server::ExperimentalFeatureListResponse,
 ) -> String {
@@ -6516,6 +6572,7 @@ mod tests {
             "/plugin-uninstall github@openai",
             "/plugins",
             "/ps",
+            "/rate-limits",
             "/rollback 2",
             "/skill-roots /repo/.codex/skills,/shared/skills",
             "/status",
@@ -6603,6 +6660,7 @@ mod tests {
                 )),
                 "/plugins" => assert!(matches!(command, BuiltinCommand::Plugins)),
                 "/ps" => assert!(matches!(command, BuiltinCommand::Ps)),
+                "/rate-limits" => assert!(matches!(command, BuiltinCommand::RateLimits)),
                 "/rollback 2" => assert!(matches!(
                     command,
                     BuiltinCommand::Rollback { num_turns } if num_turns == 2
@@ -7070,6 +7128,7 @@ mod tests {
                 "plugin-uninstall",
                 "plugins",
                 "ps",
+                "rate-limits",
                 "rename",
                 "resume",
                 "review",
@@ -7104,6 +7163,26 @@ mod tests {
         );
 
         assert_eq!(summary, "Apps: 2 entries\n- Linear\n- GitHub");
+    }
+
+    #[test]
+    fn rate_limits_summary_lists_known_limit_buckets() {
+        let summary = rate_limits_summary(&serde_json::json!({
+            "rateLimits": {
+                "primary": {
+                    "usedPercent": 42,
+                    "resetsAt": "2026-06-22T12:00:00Z"
+                },
+                "secondary": {
+                    "usedPercent": 7
+                }
+            }
+        }));
+
+        assert_eq!(
+            summary,
+            "Rate limits: current account\n- Primary: {\"usedPercent\":42,\"resetsAt\":\"2026-06-22T12:00:00Z\"}\n- Secondary: {\"usedPercent\":7}"
+        );
     }
 
     #[test]
