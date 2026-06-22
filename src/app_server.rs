@@ -3925,7 +3925,7 @@ fn history_events_for_item(turn_id: &str, item: &Value) -> Vec<AppServerHistoryE
             .map(AppServerHistoryEvent::UserMessage)
             .into_iter()
             .collect(),
-        "agentMessage" => string_field(item, "text")
+        "agentMessage" => agent_message_text(item)
             .map(AppServerPromptEvent::AgentMessageDelta)
             .map(Box::new)
             .map(AppServerHistoryEvent::PromptEvent)
@@ -3937,13 +3937,8 @@ fn history_events_for_item(turn_id: &str, item: &Value) -> Vec<AppServerHistoryE
             .map(AppServerHistoryEvent::PromptEvent)
             .into_iter()
             .collect(),
-        "plan" => string_field(item, "text")
-            .map(|text| {
-                AppServerPromptEvent::PlanUpdated(vec![AppServerPlanEntry {
-                    content: text,
-                    status: AppServerPlanStatus::Completed,
-                }])
-            })
+        "plan" => history_plan_entries(item)
+            .map(AppServerPromptEvent::PlanUpdated)
             .map(Box::new)
             .map(AppServerHistoryEvent::PromptEvent)
             .into_iter()
@@ -4003,12 +3998,44 @@ fn user_content_text(content: &Value) -> Option<String> {
     }
 }
 
+fn agent_message_text(item: &Value) -> Option<String> {
+    string_field(item, "text").or_else(|| {
+        let mut parts = Vec::new();
+        collect_text_fragments(item.get("content"), &mut parts);
+        let text = parts.join("\n");
+        (!text.trim().is_empty()).then_some(text)
+    })
+}
+
 fn reasoning_text(item: &Value) -> Option<String> {
     let mut parts = Vec::new();
     collect_text_fragments(item.get("summary"), &mut parts);
     collect_text_fragments(item.get("content"), &mut parts);
     let text = parts.join("\n");
     (!text.trim().is_empty()).then_some(text)
+}
+
+fn history_plan_entries(item: &Value) -> Option<Vec<AppServerPlanEntry>> {
+    let entries = item
+        .get("entries")
+        .or_else(|| item.get("steps"))
+        .or_else(|| item.get("plan"))
+        .and_then(Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(decode_plan_entry)
+                .collect::<Vec<_>>()
+        })
+        .filter(|entries| !entries.is_empty());
+    entries.or_else(|| {
+        string_field(item, "text").map(|text| {
+            vec![AppServerPlanEntry {
+                content: text,
+                status: AppServerPlanStatus::Completed,
+            }]
+        })
+    })
 }
 
 fn collect_text_fragments(value: Option<&Value>, parts: &mut Vec<String>) {

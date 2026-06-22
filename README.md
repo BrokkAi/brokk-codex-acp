@@ -110,8 +110,8 @@ The project currently includes:
   `thread/settings/updated` notifications are observed.
 
 The adapter is not complete yet. Rich ACP UI for dynamic tool callbacks, exact
-terminal embedding, native realtime audio playback, and paginated/full-fidelity
-history replay are still planned work.
+terminal embedding, native realtime audio playback, and remaining
+full-fidelity history edge cases are still planned work.
 
 ## Usage
 

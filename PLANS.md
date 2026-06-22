@@ -651,16 +651,18 @@ Implemented baseline:
   for new prompts.
 - Replay known stored `ThreadItem` variants as ACP `session/update`
   notifications before returning `session/load`.
+- Page large histories through `thread/turns/list`, with `thread/read` fallback
+  for older app-server versions.
+- Replay structured plan entries, MCP tool calls, command/file tool lifecycles,
+  command output, file diffs, reasoning, and agent/user message text fragments
+  where the app-server history exposes them.
 
 Remaining work:
 
-- Page large histories through `thread/turns/list`.
 - Preserve message IDs once the ACP crate feature is enabled and clients can use
   them.
-- Convert every app-server item variant to a high-fidelity ACP update instead of
-  using generic text/raw JSON fallbacks.
-- Add serialized ACP client tests that prove replay notifications are emitted
-  before the `session/load` response.
+- Convert newly added or unknown app-server item variants to high-fidelity ACP
+  updates instead of generic raw JSON fallbacks as those variants appear.
 
 ### session/resume
 

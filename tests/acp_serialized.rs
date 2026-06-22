@@ -106,6 +106,25 @@ async fn serialized_load_replays_history_before_response() -> anyhow::Result<()>
         ],
         "notifications before session/load response: {notifications:#?}"
     );
+    assert!(
+        notifications.iter().any(|notification| {
+            let update = &notification["params"]["update"];
+            update["sessionUpdate"] == "plan"
+                && update["entries"]
+                    .as_array()
+                    .is_some_and(|entries| entries.len() == 2)
+        }),
+        "session/load should replay structured plan entries: {notifications:#?}"
+    );
+    assert!(
+        notifications.iter().any(|notification| {
+            let update = &notification["params"]["update"];
+            update["sessionUpdate"] == "tool_call"
+                && update["toolCallId"] == "load-mcp"
+                && update["title"] == "filesystem.read_file"
+        }),
+        "session/load should replay historical MCP tool calls: {notifications:#?}"
+    );
 
     Ok(())
 }
@@ -1084,8 +1103,28 @@ for line in sys.stdin:
                             "id": "load-turn-2",
                             "items": [
                                 {
+                                    "type": "plan",
+                                    "id": "load-plan",
+                                    "entries": [
+                                        {"step": "Inspect history", "status": "completed"},
+                                        {"step": "Replay history", "status": "inProgress"},
+                                    ],
+                                },
+                                {
+                                    "type": "mcpToolCall",
+                                    "id": "load-mcp",
+                                    "server": "filesystem",
+                                    "tool": "read_file",
+                                    "status": "completed",
+                                    "content": [
+                                        {"type": "text", "text": "README contents"},
+                                    ],
+                                },
+                                {
                                     "type": "agentMessage",
-                                    "text": "loaded response",
+                                    "content": [
+                                        {"type": "text", "text": "loaded response"},
+                                    ],
                                 },
                             ],
                         },

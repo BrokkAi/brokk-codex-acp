@@ -322,6 +322,7 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         vec![
             "user:hello",
             "thought:remembered reasoning",
+            "plan:2",
             "tool-started:cmd-history:cargo check",
             "tool-updated:cmd-history",
             "tool-started:file-history:Edit 1 file",
@@ -1844,6 +1845,14 @@ for line in sys.stdin:
                                 ],
                             },
                             {
+                                "type": "plan",
+                                "id": "plan-history",
+                                "entries": [
+                                    {"step": "Inspect history", "status": "completed"},
+                                    {"step": "Replay history", "status": "inProgress"},
+                                ],
+                            },
+                            {
                                 "type": "commandExecution",
                                 "id": "cmd-history",
                                 "command": "cargo check",
@@ -1866,7 +1875,9 @@ for line in sys.stdin:
                             {
                                 "type": "agentMessage",
                                 "id": "agent-history",
-                                "text": "remembered response",
+                                "content": [
+                                    {"type": "text", "text": "remembered response"},
+                                ],
                             },
                         ],
                     },
