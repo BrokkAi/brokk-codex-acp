@@ -103,8 +103,8 @@ The project currently includes:
 The adapter is not complete yet. Rich ACP UI for MCP elicitations, dynamic tool
 callbacks, and user-input requests, exact terminal embedding, native realtime
 audio playback, remaining slash command routing, plugin install/read actions,
-direct MCP resource/tool UI, fine-grained partial permission grants, and
-paginated/full-fidelity history replay are still planned work.
+direct MCP resource/tool UI, and paginated/full-fidelity history replay are
+still planned work.
 
 ## Usage
 

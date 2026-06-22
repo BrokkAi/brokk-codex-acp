@@ -583,10 +583,28 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
                         .iter()
                         .map(|option| option.id())
                         .collect::<Vec<_>>(),
-                    vec!["accept", "acceptForSession", "decline", "cancel"]
+                    vec![
+                        "accept",
+                        "acceptForSession",
+                        "partial:network:turn",
+                        "partial:network:session",
+                        "partial:fileSystem-read-0:turn",
+                        "partial:fileSystem-read-0:session",
+                        "partial:fileSystem-write-0:turn",
+                        "partial:fileSystem-write-0:session",
+                        "decline",
+                        "cancel"
+                    ]
                 );
                 assert_eq!(approval.raw["permissions"]["network"]["enabled"], true);
-                Ok(AppServerApprovalDecision::AcceptForSession)
+                Ok(AppServerApprovalDecision::Raw(serde_json::json!({
+                    "permissions": {
+                        "fileSystem": {
+                            "write": ["/repo/src"],
+                        },
+                    },
+                    "scope": "session",
+                })))
             },
         )
         .await?;
@@ -2084,9 +2102,7 @@ for line in sys.stdin:
                 "id": "permissions-approval-request-1",
                 "result": {
                     "permissions": {
-                        "network": {"enabled": True},
                         "fileSystem": {
-                            "read": ["/repo"],
                             "write": ["/repo/src"],
                         },
                     },

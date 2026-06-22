@@ -2054,6 +2054,7 @@ pub enum AppServerApprovalOption {
 pub struct AppServerApprovalChoice {
     pub option: AppServerApprovalOption,
     pub option_id: String,
+    pub label: String,
     pub available_decision: Option<Value>,
 }
 
@@ -2062,6 +2063,7 @@ impl AppServerApprovalChoice {
         Self {
             option,
             option_id: option.id().to_owned(),
+            label: option.label().to_owned(),
             available_decision: None,
         }
     }
@@ -2074,7 +2076,26 @@ impl AppServerApprovalChoice {
         Self {
             option,
             option_id: format!("{}:{index}", option.id()),
+            label: option.label().to_owned(),
             available_decision: Some(available_decision),
+        }
+    }
+
+    fn partial_permission(
+        option: AppServerApprovalOption,
+        option_id: String,
+        label: String,
+        permissions: Value,
+        scope: &'static str,
+    ) -> Self {
+        Self {
+            option,
+            option_id,
+            label,
+            available_decision: Some(json!({
+                "permissions": permissions,
+                "scope": scope,
+            })),
         }
     }
 
@@ -2082,8 +2103,8 @@ impl AppServerApprovalChoice {
         &self.option_id
     }
 
-    pub fn label(&self) -> &'static str {
-        self.option.label()
+    pub fn label(&self) -> &str {
+        &self.label
     }
 
     pub fn decision(&self) -> AppServerApprovalDecision {
@@ -2891,9 +2912,13 @@ fn decode_approval_request(
                 kind: AppServerToolKind::Other,
                 raw: params.clone(),
                 response_kind: AppServerApprovalResponseKind::Permissions {
-                    requested_permissions,
+                    requested_permissions: requested_permissions.clone(),
                 },
-                options: approval_options_from_params(params, &default_options),
+                options: permission_approval_options(
+                    params,
+                    &default_options,
+                    &requested_permissions,
+                ),
             }
         }
         _ => return Ok(None),
@@ -3252,6 +3277,107 @@ fn approval_options_from_params(
     }
 }
 
+fn permission_approval_options(
+    params: &Value,
+    defaults: &[AppServerApprovalOption],
+    requested_permissions: &Value,
+) -> Vec<AppServerApprovalChoice> {
+    let mut options = approval_options_from_params(params, defaults);
+    let has_available_decisions = params
+        .get("availableDecisions")
+        .and_then(Value::as_array)
+        .is_some_and(|decisions| {
+            decisions
+                .iter()
+                .any(|decision| approval_choice_from_available_decision(0, decision).is_some())
+        });
+
+    if !has_available_decisions {
+        let partial_options = partial_permission_options(requested_permissions);
+        if !partial_options.is_empty() {
+            let insert_at = options
+                .iter()
+                .position(|choice| {
+                    matches!(
+                        choice.option,
+                        AppServerApprovalOption::Decline | AppServerApprovalOption::Cancel
+                    )
+                })
+                .unwrap_or(options.len());
+            options.splice(insert_at..insert_at, partial_options);
+        }
+    }
+
+    options
+}
+
+fn partial_permission_options(requested_permissions: &Value) -> Vec<AppServerApprovalChoice> {
+    let units = partial_permission_units(requested_permissions);
+    if units.len() < 2 {
+        return Vec::new();
+    }
+
+    units
+        .into_iter()
+        .flat_map(|unit| {
+            let turn_option = AppServerApprovalChoice::partial_permission(
+                AppServerApprovalOption::Accept,
+                format!("partial:{}:turn", unit.id),
+                format!("Allow {} once", unit.label),
+                unit.permissions.clone(),
+                "turn",
+            );
+            let session_option = AppServerApprovalChoice::partial_permission(
+                AppServerApprovalOption::AcceptForSession,
+                format!("partial:{}:session", unit.id),
+                format!("Allow {} for session", unit.label),
+                unit.permissions,
+                "session",
+            );
+            [turn_option, session_option]
+        })
+        .collect()
+}
+
+struct PartialPermissionUnit {
+    id: String,
+    label: String,
+    permissions: Value,
+}
+
+fn partial_permission_units(requested_permissions: &Value) -> Vec<PartialPermissionUnit> {
+    let mut units = Vec::new();
+
+    if requested_permissions
+        .get("network")
+        .and_then(|network| network.get("enabled"))
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        units.push(PartialPermissionUnit {
+            id: "network".to_owned(),
+            label: "network access".to_owned(),
+            permissions: json!({"network": {"enabled": true}}),
+        });
+    }
+
+    if let Some(file_system) = requested_permissions.get("fileSystem") {
+        for (field, label) in [("read", "read access"), ("write", "write access")] {
+            if let Some(paths) = file_system.get(field).and_then(Value::as_array) {
+                for (index, path) in paths.iter().filter_map(Value::as_str).enumerate() {
+                    units.push(PartialPermissionUnit {
+                        id: format!("fileSystem-{field}-{index}"),
+                        label: format!("{label} to `{path}`"),
+                        permissions: json!({"fileSystem": {field: [path]}}),
+                    });
+                }
+            }
+        }
+    }
+
+    units
+}
+
 fn permissions_approval_title(params: &Value, requested_permissions: &Value) -> String {
     if let Some(reason) = string_field(params, "reason")
         && !reason.trim().is_empty()
@@ -3357,9 +3483,10 @@ fn approval_response_result(
             let (permissions, scope) = match decision {
                 AppServerApprovalDecision::Accept => (requested_permissions, "turn"),
                 AppServerApprovalDecision::AcceptForSession => (requested_permissions, "session"),
-                AppServerApprovalDecision::Decline
-                | AppServerApprovalDecision::Cancel
-                | AppServerApprovalDecision::Raw(_) => (json!({}), "turn"),
+                AppServerApprovalDecision::Decline | AppServerApprovalDecision::Cancel => {
+                    (json!({}), "turn")
+                }
+                AppServerApprovalDecision::Raw(raw) => permission_grant_from_raw_decision(raw),
             };
             json!({
                 "permissions": permissions,
@@ -3367,6 +3494,15 @@ fn approval_response_result(
             })
         }
     }
+}
+
+fn permission_grant_from_raw_decision(raw: Value) -> (Value, &'static str) {
+    let permissions = raw.get("permissions").cloned().unwrap_or_else(|| json!({}));
+    let scope = match raw.get("scope").and_then(Value::as_str) {
+        Some("session") => "session",
+        _ => "turn",
+    };
+    (permissions, scope)
 }
 
 fn fallback_interactive_request_response(method: &str, _params: &Value) -> Option<Value> {
@@ -3838,6 +3974,31 @@ mod tests {
     }
 
     #[test]
+    fn permission_approval_raw_grant_preserves_partial_permissions_and_scope() {
+        let response = approval_response_result(
+            permissions_approval(),
+            AppServerApprovalDecision::Raw(json!({
+                "permissions": {
+                    "fileSystem": {
+                        "write": ["/repo/src"],
+                    },
+                },
+                "scope": "session",
+            })),
+        );
+
+        assert_eq!(response["scope"], "session");
+        assert_eq!(
+            response["permissions"],
+            json!({
+                "fileSystem": {
+                    "write": ["/repo/src"],
+                },
+            })
+        );
+    }
+
+    #[test]
     fn permission_approval_rejects_with_empty_turn_scoped_permissions() {
         for decision in [
             AppServerApprovalDecision::Decline,
@@ -3878,6 +4039,83 @@ mod tests {
                 AppServerApprovalChoice::new(AppServerApprovalOption::Accept),
                 AppServerApprovalChoice::new(AppServerApprovalOption::Decline)
             ]
+        );
+    }
+
+    #[test]
+    fn permissions_approval_adds_partial_grant_choices_when_backend_has_no_choices() {
+        let approval = decode_approval_request(
+            "item/permissions/requestApproval",
+            &json!({
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "itemId": "permissions-approval",
+                "startedAtMs": 123,
+                "cwd": "/repo",
+                "permissions": {
+                    "network": {"enabled": true},
+                    "fileSystem": {
+                        "read": ["/repo"],
+                        "write": ["/repo/src"],
+                    },
+                },
+            }),
+            "thread-1",
+            Some("turn-1"),
+        )
+        .unwrap()
+        .expect("permissions request should decode");
+
+        assert_eq!(
+            approval
+                .options
+                .iter()
+                .map(|choice| (choice.id(), choice.label()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("accept", "Allow once"),
+                ("acceptForSession", "Allow for session"),
+                ("partial:network:turn", "Allow network access once"),
+                (
+                    "partial:network:session",
+                    "Allow network access for session"
+                ),
+                (
+                    "partial:fileSystem-read-0:turn",
+                    "Allow read access to `/repo` once"
+                ),
+                (
+                    "partial:fileSystem-read-0:session",
+                    "Allow read access to `/repo` for session"
+                ),
+                (
+                    "partial:fileSystem-write-0:turn",
+                    "Allow write access to `/repo/src` once"
+                ),
+                (
+                    "partial:fileSystem-write-0:session",
+                    "Allow write access to `/repo/src` for session"
+                ),
+                ("decline", "Reject"),
+                ("cancel", "Cancel"),
+            ]
+        );
+
+        let partial_write = approval
+            .options
+            .iter()
+            .find(|choice| choice.id() == "partial:fileSystem-write-0:session")
+            .expect("partial write choice should exist");
+        assert_eq!(
+            partial_write.decision(),
+            AppServerApprovalDecision::Raw(json!({
+                "permissions": {
+                    "fileSystem": {
+                        "write": ["/repo/src"],
+                    },
+                },
+                "scope": "session",
+            }))
         );
     }
 

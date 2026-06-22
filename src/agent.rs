@@ -5192,6 +5192,7 @@ mod tests {
         let option = permission_option(AppServerApprovalChoice {
             option: AppServerApprovalOption::AcceptWithExecpolicyAmendment,
             option_id: "acceptWithExecpolicyAmendment:1".to_owned(),
+            label: "Allow similar commands".to_owned(),
             available_decision: Some(available_decision.clone()),
         });
 
@@ -5215,6 +5216,7 @@ mod tests {
         let option = permission_option(AppServerApprovalChoice {
             option: AppServerApprovalOption::ApplyNetworkPolicyAmendment,
             option_id: "applyNetworkPolicyAmendment:0".to_owned(),
+            label: "Apply network rule".to_owned(),
             available_decision: Some(serde_json::json!({
                 "applyNetworkPolicyAmendment": {
                     "network_policy_amendment": {
