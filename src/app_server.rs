@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -41,6 +41,7 @@ pub struct AppServerClient {
     messages_tx: broadcast::Sender<AppServerMessage>,
     reader_task: JoinHandle<()>,
     next_id: u64,
+    codex_home: Option<PathBuf>,
 }
 
 impl AppServerClient {
@@ -82,7 +83,12 @@ impl AppServerClient {
             messages_tx,
             reader_task,
             next_id: 1,
+            codex_home: None,
         })
+    }
+
+    pub fn codex_home(&self) -> Option<&Path> {
+        self.codex_home.as_deref()
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<AppServerMessage> {
@@ -107,7 +113,8 @@ impl AppServerClient {
             },
         };
 
-        let response = self.request("initialize", params).await?;
+        let response: InitializeResponse = self.request("initialize", params).await?;
+        self.codex_home = Some(PathBuf::from(&response.codex_home));
         self.notify("initialized", json!({})).await?;
         Ok(response)
     }

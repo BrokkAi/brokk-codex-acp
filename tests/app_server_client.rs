@@ -20,6 +20,10 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         .initialize("test_client", "Test Client", "0.0.0")
         .await?;
     assert_eq!(initialize.codex_home, "/tmp/fake-codex-home");
+    assert_eq!(
+        client.codex_home(),
+        Some(std::path::Path::new("/tmp/fake-codex-home"))
+    );
 
     let mut app_server_messages = client.subscribe();
     let started = client

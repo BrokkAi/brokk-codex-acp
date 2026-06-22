@@ -697,7 +697,8 @@ Return:
 - session ID
 - cwd
 - additional directories when `sessionCapabilities.additionalDirectories` is
-  supported and app-server provides lifecycle `runtimeWorkspaceRoots`
+  supported and app-server provides lifecycle `runtimeWorkspaceRoots`, or when
+  the adapter has persisted previously observed roots under `codexHome`
 - title/name if available
 - ACP `updatedAt` converted from app-server Unix seconds to an ISO 8601 UTC
   timestamp when app-server provides `updatedAt`
@@ -706,11 +707,11 @@ Return:
 - adapter-specific archived/deleted metadata only under `_meta`; stable
   `SessionInfo` has no first-class archive field.
 
-Still pending:
+Known limitation:
 
-- reporting additional directories for cold `session/list` entries that were
-  not started, loaded, resumed, or forked through the current adapter process;
-  app-server `thread/list` does not currently include runtime workspace roots
+- reporting additional directories for `session/list` entries that have never
+  been started, loaded, resumed, or forked through this adapter; app-server
+  `thread/list` does not currently include runtime workspace roots
 
 ### session/close
 

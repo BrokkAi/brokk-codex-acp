@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    fs,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -28,9 +29,10 @@ use agent_client_protocol::{
     Agent, ByteStreams, Client, ConnectTo, ConnectionTo, Error, on_receive_notification,
     on_receive_request,
 };
+use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, broadcast, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 use crate::app_server::{
     AppServerAccountLoginCompletedUpdate, AppServerAccountRateLimitsUpdatedUpdate,
@@ -127,6 +129,7 @@ pub struct CodexAcpAgent {
     skills_by_cwd: Arc<Mutex<HashMap<String, Vec<AppServerSkill>>>>,
     session_cwds: Arc<Mutex<HashMap<String, String>>>,
     session_additional_directories: Arc<Mutex<HashMap<String, Vec<PathBuf>>>>,
+    session_additional_directories_store: Option<PathBuf>,
     config_by_session: Arc<Mutex<HashMap<String, AcpConfigState>>>,
     notification_listener_started: Arc<Mutex<bool>>,
 }
@@ -161,15 +164,30 @@ struct PendingAppServerUpdates {
     thread_settings: Option<AppServerThreadSettingsUpdate>,
 }
 
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct PersistedSessionAdditionalDirectories {
+    #[serde(default)]
+    sessions: HashMap<String, Vec<PathBuf>>,
+}
+
 impl CodexAcpAgent {
     pub fn new(app_server: AppServerClient) -> Self {
+        let session_additional_directories_store = app_server
+            .codex_home()
+            .map(session_additional_directories_store_path);
+        let session_additional_directories = session_additional_directories_store
+            .as_deref()
+            .map(load_session_additional_directories)
+            .unwrap_or_default();
+
         Self {
             app_server: Arc::new(Mutex::new(app_server)),
             active_prompts: Arc::new(Mutex::new(HashMap::new())),
             outstanding_approvals: Arc::new(Mutex::new(HashMap::new())),
             skills_by_cwd: Arc::new(Mutex::new(HashMap::new())),
             session_cwds: Arc::new(Mutex::new(HashMap::new())),
-            session_additional_directories: Arc::new(Mutex::new(HashMap::new())),
+            session_additional_directories: Arc::new(Mutex::new(session_additional_directories)),
+            session_additional_directories_store,
             config_by_session: Arc::new(Mutex::new(HashMap::new())),
             notification_listener_started: Arc::new(Mutex::new(false)),
         }
@@ -1509,10 +1527,20 @@ impl CodexAcpAgent {
     ) {
         let additional_directories =
             additional_directories_from_runtime_roots(Path::new(cwd), runtime_workspace_roots);
-        self.session_additional_directories
-            .lock()
-            .await
-            .insert(session_id.0.to_string(), additional_directories);
+        let snapshot = {
+            let mut session_additional_directories =
+                self.session_additional_directories.lock().await;
+            session_additional_directories.insert(session_id.0.to_string(), additional_directories);
+            session_additional_directories.clone()
+        };
+        self.persist_session_additional_directories(&snapshot);
+    }
+
+    fn persist_session_additional_directories(&self, sessions: &HashMap<String, Vec<PathBuf>>) {
+        let Some(path) = self.session_additional_directories_store.as_deref() else {
+            return;
+        };
+        persist_session_additional_directories(path, sessions);
     }
 
     async fn start_thread(
@@ -3592,6 +3620,85 @@ fn additional_directories_from_runtime_roots(
     additional_directories
 }
 
+fn session_additional_directories_store_path(codex_home: &Path) -> PathBuf {
+    codex_home
+        .join("brokk-codex-acp")
+        .join("session-additional-directories.json")
+}
+
+fn load_session_additional_directories(path: &Path) -> HashMap<String, Vec<PathBuf>> {
+    let contents = match fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return HashMap::new(),
+        Err(error) => {
+            warn!(
+                path = %path.display(),
+                %error,
+                "failed to read persisted session additional directories"
+            );
+            return HashMap::new();
+        }
+    };
+
+    match serde_json::from_str::<PersistedSessionAdditionalDirectories>(&contents) {
+        Ok(persisted) => persisted.sessions,
+        Err(error) => {
+            warn!(
+                path = %path.display(),
+                %error,
+                "failed to decode persisted session additional directories"
+            );
+            HashMap::new()
+        }
+    }
+}
+
+fn persist_session_additional_directories(path: &Path, sessions: &HashMap<String, Vec<PathBuf>>) {
+    let persisted = PersistedSessionAdditionalDirectories {
+        sessions: sessions.clone(),
+    };
+    let contents = match serde_json::to_string_pretty(&persisted) {
+        Ok(contents) => contents,
+        Err(error) => {
+            warn!(
+                path = %path.display(),
+                %error,
+                "failed to encode persisted session additional directories"
+            );
+            return;
+        }
+    };
+
+    if let Some(parent) = path.parent()
+        && let Err(error) = fs::create_dir_all(parent)
+    {
+        warn!(
+            path = %parent.display(),
+            %error,
+            "failed to create persisted session additional directories directory"
+        );
+        return;
+    }
+
+    let tmp_path = path.with_extension("json.tmp");
+    if let Err(error) = fs::write(&tmp_path, contents) {
+        warn!(
+            path = %tmp_path.display(),
+            %error,
+            "failed to write persisted session additional directories"
+        );
+        return;
+    }
+    if let Err(error) = fs::rename(&tmp_path, path) {
+        warn!(
+            source = %tmp_path.display(),
+            target = %path.display(),
+            %error,
+            "failed to replace persisted session additional directories"
+        );
+    }
+}
+
 fn unix_timestamp_to_utc_iso8601(timestamp: i64) -> String {
     let days = timestamp.div_euclid(86_400);
     let seconds_of_day = timestamp.rem_euclid(86_400);
@@ -5463,6 +5570,34 @@ mod tests {
         );
 
         assert_eq!(additional, vec![std::path::PathBuf::from("/shared")]);
+    }
+
+    #[test]
+    fn session_additional_directories_store_path_lives_under_codex_home() {
+        assert_eq!(
+            session_additional_directories_store_path(std::path::Path::new("/codex-home")),
+            std::path::PathBuf::from(
+                "/codex-home/brokk-codex-acp/session-additional-directories.json"
+            )
+        );
+    }
+
+    #[test]
+    fn session_additional_directories_persistence_round_trips() {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let store_path = session_additional_directories_store_path(tempdir.path());
+        let mut sessions = HashMap::new();
+        sessions.insert(
+            "thread-1".to_owned(),
+            vec![
+                std::path::PathBuf::from("/shared"),
+                std::path::PathBuf::from("/other"),
+            ],
+        );
+
+        persist_session_additional_directories(&store_path, &sessions);
+
+        assert_eq!(load_session_additional_directories(&store_path), sessions);
     }
 
     #[test]

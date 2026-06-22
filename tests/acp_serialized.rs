@@ -953,9 +953,11 @@ fn fake_codex_app_server(script: &str) -> anyhow::Result<FakeCodex> {
 const SERIALIZED_RENAME_CODEX_APP_SERVER: &str = r#"#!/usr/bin/env python3
 import json
 import sys
+import tempfile
 
 thread_cwd = None
 interrupted_close_turn = False
+codex_home = tempfile.mkdtemp(prefix="fake-codex-home-")
 
 
 def response(message_id, payload):
@@ -979,7 +981,7 @@ for line in sys.stdin:
         response(message_id, {
             "result": {
                 "userAgent": "serialized-rename-test",
-                "codexHome": "/tmp/fake-codex-home",
+                "codexHome": codex_home,
                 "platformFamily": "test",
                 "platformOs": "test",
             },
