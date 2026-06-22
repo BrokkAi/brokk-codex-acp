@@ -69,7 +69,8 @@ The project currently includes:
   `/mcp-reload`,
   `/mcp-resource <server> <uri>`,
   `/mcp-tool <server> <tool> [json-arguments]`, `/hooks`, `/memory`,
-  `/model`, `/permissions`, `/ps`, `/skill-roots`, `/stop`, and `/status`,
+  `/model`, `/model-provider`, `/permissions`, `/ps`, `/skill-roots`, `/stop`,
+  and `/status`,
   mapped to app-server thread, review, catalog, and config endpoints with ACP
   session update, turn-stream,
   config-option, or

@@ -918,6 +918,15 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             ],
         ),
         (
+            "/model-provider",
+            &[
+                "Model provider: capabilities",
+                "- Namespace tools: true",
+                "- Image generation: false",
+                "- Web search: true",
+            ],
+        ),
+        (
             "/mcp-resource filesystem file:///repo/README.md",
             &[
                 "MCP resource",
@@ -1765,6 +1774,15 @@ for line in sys.stdin:
         assert params == {}
         response(message_id, {
             "result": {},
+        })
+    elif method == "modelProvider/capabilities/read":
+        assert params == {}
+        response(message_id, {
+            "result": {
+                "namespaceTools": True,
+                "imageGeneration": False,
+                "webSearch": True,
+            },
         })
     elif method == "experimentalFeature/list":
         assert params == {

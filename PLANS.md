@@ -243,9 +243,9 @@ The current repository has the first working ACP/app-server bridge in place:
   - built-in `account`, `archive`, `apps`, `compact`, `config`,
     `config-requirements`, `delete`, `feature`, `features`, `fork`, `goal`,
     `hooks`, `init`, `kill`, `marketplace-add`, `marketplace-remove`,
-    `memory`, `mcp`, `mcp-reload`, `model`, `new`, `permissions`, `plan`,
-    `plugins`, `ps`, `rate-limits`, `rename`, `resume`, `review`, `rollback`,
-    `skill-roots`, `status`, `stop`, `unarchive`, `usage`, and
+    `memory`, `mcp`, `mcp-reload`, `model`, `model-provider`, `new`,
+    `permissions`, `plan`, `plugins`, `ps`, `rate-limits`, `rename`, `resume`,
+    `review`, `rollback`, `skill-roots`, `status`, `stop`, `unarchive`, `usage`, and
     `workspace-messages` commands are published through ACP
     `available_commands_update` alongside enabled skills.
   - `/archive` is intercepted by the adapter, mapped to `thread/archive`, and
@@ -284,6 +284,9 @@ The current repository has the first working ACP/app-server bridge in place:
   - `/mcp-reload` is intercepted by the adapter, mapped to
     `config/mcpServer/reload`, then followed by `mcpServerStatus/list` and
     reflected as a short ACP agent-message summary.
+  - `/model-provider` is intercepted by the adapter, mapped to
+    `modelProvider/capabilities/read`, and reflected as a short ACP
+    agent-message summary.
   - `/feature <name> enable|disable` is intercepted by the adapter, mapped to
     `experimentalFeature/enablement/set`, and reflected as a short ACP
     agent-message summary.
@@ -514,8 +517,8 @@ Tasks:
   `/archive`, `/apps`, `/compact`, `/config`, `/config-requirements`,
   `/delete`, `/feature`, `/features`, `/fork`, `/goal`, `/hooks`, `/init`,
   `/kill`, `/marketplace-add`, `/marketplace-remove`, `/memory`, `/mcp`,
-  `/mcp-reload`, `/model`, `/new`, `/permissions`, `/plan`, `/plugins`, `/ps`,
-  `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
+  `/mcp-reload`, `/model`, `/model-provider`, `/new`, `/permissions`, `/plan`,
+  `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
   `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
   `/workspace-messages`.
 - [x] Build the full command registry with aliases, availability, required
@@ -527,8 +530,8 @@ Tasks:
   `/archive`, `/apps`, `/compact`, `/config`, `/config-requirements`,
   `/delete`, `/feature`, `/features`, `/fork`, `/goal`, `/hooks`, `/init`,
   `/kill`, `/marketplace-add`, `/marketplace-remove`, `/memory`, `/mcp`,
-  `/mcp-reload`, `/model`, `/new`, `/permissions`, `/plan`, `/plugins`, `/ps`,
-  `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
+  `/mcp-reload`, `/model`, `/model-provider`, `/new`, `/permissions`, `/plan`,
+  `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
   `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
   `/workspace-messages`. `/fork` is implemented only as an extension command
   backed by Codex `thread/fork`, not as required ACP v1 behavior.
@@ -1035,6 +1038,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/config-requirements` | `configRequirements/read` `[implemented as summary]` |
 | `/account` | `account/read` `[implemented as summary]` |
 | `/model` | `model/list` plus ACP config-option refresh `[implemented]` |
+| `/model-provider` | `modelProvider/capabilities/read` `[implemented as summary]` |
 | `/permissions` | `permissionProfile/list` plus ACP config-option refresh `[implemented]` |
 | `/memory enable` / `/memory disable` / `/memory reset` | `thread/memoryMode/set` or `memory/reset` `[implemented as summary]` |
 | `/features` | `experimentalFeature/list` `[implemented as summary]` |
@@ -1293,6 +1297,8 @@ model prompts:
   summary.
 - [x] `/workspace-messages` calls `account/workspaceMessages/read` and returns
   an ACP agent-message summary.
+- [x] `/model-provider` calls `modelProvider/capabilities/read` and returns an
+  ACP agent-message summary.
 - [x] `/mcp` calls `mcpServerStatus/list` and returns an ACP agent-message
   summary.
 - [x] `/mcp-reload` calls `config/mcpServer/reload`, refreshes
@@ -1568,6 +1574,7 @@ Manual flows:
 - [x] Implement `/rate-limits`.
 - [x] Implement `/usage`.
 - [x] Implement `/workspace-messages`.
+- [x] Implement `/model-provider`.
 
 ### Phase 4: Skills
 
@@ -1623,6 +1630,7 @@ Manual flows:
 - [x] Add account rate limit display.
 - [x] Add account usage display.
 - [x] Add workspace messages display.
+- [x] Add model provider capabilities display.
 
 ### Phase 7: Hardening
 

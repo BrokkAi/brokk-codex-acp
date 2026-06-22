@@ -104,6 +104,7 @@ const MCP_RELOAD_COMMAND: &str = "mcp-reload";
 const MCP_RESOURCE_COMMAND: &str = "mcp-resource";
 const MCP_TOOL_COMMAND: &str = "mcp-tool";
 const MODEL_COMMAND: &str = "model";
+const MODEL_PROVIDER_COMMAND: &str = "model-provider";
 const NEW_COMMAND: &str = "new";
 const PERMISSIONS_COMMAND: &str = "permissions";
 const PLAN_COMMAND: &str = "plan";
@@ -1579,6 +1580,21 @@ impl CodexAcpAgent {
                     session_id,
                     config_options,
                     "Model options refreshed. Use the `model`, `reasoning_effort`, and `service_tier` session config options to change Codex model settings.",
+                    cx,
+                )
+            }
+            BuiltinCommand::ModelProvider => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .model_provider_capabilities_read()
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(
+                    session_id,
+                    "Model provider",
+                    model_provider_capabilities_summary(&response),
                     cx,
                 )
             }
@@ -3133,6 +3149,7 @@ enum BuiltinCommand {
         arguments: serde_json::Value,
     },
     Model,
+    ModelProvider,
     New,
     Permissions,
     Plan,
@@ -3213,6 +3230,7 @@ enum CommandHandler {
     McpResource,
     McpTool,
     Model,
+    ModelProvider,
     New,
     Permissions,
     Plan,
@@ -3420,6 +3438,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: None,
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::Model,
+    },
+    BuiltinCommandSpec {
+        name: MODEL_PROVIDER_COMMAND,
+        aliases: &[],
+        description: "Show Codex model provider capabilities",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::ModelProvider,
     },
     BuiltinCommandSpec {
         name: NEW_COMMAND,
@@ -3664,6 +3690,9 @@ fn parse_command_from_spec(
         CommandHandler::McpResource => parse_mcp_resource_command(rest),
         CommandHandler::McpTool => parse_mcp_tool_command(rest),
         CommandHandler::Model => parse_no_argument_command(rest, spec.name, BuiltinCommand::Model),
+        CommandHandler::ModelProvider => {
+            parse_no_argument_command(rest, spec.name, BuiltinCommand::ModelProvider)
+        }
         CommandHandler::New => parse_no_argument_command(rest, spec.name, BuiltinCommand::New),
         CommandHandler::Permissions => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Permissions)
@@ -6193,6 +6222,27 @@ fn experimental_feature_enablement_summary(
     }
 }
 
+fn model_provider_capabilities_summary(value: &serde_json::Value) -> String {
+    let mut lines = vec!["Model provider: capabilities".to_owned()];
+    for (label, key) in [
+        ("Namespace tools", "namespaceTools"),
+        ("Image generation", "imageGeneration"),
+        ("Web search", "webSearch"),
+    ] {
+        if let Some(field) = value.get(key)
+            && !field.is_null()
+        {
+            lines.push(format!("- {label}: {}", compact_json(field)));
+        }
+    }
+
+    if lines.len() == 1 && !value.is_null() {
+        lines.push(format!("- Response: {}", compact_json(value)));
+    }
+
+    lines.join("\n")
+}
+
 fn plugin_detail_summary(value: &serde_json::Value) -> String {
     let plugin_name = first_string_at_paths(
         value,
@@ -6875,6 +6925,7 @@ mod tests {
             "/mcp-resource filesystem file:///repo/README.md",
             r#"/mcp-tool filesystem read_file {"path":"/repo/README.md"}"#,
             "/model",
+            "/model-provider",
             "/new",
             "/permissions",
             "/plan",
@@ -6955,6 +7006,7 @@ mod tests {
                     ))
                 }
                 "/model" => assert!(matches!(command, BuiltinCommand::Model)),
+                "/model-provider" => assert!(matches!(command, BuiltinCommand::ModelProvider)),
                 "/new" => assert!(matches!(command, BuiltinCommand::New)),
                 "/permissions" => assert!(matches!(command, BuiltinCommand::Permissions)),
                 "/plan" => assert!(matches!(command, BuiltinCommand::Plan)),
@@ -7445,6 +7497,7 @@ mod tests {
                 "mcp-resource",
                 "mcp-tool",
                 "model",
+                "model-provider",
                 "new",
                 "permissions",
                 "plan",
@@ -7671,6 +7724,20 @@ mod tests {
         assert_eq!(
             summary,
             "Reloaded Codex MCP server configuration.\n\nMCP: 1 entries\n- filesystem"
+        );
+    }
+
+    #[test]
+    fn model_provider_capabilities_summary_lists_known_flags() {
+        let summary = model_provider_capabilities_summary(&serde_json::json!({
+            "namespaceTools": true,
+            "imageGeneration": false,
+            "webSearch": true
+        }));
+
+        assert_eq!(
+            summary,
+            "Model provider: capabilities\n- Namespace tools: true\n- Image generation: false\n- Web search: true"
         );
     }
 

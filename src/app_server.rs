@@ -636,6 +636,11 @@ impl AppServerClient {
         .await
     }
 
+    pub async fn model_provider_capabilities_read(&mut self) -> anyhow::Result<Value> {
+        self.request("modelProvider/capabilities/read", EmptyParams {})
+            .await
+    }
+
     pub async fn permission_profile_list(
         &mut self,
         cwd: Option<String>,

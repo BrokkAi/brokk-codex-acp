@@ -856,6 +856,11 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     let mcp_reload = client.mcp_server_reload().await?;
     assert_eq!(mcp_reload, serde_json::json!({}));
 
+    let model_provider = client.model_provider_capabilities_read().await?;
+    assert_eq!(model_provider["namespaceTools"], true);
+    assert_eq!(model_provider["imageGeneration"], false);
+    assert_eq!(model_provider["webSearch"], true);
+
     let mcp_resource = client
         .mcp_server_resource_read(
             "thread-1".to_string(),
@@ -1866,6 +1871,13 @@ for line in sys.stdin:
     elif method == "config/mcpServer/reload":
         assert params == {}
         response(message_id, {})
+    elif method == "modelProvider/capabilities/read":
+        assert params == {}
+        response(message_id, {
+            "namespaceTools": True,
+            "imageGeneration": False,
+            "webSearch": True,
+        })
     elif method == "mcpServer/resource/read":
         assert params == {
             "threadId": "thread-1",
