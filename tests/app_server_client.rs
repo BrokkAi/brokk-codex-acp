@@ -739,6 +739,16 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         .await?;
     assert_eq!(mcp_resource["contents"][0]["text"], "README contents");
 
+    let mcp_tool = client
+        .mcp_server_tool_call(
+            "thread-1".to_string(),
+            "filesystem".to_string(),
+            "read_file".to_string(),
+            serde_json::json!({"path": "/repo/README.md"}),
+        )
+        .await?;
+    assert_eq!(mcp_tool["content"][0]["text"], "README contents");
+
     let hooks = client.hooks_list("/repo".to_string()).await?;
     assert_eq!(hooks["data"][0]["cwd"], "/repo");
 
@@ -1517,6 +1527,21 @@ for line in sys.stdin:
                 {
                     "uri": "file:///repo/README.md",
                     "mimeType": "text/markdown",
+                    "text": "README contents",
+                },
+            ],
+        })
+    elif method == "mcpServer/tool/call":
+        assert params == {
+            "threadId": "thread-1",
+            "server": "filesystem",
+            "tool": "read_file",
+            "arguments": {"path": "/repo/README.md"},
+        }
+        response(message_id, {
+            "content": [
+                {
+                    "type": "text",
                     "text": "README contents",
                 },
             ],

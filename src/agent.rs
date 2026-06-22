@@ -83,6 +83,7 @@ const INIT_COMMAND: &str = "init";
 const KILL_COMMAND: &str = "kill";
 const MCP_COMMAND: &str = "mcp";
 const MCP_RESOURCE_COMMAND: &str = "mcp-resource";
+const MCP_TOOL_COMMAND: &str = "mcp-tool";
 const MODEL_COMMAND: &str = "model";
 const NEW_COMMAND: &str = "new";
 const PERMISSIONS_COMMAND: &str = "permissions";
@@ -1301,6 +1302,30 @@ impl CodexAcpAgent {
                     session_id,
                     "MCP resource",
                     mcp_resource_summary(&server, &uri, &response),
+                    cx,
+                )
+            }
+            BuiltinCommand::McpTool {
+                server,
+                tool,
+                arguments,
+            } => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .mcp_server_tool_call(
+                        thread_id.to_owned(),
+                        server.clone(),
+                        tool.clone(),
+                        arguments,
+                    )
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(
+                    session_id,
+                    "MCP tool",
+                    mcp_tool_summary(&server, &tool, &response),
                     cx,
                 )
             }
@@ -2617,6 +2642,11 @@ enum BuiltinCommand {
         server: String,
         uri: String,
     },
+    McpTool {
+        server: String,
+        tool: String,
+        arguments: serde_json::Value,
+    },
     Model,
     New,
     Permissions,
@@ -2670,6 +2700,7 @@ enum CommandHandler {
     Init,
     Mcp,
     McpResource,
+    McpTool,
     Model,
     New,
     Permissions,
@@ -2785,6 +2816,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: Some("server uri"),
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::McpResource,
+    },
+    BuiltinCommandSpec {
+        name: MCP_TOOL_COMMAND,
+        aliases: &[],
+        description: "Call a configured MCP server tool",
+        input_hint: Some("server tool [json arguments]"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::McpTool,
     },
     BuiltinCommandSpec {
         name: MODEL_COMMAND,
@@ -2978,6 +3017,7 @@ fn parse_command_from_spec(
         CommandHandler::Init => parse_no_argument_command(rest, spec.name, BuiltinCommand::Init),
         CommandHandler::Mcp => parse_no_argument_command(rest, spec.name, BuiltinCommand::Mcp),
         CommandHandler::McpResource => parse_mcp_resource_command(rest),
+        CommandHandler::McpTool => parse_mcp_tool_command(rest),
         CommandHandler::Model => parse_no_argument_command(rest, spec.name, BuiltinCommand::Model),
         CommandHandler::New => parse_no_argument_command(rest, spec.name, BuiltinCommand::New),
         CommandHandler::Permissions => {
@@ -3094,6 +3134,30 @@ fn parse_mcp_resource_command(rest: &str) -> Result<Option<BuiltinCommand>, Erro
     Ok(Some(BuiltinCommand::McpResource {
         server: server.to_owned(),
         uri: uri.to_owned(),
+    }))
+}
+
+fn parse_mcp_tool_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
+    const MESSAGE: &str = "/mcp-tool requires a server and tool name";
+
+    let Some((server, rest)) = split_first_token(rest) else {
+        return Err(Error::invalid_params().data(MESSAGE));
+    };
+    let Some((tool, arguments_text)) = split_first_token(rest) else {
+        return Err(Error::invalid_params().data(MESSAGE));
+    };
+    let arguments = if arguments_text.trim().is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::from_str(arguments_text.trim()).map_err(|error| {
+            Error::invalid_params().data(format!("/mcp-tool arguments must be valid JSON: {error}"))
+        })?
+    };
+
+    Ok(Some(BuiltinCommand::McpTool {
+        server: server.to_owned(),
+        tool: tool.to_owned(),
+        arguments,
     }))
 }
 
@@ -4945,14 +5009,32 @@ fn mcp_resource_summary(server: &str, uri: &str, value: &serde_json::Value) -> S
         format!("- Server: {server}"),
         format!("- URI: {uri}"),
     ];
-    let contents = value.get("contents").and_then(serde_json::Value::as_array);
+    append_mcp_contents(&mut lines, value);
+    lines.join("\n")
+}
+
+fn mcp_tool_summary(server: &str, tool: &str, value: &serde_json::Value) -> String {
+    let mut lines = vec![
+        "MCP tool".to_owned(),
+        format!("- Server: {server}"),
+        format!("- Tool: {tool}"),
+    ];
+    append_mcp_contents(&mut lines, value);
+    lines.join("\n")
+}
+
+fn append_mcp_contents(lines: &mut Vec<String>, value: &serde_json::Value) {
+    let contents = value
+        .get("content")
+        .or_else(|| value.get("contents"))
+        .and_then(serde_json::Value::as_array);
     let Some(contents) = contents else {
         lines.push(format!("- Response: {}", compact_json(value)));
-        return lines.join("\n");
+        return;
     };
     if contents.is_empty() {
         lines.push("- Contents: no entries found.".to_owned());
-        return lines.join("\n");
+        return;
     }
 
     lines.push(format!("- Contents: {} entries", contents.len()));
@@ -4971,7 +5053,6 @@ fn mcp_resource_summary(server: &str, uri: &str, value: &serde_json::Value) -> S
     if contents.len() > 3 {
         lines.push(format!("- ... {} more", contents.len() - 3));
     }
-    lines.join("\n")
 }
 
 fn truncate_for_summary(text: &str, max_chars: usize) -> String {
@@ -5372,6 +5453,7 @@ mod tests {
             "/init",
             "/mcp",
             "/mcp-resource filesystem file:///repo/README.md",
+            r#"/mcp-tool filesystem read_file {"path":"/repo/README.md"}"#,
             "/model",
             "/new",
             "/permissions",
@@ -5398,6 +5480,18 @@ mod tests {
                     BuiltinCommand::McpResource { server, uri }
                         if server == "filesystem" && uri == "file:///repo/README.md"
                 )),
+                r#"/mcp-tool filesystem read_file {"path":"/repo/README.md"}"# => {
+                    assert!(matches!(
+                        command,
+                        BuiltinCommand::McpTool {
+                            server,
+                            tool,
+                            arguments
+                        } if server == "filesystem"
+                            && tool == "read_file"
+                            && arguments == serde_json::json!({"path": "/repo/README.md"})
+                    ))
+                }
                 "/model" => assert!(matches!(command, BuiltinCommand::Model)),
                 "/new" => assert!(matches!(command, BuiltinCommand::New)),
                 "/permissions" => assert!(matches!(command, BuiltinCommand::Permissions)),
@@ -5671,6 +5765,30 @@ mod tests {
     }
 
     #[test]
+    fn parse_builtin_command_rejects_invalid_mcp_tool_reference() {
+        for text in ["/mcp-tool", "/mcp-tool filesystem"] {
+            let error = parse_builtin_command(text).unwrap_err();
+            assert_eq!(
+                error.data.as_ref().and_then(serde_json::Value::as_str),
+                Some("/mcp-tool requires a server and tool name")
+            );
+        }
+
+        let error = parse_builtin_command("/mcp-tool filesystem read_file {not-json}").unwrap_err();
+        assert!(
+            error
+                .data
+                .as_ref()
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(
+                    |message| message.starts_with("/mcp-tool arguments must be valid JSON:")
+                ),
+            "unexpected error data: {:?}",
+            error.data
+        );
+    }
+
+    #[test]
     fn parse_builtin_command_rejects_empty_skill_roots() {
         let error = parse_builtin_command("/skill-roots").unwrap_err();
 
@@ -5737,6 +5855,7 @@ mod tests {
                 "init",
                 "mcp",
                 "mcp-resource",
+                "mcp-tool",
                 "model",
                 "new",
                 "permissions",
@@ -5821,6 +5940,27 @@ mod tests {
         assert_eq!(
             summary,
             "MCP resource\n- Server: filesystem\n- URI: file:///repo/README.md\n- Contents: 1 entries\n- Text: README contents"
+        );
+    }
+
+    #[test]
+    fn mcp_tool_summary_includes_text_content() {
+        let summary = mcp_tool_summary(
+            "filesystem",
+            "read_file",
+            &serde_json::json!({
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "README contents"
+                    }
+                ]
+            }),
+        );
+
+        assert_eq!(
+            summary,
+            "MCP tool\n- Server: filesystem\n- Tool: read_file\n- Contents: 1 entries\n- Text: README contents"
         );
     }
 

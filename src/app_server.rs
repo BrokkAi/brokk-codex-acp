@@ -425,6 +425,26 @@ impl AppServerClient {
         .await
     }
 
+    pub async fn mcp_server_tool_call(
+        &mut self,
+        thread_id: String,
+        server: String,
+        tool: String,
+        arguments: Value,
+    ) -> anyhow::Result<Value> {
+        self.request(
+            "mcpServer/tool/call",
+            McpServerToolCallParams {
+                thread_id,
+                server,
+                tool,
+                arguments,
+                meta: None,
+            },
+        )
+        .await
+    }
+
     pub async fn thread_loaded_list(&mut self) -> anyhow::Result<Value> {
         self.request("thread/loaded/list", EmptyParams {}).await
     }
@@ -1730,6 +1750,17 @@ struct McpServerResourceReadParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     server: Option<String>,
     uri: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct McpServerToolCallParams {
+    thread_id: String,
+    server: String,
+    tool: String,
+    arguments: Value,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    meta: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]

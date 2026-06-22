@@ -957,6 +957,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/permissions` | `permissionProfile/list` plus ACP config-option refresh `[implemented]` |
 | `/mcp` | `mcpServerStatus/list` `[implemented as summary]` |
 | `/mcp-resource <server> <uri>` | `mcpServer/resource/read` `[implemented as summary]` |
+| `/mcp-tool <server> <tool> [json-arguments]` | `mcpServer/tool/call` `[implemented as summary]` |
 | `/apps` | `app/list` `[implemented as summary]` |
 | `/plugins` | `plugin/list` and `plugin/installed` `[implemented as summary]` |
 | `/plugin <pluginName@marketplacePath>` | `plugin/read` `[implemented as summary]` |
@@ -1185,6 +1186,9 @@ model prompts:
   summary.
 - [x] `/mcp-resource <server> <uri>` calls `mcpServer/resource/read` for the
   current thread and returns an ACP agent-message summary.
+- [x] `/mcp-tool <server> <tool> [json-arguments]` calls
+  `mcpServer/tool/call` for the current thread and returns an ACP agent-message
+  summary.
 - [x] `/hooks` calls `hooks/list` and returns an ACP agent-message summary.
 - [x] `/status` calls `thread/loaded/list` and returns an ACP agent-message
   summary.

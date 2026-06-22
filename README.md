@@ -54,9 +54,10 @@ The project currently includes:
 - Initial slash-command routing for `/rename <title>`, `/archive`, `/goal`,
   `/compact`, `/review`, `/init`, `/new`, `/resume`, `/fork`, `/delete`,
   `/apps`, `/plugins`, `/plugin <pluginName@marketplacePath>`, `/mcp`,
-  `/mcp-resource <server> <uri>`, `/hooks`, `/model`, `/permissions`, `/ps`,
-  `/skill-roots`, `/stop`, and `/status`, mapped to app-server thread, review,
-  catalog, and config endpoints with ACP session update, turn-stream,
+  `/mcp-resource <server> <uri>`, `/mcp-tool <server> <tool> [json-arguments]`,
+  `/hooks`, `/model`, `/permissions`, `/ps`, `/skill-roots`, `/stop`, and
+  `/status`, mapped to app-server thread, review, catalog, and config endpoints
+  with ACP session update, turn-stream,
   config-option, or
   agent-message summary projection as appropriate. Unsupported leading slash
   commands return an explicit ACP error instead of being forwarded to the model.
@@ -108,8 +109,7 @@ The project currently includes:
 
 The adapter is not complete yet. Rich ACP UI for dynamic tool callbacks, exact
 terminal embedding, native realtime audio playback, plugin install/uninstall
-actions, direct MCP tool UI, and paginated/full-fidelity history replay are
-still planned work.
+actions, and paginated/full-fidelity history replay are still planned work.
 
 ## Usage
 
