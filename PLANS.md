@@ -1189,18 +1189,26 @@ ACP clients should not reimplement.
 
 | App-server API | Adapter status |
 | --- | --- |
+| `initialize.capabilities.optOutNotificationMethods` | Not exposed; the adapter depends on app-server notifications for ACP state projection and should only opt out after proving a replacement state path. |
 | `turn/steer` | Deferred until ACP has explicit active-turn steering semantics or a client extension names that behavior. |
 | `thread/turns/items/list` | Not exposed because upstream currently reserves the API shape but returns unsupported-method errors. History replay uses `thread/turns/list` plus `thread/read` fallback. |
 | `thread/inject_items` | Not exposed; mutates model-visible history without a user turn and has no stable ACP v1 equivalent. |
 | `thread/metadata/update` | Not exposed; currently limited to persisted metadata patches such as git info, which ACP clients do not provide here. |
+| `thread/start.sessionStartSource` | Not exposed as a user command; ACP session replacement semantics are separate from Codex UI's `"clear"` source hook signal. |
+| `thread/start` / `thread/resume` / `thread/fork` `environments` | Not exposed; selecting sticky remote execution environments requires a client trust and environment-management contract. |
+| `thread/start` / `thread/resume` / `thread/fork` `selectedCapabilityRoots` | Not exposed; capability-root selection is owned by the hosting platform or environment manager, not by generic ACP prompt text. |
+| `thread/resume.initialTurnsPage` / `thread/fork.excludeTurns` history paging shortcuts | Partially covered by adapter-owned `thread/turns/list` replay for `session/load`; direct client controls need an ACP extension before exposure. |
+| `thread/list` advanced filters (`modelProviders`, `sourceKinds`, `parentThreadId`, `searchTerm`, `sortKey`, `useStateDbOnly`) | Not exposed through stable ACP `session/list`; the adapter currently maps only ACP's cwd filter and preserves returned metadata under `_meta`. |
+| `multiAgentMode` thread setting | Not exposed as an ACP config option yet; current mode projection uses `collaborationMode/list` and `thread/settings/update.collaborationMode` until ACP/product UX names multi-agent behavior. |
 | ACP `ContentBlock::Audio` prompt input | Not advertised; app-server `turn/start` has no matching audio user-input variant. Thread realtime audio is exposed separately through `/realtime audio`. |
+| `turn/start.dynamicTools` | Not exposed; the adapter handles app-server dynamic tool callbacks, but publishing client-supplied dynamic tools requires a stable ACP extension for tool schemas and execution ownership. |
 | `command/exec*` | Not exposed as generic commands; Codex-owned command execution already streams through turn item events, preserving approval policy. |
 | `process/*` | Not exposed; raw host process control is outside ACP agent behavior and would bypass Codex turn semantics. |
 | `fs/*` | Not exposed; direct host filesystem mutation should go through Codex tools/turns or MCP resources, not ad hoc ACP slash commands. |
 | `fs/watch` / `fs/unwatch` | Not exposed; ACP v1 has no watch subscription projection used by this adapter. |
 | `environment/add` | Not exposed; remote execution environment selection needs a separate client capability and trust contract. |
 | `config/value/write` / `config/batchWrite` | Not exposed as slash commands; arbitrary config mutation needs product-specific confirmation UX. Supported ACP settings go through typed `session/set_config_option` mappings. |
-| `externalAgentConfig/*` | Not exposed; importing another agent's config, skills, and AGENTS.md needs a migration UX and user confirmation outside ACP v1. |
+| `externalAgentConfig/*` / `externalAgentConfig/import/completed` | Not exposed; importing another agent's config, skills, sessions, and AGENTS.md needs a migration UX and user confirmation outside ACP v1. |
 | `windowsSandbox/setupStart` | Not exposed as a command; setup initiation is platform/product UX. `windowsSandbox/setupCompleted` notifications are projected when app-server emits results. |
 | `account/rateLimitResetCredit/consume` | Not exposed; spending account credits requires product-specific confirmation. `/rate-limits` only reads status. |
 | `account/sendAddCreditsNudgeEmail` | Not exposed; email nudges are account/product UX outside the adapter's ACP surface. |
