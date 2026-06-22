@@ -220,7 +220,9 @@ The current repository has the first working ACP/app-server bridge in place:
     then an app-server JSON-RPC response containing `permissions` and `scope`.
     Fine-grained partial grants are exposed as ACP permission options for
     individual requested network and filesystem units when app-server has not
-    supplied an exact `availableDecisions` list.
+    supplied an exact `availableDecisions` list. The ACP tool-call content
+    includes a human-readable summary of the requested reason, environment,
+    working directory, and network/filesystem access.
   - The adapter maps `accept`, `acceptForSession`, `decline`, and `cancel` to
     ACP permission options and preserves app-server's blocking request
     semantics while awaiting the ACP client.
@@ -891,7 +893,7 @@ app-server item id -> ACP tool call id / message stream id
 | `turn/diff/updated` | `tool_call_update` with diff content | Useful for file edit previews. |
 | `turn/plan/updated` | `plan` | Send the full plan every time. |
 | `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` | `session/request_permission` | Implemented for simple decisions; rich command `availableDecisions` such as exec-policy and network-policy amendments keep their original app-server payload under ACP option metadata and are returned unchanged when selected. App-server remains blocked until the ACP client answers. |
-| `item/permissions/requestApproval` | `session/request_permission` | Implemented for full requested-profile grants, rejection, and generated partial-grant options for individual requested network/filesystem units scoped to turn/session. |
+| `item/permissions/requestApproval` | `session/request_permission` | Implemented for full requested-profile grants, rejection, generated partial-grant options for individual requested network/filesystem units scoped to turn/session, and readable request content. |
 | `mcpServer/elicitation/request`, `item/tool/call`, `tool/requestUserInput`, `item/tool/requestUserInput` | fallback response now; future ACP elicitation or extension request | Implemented as explicit cancel/empty/failure responses so app-server does not block. Rich ACP UI is still pending. |
 | `attestation/generate` | JSON-RPC error | Implemented as an explicit request failure because the adapter does not advertise or provide native attestation tokens. |
 | `skills/changed` | `available_commands_update` | Implemented through the background app-server notification dispatcher; re-runs app-server `skills/list` with `forceReload`. |
@@ -1504,7 +1506,6 @@ Keep PRs small enough to review against fake app-server tests.
      render the request
 
 2. Permission-profile approval refinements:
-   - add richer UI text for requested filesystem and network permissions
    - add fake app-server tests for cancel/reject edge cases
 
 3. Serialized ACP integration tests:

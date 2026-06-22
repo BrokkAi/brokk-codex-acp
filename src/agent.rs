@@ -33,8 +33,9 @@ use tracing::{debug, trace};
 use crate::app_server::{
     AppServerAccountLoginCompletedUpdate, AppServerAccountRateLimitsUpdatedUpdate,
     AppServerAccountUpdatedUpdate, AppServerActivePermissionProfile, AppServerApprovalChoice,
-    AppServerApprovalDecision, AppServerApprovalOption, AppServerApprovalRequest, AppServerClient,
-    AppServerCollaborationMode, AppServerCollaborationModeMask, AppServerCollaborationModeSettings,
+    AppServerApprovalDecision, AppServerApprovalOption, AppServerApprovalRequest,
+    AppServerApprovalResponseKind, AppServerClient, AppServerCollaborationMode,
+    AppServerCollaborationModeMask, AppServerCollaborationModeSettings,
     AppServerConfigWarningUpdate, AppServerErrorUpdate, AppServerFuzzyFileSearchUpdate,
     AppServerHistoryEvent, AppServerMcpServerOAuthLoginCompletedUpdate,
     AppServerMcpServerStartupStatusUpdate, AppServerMessage, AppServerModel,
@@ -3827,6 +3828,7 @@ async fn request_permission(
     }
 
     let mut fields = ToolCallUpdateFields::new();
+    fields.content = permission_request_content(&approval);
     fields.title = Some(approval.title);
     fields.kind = Some(tool_kind(approval.kind));
     fields.status = Some(ToolCallStatus::Pending);
@@ -3972,6 +3974,94 @@ fn permission_option_kind(choice: &AppServerApprovalChoice) -> PermissionOptionK
         AppServerApprovalOption::Decline => PermissionOptionKind::RejectOnce,
         AppServerApprovalOption::Cancel => PermissionOptionKind::RejectOnce,
     }
+}
+
+fn permission_request_content(approval: &AppServerApprovalRequest) -> Option<Vec<ToolCallContent>> {
+    let AppServerApprovalResponseKind::Permissions {
+        requested_permissions,
+    } = &approval.response_kind
+    else {
+        return None;
+    };
+
+    Some(vec![text_tool_content(permission_request_text(
+        &approval.raw,
+        requested_permissions,
+    ))])
+}
+
+fn permission_request_text(raw: &serde_json::Value, permissions: &serde_json::Value) -> String {
+    let mut lines = vec!["Requested permissions:".to_owned()];
+
+    if let Some(reason) = json_string_field(raw, "reason") {
+        lines.push(format!("Reason: {reason}"));
+    }
+    if let Some(environment_id) = json_string_field(raw, "environmentId") {
+        lines.push(format!("Environment: {environment_id}"));
+    }
+    if let Some(cwd) = json_string_field(raw, "cwd") {
+        lines.push(format!("Working directory: {cwd}"));
+    }
+
+    let permission_lines = permission_detail_lines(permissions);
+    if permission_lines.is_empty() {
+        lines.push("- No additional permissions requested.".to_owned());
+    } else {
+        lines.extend(permission_lines);
+    }
+
+    lines.join("\n")
+}
+
+fn permission_detail_lines(permissions: &serde_json::Value) -> Vec<String> {
+    let mut lines = Vec::new();
+
+    if permissions
+        .get("network")
+        .and_then(|network| network.get("enabled"))
+        .and_then(serde_json::Value::as_bool)
+        == Some(true)
+    {
+        lines.push("- Network access".to_owned());
+    }
+
+    if let Some(file_system) = permissions.get("fileSystem") {
+        lines.extend(permission_path_lines(
+            file_system,
+            "read",
+            "Filesystem read access",
+        ));
+        lines.extend(permission_path_lines(
+            file_system,
+            "write",
+            "Filesystem write access",
+        ));
+    }
+
+    lines
+}
+
+fn permission_path_lines(file_system: &serde_json::Value, field: &str, label: &str) -> Vec<String> {
+    file_system
+        .get(field)
+        .and_then(serde_json::Value::as_array)
+        .map(|paths| {
+            paths
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(|path| format!("- {label}: {path}"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn json_string_field(value: &serde_json::Value, field: &str) -> Option<String> {
+    value
+        .get(field)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_owned)
 }
 
 fn network_policy_amendment_action(choice: &AppServerApprovalChoice) -> Option<&str> {
@@ -5228,6 +5318,39 @@ mod tests {
         });
 
         assert_eq!(option.kind, PermissionOptionKind::RejectAlways);
+    }
+
+    #[test]
+    fn permission_request_text_summarizes_requested_access() {
+        let text = permission_request_text(
+            &serde_json::json!({
+                "reason": "Need workspace access",
+                "environmentId": "local",
+                "cwd": "/repo",
+            }),
+            &serde_json::json!({
+                "network": {"enabled": true},
+                "fileSystem": {
+                    "read": ["/repo"],
+                    "write": ["/repo/src"],
+                },
+            }),
+        );
+
+        assert_eq!(
+            text,
+            "Requested permissions:\nReason: Need workspace access\nEnvironment: local\nWorking directory: /repo\n- Network access\n- Filesystem read access: /repo\n- Filesystem write access: /repo/src"
+        );
+    }
+
+    #[test]
+    fn permission_request_text_handles_empty_permission_payload() {
+        let text = permission_request_text(&serde_json::json!({}), &serde_json::json!({}));
+
+        assert_eq!(
+            text,
+            "Requested permissions:\n- No additional permissions requested."
+        );
     }
 
     #[test]
