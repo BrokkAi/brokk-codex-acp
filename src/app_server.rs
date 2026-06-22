@@ -385,6 +385,21 @@ impl AppServerClient {
         self.request("app/list", EmptyParams {}).await
     }
 
+    pub async fn experimental_feature_list(
+        &mut self,
+        thread_id: String,
+    ) -> anyhow::Result<ExperimentalFeatureListResponse> {
+        self.request(
+            "experimentalFeature/list",
+            ExperimentalFeatureListParams {
+                cursor: None,
+                limit: None,
+                thread_id: Some(thread_id),
+            },
+        )
+        .await
+    }
+
     pub async fn plugin_list(&mut self) -> anyhow::Result<Value> {
         self.request("plugin/list", EmptyParams {}).await
     }
@@ -1820,6 +1835,36 @@ pub struct SkillsExtraRootsSetResponse {}
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct EmptyParams {}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExperimentalFeatureListParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cursor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limit: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thread_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExperimentalFeatureListResponse {
+    pub data: Vec<ExperimentalFeature>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExperimentalFeature {
+    pub name: String,
+    pub stage: String,
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub announcement: Option<String>,
+    pub enabled: bool,
+    pub default_enabled: bool,
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -86,6 +86,7 @@ const ARCHIVE_COMMAND: &str = "archive";
 const APPS_COMMAND: &str = "apps";
 const COMPACT_COMMAND: &str = "compact";
 const DELETE_COMMAND: &str = "delete";
+const FEATURES_COMMAND: &str = "features";
 const FORK_COMMAND: &str = "fork";
 const GOAL_COMMAND: &str = "goal";
 const HOOKS_COMMAND: &str = "hooks";
@@ -1290,6 +1291,21 @@ impl CodexAcpAgent {
                     session_id,
                     "Delete",
                     format!("Deleted Codex session `{}`.", session_id.0),
+                    cx,
+                )
+            }
+            BuiltinCommand::Features => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .experimental_feature_list(thread_id.to_owned())
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(
+                    session_id,
+                    "Features",
+                    experimental_features_summary(&response),
                     cx,
                 )
             }
@@ -2916,6 +2932,7 @@ enum BuiltinCommand {
     Apps,
     Compact,
     Delete,
+    Features,
     Fork,
     GoalSet {
         objective: String,
@@ -3000,6 +3017,7 @@ enum CommandHandler {
     Apps,
     Compact,
     Delete,
+    Features,
     Fork,
     Goal,
     Hooks,
@@ -3070,6 +3088,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: None,
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::Delete,
+    },
+    BuiltinCommandSpec {
+        name: FEATURES_COMMAND,
+        aliases: &[],
+        description: "List Codex experimental feature flags",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Features,
     },
     BuiltinCommandSpec {
         name: FORK_COMMAND,
@@ -3335,6 +3361,9 @@ fn parse_command_from_spec(
         }
         CommandHandler::Delete => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Delete)
+        }
+        CommandHandler::Features => {
+            parse_no_argument_command(rest, spec.name, BuiltinCommand::Features)
         }
         CommandHandler::Fork => parse_no_argument_command(rest, spec.name, BuiltinCommand::Fork),
         CommandHandler::Goal => parse_goal_command(rest),
@@ -5500,6 +5529,51 @@ fn catalog_summary(title: &str, value: &serde_json::Value) -> String {
     lines.join("\n")
 }
 
+fn experimental_features_summary(
+    response: &crate::app_server::ExperimentalFeatureListResponse,
+) -> String {
+    if response.data.is_empty() {
+        return "Features: no entries found.".to_owned();
+    }
+
+    let mut lines = vec![format!("Features: {} entries", response.data.len())];
+    lines.extend(response.data.iter().take(10).map(|feature| {
+        let label = feature
+            .display_name
+            .as_deref()
+            .unwrap_or(feature.name.as_str());
+        let state = if feature.enabled {
+            "enabled"
+        } else {
+            "disabled"
+        };
+        let default_state = if feature.default_enabled {
+            "default enabled"
+        } else {
+            "default disabled"
+        };
+        let mut line = format!(
+            "- {} (`{}`): {} ({}, {})",
+            label,
+            feature.name,
+            state,
+            humanize_identifier(&feature.stage),
+            default_state
+        );
+        if let Some(description) = feature.description.as_deref() {
+            line.push_str(&format!(" - {description}"));
+        }
+        line
+    }));
+    if response.data.len() > 10 {
+        lines.push(format!("- ... {} more", response.data.len() - 10));
+    }
+    if let Some(next_cursor) = response.next_cursor.as_deref() {
+        lines.push(format!("Next cursor: {next_cursor}"));
+    }
+    lines.join("\n")
+}
+
 fn plugin_detail_summary(value: &serde_json::Value) -> String {
     let plugin_name = first_string_at_paths(
         value,
@@ -6137,6 +6211,7 @@ mod tests {
         for text in [
             "/apps",
             "/delete",
+            "/features",
             "/fork",
             "/hooks",
             "/init",
@@ -6163,6 +6238,7 @@ mod tests {
             match text {
                 "/apps" => assert!(matches!(command, BuiltinCommand::Apps)),
                 "/delete" => assert!(matches!(command, BuiltinCommand::Delete)),
+                "/features" => assert!(matches!(command, BuiltinCommand::Features)),
                 "/fork" => assert!(matches!(command, BuiltinCommand::Fork)),
                 "/hooks" => assert!(matches!(command, BuiltinCommand::Hooks)),
                 "/init" => assert!(matches!(command, BuiltinCommand::Init)),
@@ -6601,6 +6677,7 @@ mod tests {
                 "apps",
                 "compact",
                 "delete",
+                "features",
                 "fork",
                 "goal",
                 "hooks",

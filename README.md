@@ -60,11 +60,12 @@ The project currently includes:
   `/compact`, `/review`, `/init`, `/new`, `/resume`, `/fork`, `/delete`,
   `/apps`, `/plugins`, `/plugin <pluginName@marketplacePath>`,
   `/plugin-install <pluginName@marketplacePath>`,
-  `/plugin-uninstall <pluginId>`, `/mcp`, `/mcp-resource <server> <uri>`,
-  `/mcp-tool <server> <tool> [json-arguments]`, `/hooks`, `/memory`, `/model`,
-  `/permissions`, `/ps`, `/skill-roots`, `/stop`, and `/status`, mapped to
-  app-server thread, review, catalog, and config endpoints with ACP session
-  update, turn-stream,
+  `/plugin-uninstall <pluginId>`, `/features`, `/mcp`,
+  `/mcp-resource <server> <uri>`,
+  `/mcp-tool <server> <tool> [json-arguments]`, `/hooks`, `/memory`,
+  `/model`, `/permissions`, `/ps`, `/skill-roots`, `/stop`, and `/status`,
+  mapped to app-server thread, review, catalog, and config endpoints with ACP
+  session update, turn-stream,
   config-option, or
   agent-message summary projection as appropriate. Unsupported leading slash
   commands return an explicit ACP error instead of being forwarded to the model.

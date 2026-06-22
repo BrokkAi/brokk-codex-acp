@@ -149,6 +149,15 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
                 && params["threadId"] == "thread-1"
     ));
 
+    let features = client
+        .experimental_feature_list("thread-1".to_string())
+        .await?;
+    assert_eq!(features.data.len(), 2);
+    assert_eq!(features.data[0].name, "memories");
+    assert_eq!(features.data[0].stage, "beta");
+    assert!(features.data[0].enabled);
+    assert!(!features.data[1].enabled);
+
     let goal = client
         .thread_goal_set(
             "thread-1".to_string(),
@@ -1444,6 +1453,31 @@ for line in sys.stdin:
         send({
             "method": "thread/unarchived",
             "params": {"threadId": "thread-1"},
+        })
+    elif method == "experimentalFeature/list":
+        assert params == {"threadId": "thread-1"}
+        response(message_id, {
+            "data": [
+                {
+                    "name": "memories",
+                    "stage": "beta",
+                    "displayName": "Memories",
+                    "description": "Store useful user facts",
+                    "announcement": None,
+                    "enabled": True,
+                    "defaultEnabled": False,
+                },
+                {
+                    "name": "remote_control",
+                    "stage": "underDevelopment",
+                    "displayName": None,
+                    "description": None,
+                    "announcement": None,
+                    "enabled": False,
+                    "defaultEnabled": False,
+                },
+            ],
+            "nextCursor": None,
         })
     elif method == "thread/goal/set":
         assert params == {

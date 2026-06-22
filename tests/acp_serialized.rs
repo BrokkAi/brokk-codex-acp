@@ -805,6 +805,14 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
     for (command, expected_fragments) in [
         ("/apps", &["Apps: 1 entries", "- GitHub"][..]),
         (
+            "/features",
+            &[
+                "Features: 2 entries",
+                "Memories (`memories`): enabled",
+                "Remote control (`remote_control`): disabled",
+            ],
+        ),
+        (
             "/plugins",
             &["Plugins: 1 entries", "Installed plugins: 1 entries"],
         ),
@@ -1524,6 +1532,35 @@ for line in sys.stdin:
                         ],
                     },
                 ],
+            },
+        })
+    elif method == "experimentalFeature/list":
+        assert params == {
+            "threadId": "thread-serialized",
+        }
+        response(message_id, {
+            "result": {
+                "data": [
+                    {
+                        "name": "memories",
+                        "stage": "beta",
+                        "displayName": "Memories",
+                        "description": "Store useful user facts",
+                        "announcement": None,
+                        "enabled": True,
+                        "defaultEnabled": False,
+                    },
+                    {
+                        "name": "remote_control",
+                        "stage": "underDevelopment",
+                        "displayName": "Remote control",
+                        "description": None,
+                        "announcement": None,
+                        "enabled": False,
+                        "defaultEnabled": False,
+                    },
+                ],
+                "nextCursor": None,
             },
         })
     elif method == "mcpServer/resource/read":
