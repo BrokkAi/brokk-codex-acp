@@ -1507,8 +1507,27 @@ impl FakeCodex {
 
 fn fake_codex_app_server(script: &str) -> anyhow::Result<FakeCodex> {
     let temp_dir = tempfile::tempdir()?;
-    let path = temp_dir.path().join("codex");
-    fs::write(&path, script)?;
+
+    #[cfg(windows)]
+    let path = {
+        let script_path = temp_dir.path().join("fake_codex_app_server.py");
+        fs::write(&script_path, script)?;
+
+        let wrapper_path = temp_dir.path().join("codex.cmd");
+        fs::write(
+            &wrapper_path,
+            "@echo off\r\npython \"%~dp0fake_codex_app_server.py\" %*\r\n",
+        )?;
+        wrapper_path
+    };
+
+    #[cfg(not(windows))]
+    let path = {
+        let path = temp_dir.path().join("codex");
+        fs::write(&path, script)?;
+        path
+    };
+
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
