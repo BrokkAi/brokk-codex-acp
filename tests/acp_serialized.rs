@@ -207,6 +207,8 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
         .join("\n");
     for expected in [
         "Codex warning: limited skills loaded",
+        "MCP server `filesystem` startup status: Failed.",
+        "spawn ENOENT",
         "Codex rerouted the model from `gpt-5-codex` to `gpt-5` (High Risk Cyber Activity) for this turn.",
         "Codex error (retrying): transient failure",
         "retry details",
@@ -1199,6 +1201,15 @@ for line in sys.stdin:
                 "params": {
                     "threadId": "thread-serialized",
                     "message": "limited skills loaded",
+                },
+            })
+            send({
+                "method": "mcpServer/startupStatus/updated",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "name": "filesystem",
+                    "status": "failed",
+                    "error": "spawn ENOENT",
                 },
             })
             send({

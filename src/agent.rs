@@ -34,11 +34,12 @@ use crate::app_server::{
     AppServerActivePermissionProfile, AppServerApprovalChoice, AppServerApprovalDecision,
     AppServerApprovalOption, AppServerApprovalRequest, AppServerClient, AppServerCollaborationMode,
     AppServerCollaborationModeMask, AppServerCollaborationModeSettings, AppServerErrorUpdate,
-    AppServerHistoryEvent, AppServerMessage, AppServerModel, AppServerModelReroutedUpdate,
-    AppServerPermissionProfile, AppServerPlanStatus, AppServerPromptCompletion,
-    AppServerPromptEvent, AppServerSkill, AppServerThread, AppServerThreadSettingsUpdate,
-    AppServerToolKind, AppServerToolStatus, AppServerTurnInput, AppServerWarningUpdate,
-    ThreadSettingsUpdateParams, decode_error, decode_model_rerouted, decode_thread_archived,
+    AppServerHistoryEvent, AppServerMcpServerStartupStatusUpdate, AppServerMessage, AppServerModel,
+    AppServerModelReroutedUpdate, AppServerPermissionProfile, AppServerPlanStatus,
+    AppServerPromptCompletion, AppServerPromptEvent, AppServerSkill, AppServerThread,
+    AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
+    AppServerWarningUpdate, ThreadSettingsUpdateParams, decode_error,
+    decode_mcp_server_startup_status_updated, decode_model_rerouted, decode_thread_archived,
     decode_thread_closed, decode_thread_deleted, decode_thread_goal_cleared,
     decode_thread_goal_updated, decode_thread_name_updated, decode_thread_settings_updated,
     decode_thread_status_changed, decode_thread_unarchived, decode_warning,
@@ -539,6 +540,19 @@ impl CodexAcpAgent {
                 }
                 let session_id = SessionId::new(update.thread_id.clone());
                 publish_agent_message(&session_id, model_rerouted_message(&update), cx)
+                    .map_err(acp_internal_error)?;
+            }
+            "mcpServer/startupStatus/updated" => {
+                let update = decode_mcp_server_startup_status_updated(&params)
+                    .map_err(acp_internal_error)?;
+                let Some(thread_id) = update.thread_id.as_ref() else {
+                    return Ok(());
+                };
+                if self.active_prompts.lock().await.contains_key(thread_id) {
+                    return Ok(());
+                }
+                let session_id = SessionId::new(thread_id.clone());
+                publish_agent_message(&session_id, mcp_startup_status_message(&update), cx)
                     .map_err(acp_internal_error)?;
             }
             _ => {}
@@ -3575,6 +3589,11 @@ fn send_prompt_event(
             session_id,
             SessionUpdate::AgentMessageChunk(text_chunk(model_rerouted_message(&update))),
         ),
+        AppServerPromptEvent::McpServerStartupStatus(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(mcp_startup_status_message(&update))),
+        ),
         AppServerPromptEvent::SkillsChanged | AppServerPromptEvent::ThreadSettingsUpdated(_) => {
             Ok(())
         }
@@ -3820,6 +3839,18 @@ fn model_rerouted_message(update: &AppServerModelReroutedUpdate) -> String {
         update.to_model,
         json_value_label(&update.reason)
     )
+}
+
+fn mcp_startup_status_message(update: &AppServerMcpServerStartupStatusUpdate) -> String {
+    let status = json_value_label(&serde_json::Value::String(update.status.clone()));
+    let mut message = format!("MCP server `{}` startup status: {status}.", update.name);
+    if let Some(error) = update.error.as_deref()
+        && !error.trim().is_empty()
+    {
+        message.push_str("\n\n");
+        message.push_str(error);
+    }
+    message
 }
 
 fn json_value_label(value: &serde_json::Value) -> String {

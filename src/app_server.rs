@@ -780,7 +780,8 @@ impl AppServerClient {
                 | "thread/tokenUsage/updated"
                 | "warning"
                 | "error"
-                | "model/rerouted" => {
+                | "model/rerouted"
+                | "mcpServer/startupStatus/updated" => {
                     if let Some(event) = decode_prompt_event(
                         method.as_str(),
                         &params,
@@ -1932,6 +1933,7 @@ pub enum AppServerPromptEvent {
     Warning(AppServerWarningUpdate),
     Error(AppServerErrorUpdate),
     ModelRerouted(AppServerModelReroutedUpdate),
+    McpServerStartupStatus(AppServerMcpServerStartupStatusUpdate),
 }
 
 pub enum AppServerHistoryEvent {
@@ -2202,6 +2204,14 @@ pub struct AppServerModelReroutedUpdate {
     pub reason: Value,
 }
 
+#[derive(Debug, Clone)]
+pub struct AppServerMcpServerStartupStatusUpdate {
+    pub thread_id: Option<String>,
+    pub name: String,
+    pub status: String,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ThreadArchivedNotification {
@@ -2281,6 +2291,16 @@ struct ModelReroutedNotification {
     from_model: String,
     to_model: String,
     reason: Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpServerStartupStatusUpdatedNotification {
+    thread_id: Option<String>,
+    name: String,
+    status: String,
+    #[serde(default)]
+    error: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2418,6 +2438,13 @@ fn decode_prompt_event(
                 return Ok(None);
             }
             Ok(Some(AppServerPromptEvent::ModelRerouted(update)))
+        }
+        "mcpServer/startupStatus/updated" => {
+            let update = decode_mcp_server_startup_status_updated(params)?;
+            if update.thread_id.as_deref() != Some(active_thread_id) {
+                return Ok(None);
+            }
+            Ok(Some(AppServerPromptEvent::McpServerStartupStatus(update)))
         }
         _ => Ok(None),
     }
@@ -2608,6 +2635,19 @@ pub fn decode_model_rerouted(params: &Value) -> anyhow::Result<AppServerModelRer
         from_model: notification.from_model,
         to_model: notification.to_model,
         reason: notification.reason,
+    })
+}
+
+pub fn decode_mcp_server_startup_status_updated(
+    params: &Value,
+) -> anyhow::Result<AppServerMcpServerStartupStatusUpdate> {
+    let notification: McpServerStartupStatusUpdatedNotification =
+        serde_json::from_value(params.clone())?;
+    Ok(AppServerMcpServerStartupStatusUpdate {
+        thread_id: notification.thread_id,
+        name: notification.name,
+        status: notification.status,
+        error: notification.error,
     })
 }
 
