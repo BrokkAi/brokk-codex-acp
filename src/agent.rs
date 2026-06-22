@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -7,20 +7,22 @@ use std::{
 use agent_client_protocol::schema::{
     AgentCapabilities, AvailableCommand, AvailableCommandInput, AvailableCommandsUpdate,
     CancelNotification, CloseSessionRequest, CloseSessionResponse, ConfigOptionUpdate,
-    ContentBlock, ContentChunk, DeleteSessionRequest, DeleteSessionResponse, ForkSessionRequest,
-    ForkSessionResponse, InitializeRequest, InitializeResponse, ListSessionsRequest,
-    ListSessionsResponse, LoadSessionRequest, LoadSessionResponse, NewSessionRequest,
-    NewSessionResponse, PermissionOption, PermissionOptionId, PermissionOptionKind, Plan,
-    PlanEntry, PlanEntryPriority, PlanEntryStatus, PromptCapabilities, PromptRequest,
-    PromptResponse, ProtocolVersion, RequestPermissionOutcome, RequestPermissionRequest,
-    ResumeSessionRequest, ResumeSessionResponse, SessionAdditionalDirectoriesCapabilities,
-    SessionCapabilities, SessionCloseCapabilities, SessionConfigOption,
-    SessionConfigOptionCategory, SessionConfigSelectOption, SessionDeleteCapabilities,
-    SessionForkCapabilities, SessionId, SessionInfo, SessionInfoUpdate, SessionListCapabilities,
-    SessionNotification, SessionResumeCapabilities, SessionUpdate, SetSessionConfigOptionRequest,
-    SetSessionConfigOptionResponse, StopReason, TextContent, ToolCall, ToolCallContent,
-    ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, UnstructuredCommandInput,
-    UsageUpdate,
+    ContentBlock, ContentChunk, CreateElicitationRequest, DeleteSessionRequest,
+    DeleteSessionResponse, ElicitationAction, ElicitationContentValue, ElicitationFormMode,
+    ElicitationMode, ElicitationSchema, ElicitationSessionScope, ElicitationUrlMode,
+    ForkSessionRequest, ForkSessionResponse, InitializeRequest, InitializeResponse,
+    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
+    NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionId,
+    PermissionOptionKind, Plan, PlanEntry, PlanEntryPriority, PlanEntryStatus, PromptCapabilities,
+    PromptRequest, PromptResponse, ProtocolVersion, RequestPermissionOutcome,
+    RequestPermissionRequest, ResumeSessionRequest, ResumeSessionResponse,
+    SessionAdditionalDirectoriesCapabilities, SessionCapabilities, SessionCloseCapabilities,
+    SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
+    SessionDeleteCapabilities, SessionForkCapabilities, SessionId, SessionInfo, SessionInfoUpdate,
+    SessionListCapabilities, SessionNotification, SessionResumeCapabilities, SessionUpdate,
+    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, StopReason, TextContent,
+    ToolCall, ToolCallContent, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind,
+    UnstructuredCommandInput, UsageUpdate,
 };
 use agent_client_protocol::{
     Agent, ByteStreams, Client, ConnectTo, ConnectionTo, Error, on_receive_notification,
@@ -37,12 +39,13 @@ use crate::app_server::{
     AppServerApprovalResponseKind, AppServerClient, AppServerCollaborationMode,
     AppServerCollaborationModeMask, AppServerCollaborationModeSettings,
     AppServerConfigWarningUpdate, AppServerErrorUpdate, AppServerFuzzyFileSearchUpdate,
-    AppServerHistoryEvent, AppServerMcpServerOAuthLoginCompletedUpdate,
-    AppServerMcpServerStartupStatusUpdate, AppServerMessage, AppServerModel,
-    AppServerModelReroutedUpdate, AppServerModelVerificationUpdate, AppServerPermissionProfile,
-    AppServerPlanStatus, AppServerPromptCompletion, AppServerPromptEvent,
-    AppServerRealtimeAudioDelta, AppServerRealtimeUpdate, AppServerSkill, AppServerThread,
-    AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
+    AppServerHistoryEvent, AppServerInteractiveRequest, AppServerMcpElicitationRequest,
+    AppServerMcpServerOAuthLoginCompletedUpdate, AppServerMcpServerStartupStatusUpdate,
+    AppServerMessage, AppServerModel, AppServerModelReroutedUpdate,
+    AppServerModelVerificationUpdate, AppServerPermissionProfile, AppServerPlanStatus,
+    AppServerPromptCompletion, AppServerPromptEvent, AppServerRealtimeAudioDelta,
+    AppServerRealtimeUpdate, AppServerSkill, AppServerThread, AppServerThreadSettingsUpdate,
+    AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
     AppServerTurnModerationMetadataUpdate, AppServerWarningUpdate,
     AppServerWindowsSandboxSetupUpdate, ThreadSettingsUpdateParams, decode_account_login_completed,
     decode_account_rate_limits_updated, decode_account_updated, decode_config_warning,
@@ -1049,7 +1052,7 @@ impl CodexAcpAgent {
             .app_server
             .lock()
             .await
-            .turn_start_until_complete(
+            .turn_start_until_complete_with_interactive(
                 thread_id.to_owned(),
                 input,
                 Some(cancel_rx),
@@ -1070,6 +1073,7 @@ impl CodexAcpAgent {
                         outstanding_approvals.clone(),
                     )
                 },
+                |request| request_interactive(cx, session_id.to_owned(), request),
             )
             .await
             .map_err(acp_internal_error);
@@ -3887,6 +3891,103 @@ async fn request_permission(
 
     outstanding_approvals.lock().await.remove(&approval_key);
     Ok(decision)
+}
+
+async fn request_interactive(
+    cx: &ConnectionTo<Client>,
+    session_id: SessionId,
+    request: AppServerInteractiveRequest,
+) -> anyhow::Result<Option<serde_json::Value>> {
+    match request {
+        AppServerInteractiveRequest::McpElicitation(request) => {
+            request_mcp_elicitation(cx, session_id, request).await
+        }
+    }
+}
+
+async fn request_mcp_elicitation(
+    cx: &ConnectionTo<Client>,
+    session_id: SessionId,
+    request: AppServerMcpElicitationRequest,
+) -> anyhow::Result<Option<serde_json::Value>> {
+    let Some(elicitation_request) = acp_elicitation_request(&session_id, &request) else {
+        return Ok(None);
+    };
+
+    match cx.send_request(elicitation_request).block_task().await {
+        Ok(response) => Ok(Some(app_server_elicitation_response(response.action))),
+        Err(error) => {
+            debug!(
+                server_name = %request.server_name,
+                mode = %request.mode,
+                %error,
+                "ACP client did not complete elicitation request; using app-server fallback"
+            );
+            Ok(None)
+        }
+    }
+}
+
+fn acp_elicitation_request(
+    session_id: &SessionId,
+    request: &AppServerMcpElicitationRequest,
+) -> Option<CreateElicitationRequest> {
+    let scope = ElicitationSessionScope::new(session_id.clone());
+    let mode = match request.mode.as_str() {
+        "form" | "openai/form" => {
+            let schema = request.requested_schema.as_ref().and_then(|schema| {
+                serde_json::from_value::<ElicitationSchema>(schema.clone()).ok()
+            })?;
+            ElicitationMode::Form(ElicitationFormMode::new(scope, schema))
+        }
+        "url" => {
+            let elicitation_id = request.elicitation_id.as_ref()?;
+            let url = request.url.as_ref()?;
+            ElicitationMode::Url(ElicitationUrlMode::new(
+                scope,
+                elicitation_id.clone(),
+                url.clone(),
+            ))
+        }
+        _ => return None,
+    };
+
+    Some(CreateElicitationRequest::new(mode, request.message.clone()))
+}
+
+fn app_server_elicitation_response(action: ElicitationAction) -> serde_json::Value {
+    match action {
+        ElicitationAction::Accept(action) => serde_json::json!({
+            "action": "accept",
+            "content": action.content.map(elicitation_content_map_to_json),
+        }),
+        ElicitationAction::Decline => serde_json::json!({
+            "action": "decline",
+            "content": null,
+        }),
+        ElicitationAction::Cancel => serde_json::json!({
+            "action": "cancel",
+            "content": null,
+        }),
+        _ => serde_json::json!({
+            "action": "cancel",
+            "content": null,
+        }),
+    }
+}
+
+fn elicitation_content_map_to_json(
+    content: BTreeMap<String, ElicitationContentValue>,
+) -> serde_json::Value {
+    serde_json::Value::Object(
+        content
+            .into_iter()
+            .map(|(key, value)| {
+                let value = serde_json::to_value(value).unwrap_or(serde_json::Value::Null);
+                (key, value)
+            })
+            .collect(),
+    )
 }
 
 fn approval_cancel_key(session_id: &SessionId, item_id: &str) -> String {

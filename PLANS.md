@@ -200,10 +200,12 @@ The current repository has the first working ACP/app-server bridge in place:
 - Server-initiated request handling:
   - `currentTime/read` -> JSON-RPC response with the adapter host's current
     Unix timestamp in seconds.
-  - `mcpServer/elicitation/request`, `tool/requestUserInput`,
-    `item/tool/requestUserInput`, and `item/tool/call` -> explicit
-    cancel/empty/failure fallback responses when no ACP-compatible rich UI is
-    available.
+  - `mcpServer/elicitation/request` -> ACP `elicitation/create` for supported
+    form and URL elicitations, with explicit cancel fallback responses when the
+    ACP client cannot answer.
+  - `tool/requestUserInput`, `item/tool/requestUserInput`, and
+    `item/tool/call` -> explicit empty/failure fallback responses when no
+    ACP-compatible rich UI is available.
   - `attestation/generate` -> explicit JSON-RPC failure when app-server asks
     unexpectedly; the adapter does not advertise or provide attestation tokens.
   - Unsupported server-initiated app-server requests receive a JSON-RPC
@@ -380,7 +382,9 @@ Tasks:
   elicitation, dynamic tool requests, and `request_user_input` when no
   ACP-compatible UI is available, plus explicit JSON-RPC errors for unsupported
   app-server requests.
-- [ ] Add rich ACP UI bridging for MCP elicitation and dynamic tool requests.
+- [x] Add rich ACP UI bridging for MCP elicitation.
+- [ ] Add rich ACP UI bridging for dynamic tool and request-user-input
+  requests.
 - [ ] Add terminal embedding once ACP terminal creation is wired.
 
 Acceptance criteria:
@@ -400,7 +404,9 @@ Acceptance criteria:
   app-server.
 - [x] Unknown server-initiated app-server requests receive explicit JSON-RPC
   errors instead of blocking app-server.
-- [ ] MCP elicitation and dynamic tool requests route through a rich ACP
+- [x] MCP elicitation routes through ACP `elicitation/create` when the client
+  can answer it.
+- [ ] Dynamic tool and request-user-input requests route through a rich ACP
   request surface when one is available.
 
 ### Milestone B: Skills Catalog and Invocation
@@ -894,7 +900,8 @@ app-server item id -> ACP tool call id / message stream id
 | `turn/plan/updated` | `plan` | Send the full plan every time. |
 | `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` | `session/request_permission` | Implemented for simple decisions; rich command `availableDecisions` such as exec-policy and network-policy amendments keep their original app-server payload under ACP option metadata and are returned unchanged when selected. App-server remains blocked until the ACP client answers. |
 | `item/permissions/requestApproval` | `session/request_permission` | Implemented for full requested-profile grants, rejection, generated partial-grant options for individual requested network/filesystem units scoped to turn/session, and readable request content. |
-| `mcpServer/elicitation/request`, `item/tool/call`, `tool/requestUserInput`, `item/tool/requestUserInput` | fallback response now; future ACP elicitation or extension request | Implemented as explicit cancel/empty/failure responses so app-server does not block. Rich ACP UI is still pending. |
+| `mcpServer/elicitation/request` | `elicitation/create` with cancel fallback | Implemented for form, `openai/form`, and URL elicitations; falls back to app-server cancel semantics when the ACP client cannot answer. |
+| `item/tool/call`, `tool/requestUserInput`, `item/tool/requestUserInput` | fallback response now; future ACP elicitation or extension request | Implemented as explicit empty/failure responses so app-server does not block. Rich ACP UI is still pending. |
 | `attestation/generate` | JSON-RPC error | Implemented as an explicit request failure because the adapter does not advertise or provide native attestation tokens. |
 | `skills/changed` | `available_commands_update` | Implemented through the background app-server notification dispatcher; re-runs app-server `skills/list` with `forceReload`. |
 | `thread/settings/updated` | `config_option_update` | Implemented through the background app-server notification dispatcher; refreshes model, collaboration-mode, and permission catalogs before publishing current options. |
@@ -1257,8 +1264,8 @@ When app-server emits a command or file-change approval request, the adapter now
 
 Remaining approval work:
 
-- Add rich MCP elicitation and dynamic tool request handling once the adapter
-  has an ACP-compatible elicitation surface.
+- Add rich dynamic tool request handling once the adapter has an ACP-compatible
+  request surface.
 
 Do not invent approval policies in the adapter. Policies should come from
 Codex config, app-server thread settings, or explicit ACP session options.
@@ -1495,9 +1502,9 @@ Manual flows:
 
 Keep PRs small enough to review against fake app-server tests.
 
-1. Rich MCP elicitation and dynamic tool request UI:
-   - map `mcpServer/elicitation/request`, `item/tool/call`, and
-     `item/tool/requestUserInput` to an ACP-compatible request surface
+1. Rich dynamic tool request UI:
+   - map `item/tool/call` and `item/tool/requestUserInput` to an
+     ACP-compatible request surface
    - preserve app-server blocking request semantics while waiting for the ACP
      client
    - keep the current cancel/empty/failure fallback for clients that cannot

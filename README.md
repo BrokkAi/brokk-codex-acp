@@ -65,6 +65,9 @@ The project currently includes:
   payload and are returned unchanged when selected.
 - Server-initiated `currentTime/read` requests are answered with the adapter
   host's current Unix timestamp so external-clock reminders do not block turns.
+- Server-initiated `mcpServer/elicitation/request` form and URL requests are
+  bridged to ACP `elicitation/create` when the client can answer them, with the
+  explicit cancel fallback preserved for clients without that surface.
 - Server-initiated `tool/requestUserInput` and `item/tool/requestUserInput`
   requests receive explicit empty-answer fallbacks when no rich ACP UI is
   available.
@@ -100,11 +103,11 @@ The project currently includes:
   `thread/status/changed`, `thread/goal/updated`, `thread/goal/cleared`, or
   `thread/settings/updated` notifications are observed.
 
-The adapter is not complete yet. Rich ACP UI for MCP elicitations, dynamic tool
-callbacks, and user-input requests, exact terminal embedding, native realtime
-audio playback, remaining slash command routing, plugin install/read actions,
-direct MCP resource/tool UI, and paginated/full-fidelity history replay are
-still planned work.
+The adapter is not complete yet. Rich ACP UI for dynamic tool callbacks and
+user-input requests, exact terminal embedding, native realtime audio playback,
+remaining slash command routing, plugin install/read actions, direct MCP
+resource/tool UI, and paginated/full-fidelity history replay are still planned
+work.
 
 ## Usage
 

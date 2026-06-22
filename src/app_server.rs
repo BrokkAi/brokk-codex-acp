@@ -515,10 +515,60 @@ impl AppServerClient {
         self.wait_for_turn_until_complete(
             messages_rx,
             thread_id,
-            Some(response.turn.id),
-            cancel_rx,
+            TurnWaitState {
+                active_turn_id: Some(response.turn.id),
+                cancel_rx,
+            },
             on_event,
             on_approval,
+            no_interactive_response,
+        )
+        .await
+    }
+
+    pub async fn turn_start_until_complete_with_interactive<
+        OnEvent,
+        OnApproval,
+        ApprovalFuture,
+        OnInteractive,
+        InteractiveFuture,
+    >(
+        &mut self,
+        thread_id: String,
+        input: Vec<AppServerTurnInput>,
+        cancel_rx: Option<oneshot::Receiver<()>>,
+        on_event: OnEvent,
+        on_approval: OnApproval,
+        on_interactive: OnInteractive,
+    ) -> anyhow::Result<AppServerPromptCompletion>
+    where
+        OnEvent: FnMut(AppServerPromptEvent) -> anyhow::Result<()>,
+        OnApproval: FnMut(AppServerApprovalRequest) -> ApprovalFuture,
+        ApprovalFuture: Future<Output = anyhow::Result<AppServerApprovalDecision>>,
+        OnInteractive: FnMut(AppServerInteractiveRequest) -> InteractiveFuture,
+        InteractiveFuture: Future<Output = anyhow::Result<Option<Value>>>,
+    {
+        let messages_rx = self.subscribe();
+        let response: TurnStartResponse = self
+            .request(
+                "turn/start",
+                TurnStartParams {
+                    thread_id: thread_id.clone(),
+                    input,
+                },
+            )
+            .await?;
+
+        self.wait_for_turn_until_complete(
+            messages_rx,
+            thread_id,
+            TurnWaitState {
+                active_turn_id: Some(response.turn.id),
+                cancel_rx,
+            },
+            on_event,
+            on_approval,
+            on_interactive,
         )
         .await
     }
@@ -548,10 +598,13 @@ impl AppServerClient {
         self.wait_for_turn_until_complete(
             messages_rx,
             thread_id,
-            Some(response.turn.id),
-            cancel_rx,
+            TurnWaitState {
+                active_turn_id: Some(response.turn.id),
+                cancel_rx,
+            },
             on_event,
             on_approval,
+            no_interactive_response,
         )
         .await
     }
@@ -581,10 +634,13 @@ impl AppServerClient {
         self.wait_for_turn_until_complete(
             messages_rx,
             thread_id,
-            None,
-            cancel_rx,
+            TurnWaitState {
+                active_turn_id: None,
+                cancel_rx,
+            },
             on_event,
             on_approval,
+            no_interactive_response,
         )
         .await
     }
@@ -616,30 +672,41 @@ impl AppServerClient {
         self.wait_for_turn_until_complete(
             messages_rx,
             thread_id,
-            None,
-            cancel_rx,
+            TurnWaitState {
+                active_turn_id: None,
+                cancel_rx,
+            },
             on_event,
             on_approval,
+            no_interactive_response,
         )
         .await
     }
 
-    async fn wait_for_turn_until_complete<OnEvent, OnApproval, ApprovalFuture>(
+    async fn wait_for_turn_until_complete<
+        OnEvent,
+        OnApproval,
+        ApprovalFuture,
+        OnInteractive,
+        InteractiveFuture,
+    >(
         &mut self,
         mut messages_rx: broadcast::Receiver<AppServerMessage>,
         thread_id: String,
-        active_turn_id: Option<String>,
-        cancel_rx: Option<oneshot::Receiver<()>>,
+        state: TurnWaitState,
         mut on_event: OnEvent,
         mut on_approval: OnApproval,
+        mut on_interactive: OnInteractive,
     ) -> anyhow::Result<AppServerPromptCompletion>
     where
         OnEvent: FnMut(AppServerPromptEvent) -> anyhow::Result<()>,
         OnApproval: FnMut(AppServerApprovalRequest) -> ApprovalFuture,
         ApprovalFuture: Future<Output = anyhow::Result<AppServerApprovalDecision>>,
+        OnInteractive: FnMut(AppServerInteractiveRequest) -> InteractiveFuture,
+        InteractiveFuture: Future<Output = anyhow::Result<Option<Value>>>,
     {
-        let mut active_turn_id = active_turn_id;
-        let mut cancel_rx = cancel_rx;
+        let mut active_turn_id = state.active_turn_id;
+        let mut cancel_rx = state.cancel_rx;
         let mut interrupt_requested = false;
         if let Some(active_turn_id) = active_turn_id.as_ref() {
             trace!(turn_id = %active_turn_id, "codex app-server turn started");
@@ -703,8 +770,15 @@ impl AppServerClient {
                             }
                         };
                         self.write_approval_response(id, approval, decision).await?;
-                    } else {
-                        if let Some(response) =
+                    } else if let Some(interactive) = decode_interactive_request(
+                        &method, &params, &thread_id,
+                    )
+                    .with_context(|| {
+                        format!("failed to decode app-server interactive request `{method}`")
+                    })? {
+                        if let Some(response) = on_interactive(interactive).await? {
+                            self.write_request_response(id, response).await?;
+                        } else if let Some(response) =
                             fallback_interactive_request_response(&method, &params)
                         {
                             self.write_request_response(id, response).await?;
@@ -717,6 +791,18 @@ impl AppServerClient {
                             let (code, message) = app_server_request_error(&method);
                             self.write_request_error(id, code, message).await?;
                         }
+                    } else if let Some(response) =
+                        fallback_interactive_request_response(&method, &params)
+                    {
+                        self.write_request_response(id, response).await?;
+                    } else {
+                        trace!(
+                            method,
+                            ?params,
+                            "rejecting unsupported app-server request during turn"
+                        );
+                        let (code, message) = app_server_request_error(&method);
+                        self.write_request_error(id, code, message).await?;
                     }
                     continue;
                 }
@@ -2024,6 +2110,11 @@ pub enum AppServerPromptCompletion {
     Cancelled,
 }
 
+struct TurnWaitState {
+    active_turn_id: Option<String>,
+    cancel_rx: Option<oneshot::Receiver<()>>,
+}
+
 #[derive(Debug, Clone)]
 pub struct AppServerApprovalRequest {
     pub item_id: String,
@@ -2032,6 +2123,24 @@ pub struct AppServerApprovalRequest {
     pub raw: Value,
     pub options: Vec<AppServerApprovalChoice>,
     pub response_kind: AppServerApprovalResponseKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum AppServerInteractiveRequest {
+    McpElicitation(AppServerMcpElicitationRequest),
+}
+
+#[derive(Debug, Clone)]
+pub struct AppServerMcpElicitationRequest {
+    pub raw: Value,
+    pub thread_id: String,
+    pub turn_id: Option<String>,
+    pub server_name: String,
+    pub mode: String,
+    pub message: String,
+    pub requested_schema: Option<Value>,
+    pub url: Option<String>,
+    pub elicitation_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -2927,6 +3036,38 @@ fn decode_approval_request(
     Ok(Some(request))
 }
 
+fn decode_interactive_request(
+    method: &str,
+    params: &Value,
+    active_thread_id: &str,
+) -> anyhow::Result<Option<AppServerInteractiveRequest>> {
+    match method {
+        "mcpServer/elicitation/request" => {
+            let thread_id = required_string(params, "threadId")?;
+            if thread_id != active_thread_id {
+                return Ok(None);
+            }
+            Ok(Some(AppServerInteractiveRequest::McpElicitation(
+                AppServerMcpElicitationRequest {
+                    raw: params.clone(),
+                    thread_id,
+                    turn_id: optional_string(params, "turnId"),
+                    server_name: required_string(params, "serverName")?,
+                    mode: string_field(params, "mode")
+                        .or_else(|| string_field(params, "type"))
+                        .context("missing `mode`")?,
+                    message: string_field(params, "message")
+                        .unwrap_or_else(|| "Additional input is required.".to_owned()),
+                    requested_schema: params.get("requestedSchema").cloned(),
+                    url: optional_string(params, "url"),
+                    elicitation_id: optional_string(params, "elicitationId"),
+                },
+            )))
+        }
+        _ => Ok(None),
+    }
+}
+
 pub fn decode_thread_settings_updated(
     params: &Value,
 ) -> anyhow::Result<AppServerThreadSettingsUpdate> {
@@ -3531,6 +3672,12 @@ fn fallback_interactive_request_response(method: &str, _params: &Value) -> Optio
     }
 }
 
+async fn no_interactive_response(
+    _request: AppServerInteractiveRequest,
+) -> anyhow::Result<Option<Value>> {
+    Ok(None)
+}
+
 fn app_server_request_error(method: &str) -> (i64, String) {
     match method {
         "attestation/generate" => (
@@ -3842,6 +3989,14 @@ fn decode_tool_status(item: &Value) -> Option<AppServerToolStatus> {
 
 fn item_id(item: &Value) -> Option<String> {
     string_field(item, "id")
+}
+
+fn required_string(value: &Value, field: &str) -> anyhow::Result<String> {
+    string_field(value, field).with_context(|| format!("missing `{field}`"))
+}
+
+fn optional_string(value: &Value, field: &str) -> Option<String> {
+    string_field(value, field)
 }
 
 fn string_field(value: &Value, field: &str) -> Option<String> {
