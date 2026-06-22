@@ -255,6 +255,22 @@ async fn serialized_bang_prompt_runs_shell_command_without_starting_turn() -> an
 }
 
 #[tokio::test]
+async fn serialized_close_interrupts_active_prompt_before_unsubscribe() -> anyhow::Result<()> {
+    let (close, messages) = run_serialized_close_during_prompt().await?;
+
+    assert!(close.get("error").is_none(), "close response: {close:#?}");
+    assert!(
+        messages.iter().any(|message| {
+            message.get("id").and_then(Value::as_u64) == Some(3)
+                && message["result"]["stopReason"] == "cancelled"
+        }),
+        "session/prompt response should be cancelled before close completes; messages: {messages:#?}"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Result<()> {
     for (command, expected_fragments) in [
         ("/apps", &["Apps: 1 entries", "- GitHub"][..]),
@@ -492,6 +508,110 @@ async fn run_serialized_load(session_id: &str) -> anyhow::Result<(Value, Vec<Val
     Ok((load, notifications))
 }
 
+async fn run_serialized_close_during_prompt() -> anyhow::Result<(Value, Vec<Value>)> {
+    let fake_codex = fake_codex_app_server(SERIALIZED_RENAME_CODEX_APP_SERVER)?;
+    let mut app_server =
+        AppServerClient::spawn(AppServerCommand::new(fake_codex.path().to_owned())).await?;
+    app_server
+        .initialize(
+            "brokk_codex_acp_test",
+            "Brokk Codex ACP Test",
+            env!("CARGO_PKG_VERSION"),
+        )
+        .await?;
+
+    let (agent_side, client_side) = tokio::io::duplex(64 * 1024);
+    let (agent_read, agent_write) = split(agent_side);
+    let agent_transport = ByteStreams::new(agent_write.compat_write(), agent_read.compat());
+    let agent_task = tokio::spawn(CodexAcpAgent::new(app_server).serve(agent_transport));
+
+    let (client_read, mut client_write) = split(client_side);
+    let mut client_read = BufReader::new(client_read);
+    let mut messages = Vec::new();
+
+    write_json(
+        &mut client_write,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": 1,
+                "clientCapabilities": {},
+            },
+        }),
+    )
+    .await?;
+    let initialize = read_response(&mut client_read, 1, &mut messages).await?;
+    assert_eq!(initialize["result"]["protocolVersion"], 1);
+
+    let cwd = tempfile::tempdir()?;
+    write_json(
+        &mut client_write,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "session/new",
+            "params": {
+                "cwd": cwd.path(),
+                "mcpServers": [],
+            },
+        }),
+    )
+    .await?;
+    let session = read_response(&mut client_read, 2, &mut messages).await?;
+    let session_id = session["result"]["sessionId"]
+        .as_str()
+        .expect("session/new should return a session id")
+        .to_owned();
+
+    write_json(
+        &mut client_write,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "session/prompt",
+            "params": {
+                "sessionId": session_id,
+                "prompt": [
+                    {
+                        "type": "text",
+                        "text": "close me",
+                    },
+                ],
+            },
+        }),
+    )
+    .await?;
+
+    let turn_started = read_json(&mut client_read).await?;
+    assert!(
+        turn_started["method"] == "session/update"
+            && turn_started["params"]["update"]["sessionUpdate"] == "agent_message_chunk"
+            && turn_started["params"]["update"]["content"]["text"] == "prompt started",
+        "unexpected turn-start marker: {turn_started:#?}"
+    );
+    messages.push(turn_started);
+
+    write_json(
+        &mut client_write,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "session/close",
+            "params": {
+                "sessionId": session_id,
+            },
+        }),
+    )
+    .await?;
+    let close = read_response(&mut client_read, 4, &mut messages).await?;
+
+    drop(client_write);
+    agent_task.abort();
+    Ok((close, messages))
+}
+
 async fn write_json(writer: &mut (impl AsyncWrite + Unpin), message: Value) -> anyhow::Result<()> {
     let mut line = serde_json::to_vec(&message)?;
     line.push(b'\n');
@@ -559,6 +679,7 @@ import json
 import sys
 
 thread_cwd = None
+interrupted_close_turn = False
 
 
 def response(message_id, payload):
@@ -842,6 +963,24 @@ for line in sys.stdin:
                 },
             },
         })
+    elif method == "turn/interrupt":
+        assert params == {
+            "threadId": "thread-serialized",
+            "turnId": "turn-close-serialized",
+        }
+        interrupted_close_turn = True
+        response(message_id, {"result": {}})
+        send({
+            "method": "turn/completed",
+            "params": {
+                "threadId": "thread-serialized",
+                "turn": {"id": "turn-close-serialized", "status": "cancelled"},
+            },
+        })
+    elif method == "thread/unsubscribe":
+        assert params == {"threadId": "thread-serialized"}
+        assert interrupted_close_turn
+        response(message_id, {"result": {"status": "ok"}})
     elif method == "thread/goal/set":
         assert params["threadId"] == "thread-serialized"
         assert params["objective"] == "Improve serialized coverage"
@@ -1099,6 +1238,28 @@ for line in sys.stdin:
                 "params": {
                     "threadId": "thread-serialized",
                     "turn": {"id": "turn-serialized-notifications", "status": "completed"},
+                },
+            })
+        elif params["input"] == [{"type": "text", "text": "close me"}]:
+            response(message_id, {
+                "result": {
+                    "turn": {"id": "turn-close-serialized", "status": "running"},
+                },
+            })
+            send({
+                "method": "turn/started",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turn": {"id": "turn-close-serialized", "status": "running"},
+                },
+            })
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-close-serialized",
+                    "itemId": "item-close",
+                    "delta": "prompt started",
                 },
             })
         else:

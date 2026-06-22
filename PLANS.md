@@ -663,6 +663,9 @@ thread/unsubscribe
 ACP v1 says close applies to an active session: cancel ongoing work as if
 `session/cancel` were called, then free resources. If `thread/unsubscribe` does
 not cancel active work by itself, interrupt the active turn before unsubscribing.
+The current implementation cancels the adapter's active prompt and outstanding
+permission requests for the session before calling `thread/unsubscribe`, which
+causes the active turn loop to issue `turn/interrupt` when a turn is running.
 
 Do not use close for archive or delete.
 
@@ -1417,13 +1420,12 @@ Manual flows:
 - [x] Add real app-server smoke tests.
 - [x] Add connection-disconnect cleanup for active prompts.
 - [x] Add connection-disconnect cleanup for outstanding approvals.
+- [x] Cancel active prompt turns and outstanding approvals during
+  `session/close` before unsubscribing.
 - [x] Add error mapping tests.
 
 ## Open Questions
 
-- Does `thread/unsubscribe` fully satisfy ACP `session/close`, including
-  cancelling ongoing work and freeing active resources, or must the adapter
-  explicitly interrupt first?
 - Should `/fork <prompt>` create a persistent fork, or should that behavior be
   reserved for `/side <prompt>` as an ephemeral fork?
 - Which ACP clients can represent app/plugin icons, descriptions, and install

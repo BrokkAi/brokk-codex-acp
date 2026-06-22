@@ -664,10 +664,13 @@ impl CodexAcpAgent {
         &self,
         request: CloseSessionRequest,
     ) -> Result<CloseSessionResponse, Error> {
+        let thread_id = request.session_id.0.to_string();
+        self.cancel_session_work(&request.session_id).await;
+
         self.app_server
             .lock()
             .await
-            .thread_unsubscribe(request.session_id.0.to_string())
+            .thread_unsubscribe(thread_id)
             .await
             .map_err(acp_internal_error)?;
 
@@ -680,9 +683,7 @@ impl CodexAcpAgent {
     ) -> Result<DeleteSessionResponse, Error> {
         let thread_id = request.session_id.0.to_string();
 
-        if let Some(cancel) = self.active_prompts.lock().await.remove(&thread_id) {
-            let _ = cancel.send(());
-        }
+        self.cancel_session_work(&request.session_id).await;
 
         self.app_server
             .lock()
@@ -906,15 +907,21 @@ impl CodexAcpAgent {
     }
 
     async fn cancel_session(&self, notification: CancelNotification) -> Result<(), Error> {
+        self.cancel_session_work(&notification.session_id).await;
+        Ok(())
+    }
+
+    async fn cancel_session_work(&self, session_id: &SessionId) {
         if let Some(cancel) = self
             .active_prompts
             .lock()
             .await
-            .remove(notification.session_id.0.as_ref())
+            .remove(session_id.0.as_ref())
         {
             let _ = cancel.send(());
         }
-        Ok(())
+
+        cancel_outstanding_approvals_for_session(&self.outstanding_approvals, session_id).await;
     }
 
     async fn prompt_input(&self, session_id: &SessionId, text: String) -> Vec<AppServerTurnInput> {
@@ -3536,6 +3543,29 @@ async fn cancel_outstanding_approvals(outstanding_approvals: &CancelSignals) -> 
     count
 }
 
+async fn cancel_outstanding_approvals_for_session(
+    outstanding_approvals: &CancelSignals,
+    session_id: &SessionId,
+) -> usize {
+    let prefix = format!("{}:", session_id.0.as_ref());
+    let approvals = {
+        let mut outstanding_approvals = outstanding_approvals.lock().await;
+        let keys = outstanding_approvals
+            .keys()
+            .filter(|key| key.starts_with(&prefix))
+            .cloned()
+            .collect::<Vec<_>>();
+        keys.into_iter()
+            .filter_map(|key| outstanding_approvals.remove(&key))
+            .collect::<Vec<_>>()
+    };
+    let count = approvals.len();
+    for cancel in approvals {
+        let _ = cancel.send(());
+    }
+    count
+}
+
 fn permission_option(option: AppServerApprovalOption) -> PermissionOption {
     PermissionOption::new(
         PermissionOptionId::new(option.id()),
@@ -4185,6 +4215,31 @@ mod tests {
         assert!(outstanding_approvals.lock().await.is_empty());
         assert!(first_rx.await.is_ok());
         assert!(second_rx.await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn cancel_outstanding_approvals_for_session_only_signals_matching_session() {
+        let outstanding_approvals = Arc::new(Mutex::new(HashMap::new()));
+        let (matching_tx, matching_rx) = oneshot::channel();
+        let (other_tx, mut other_rx) = oneshot::channel();
+        {
+            let mut outstanding_approvals = outstanding_approvals.lock().await;
+            outstanding_approvals.insert("thread-1:item-1".to_owned(), matching_tx);
+            outstanding_approvals.insert("thread-2:item-2".to_owned(), other_tx);
+        }
+
+        let cancelled = cancel_outstanding_approvals_for_session(
+            &outstanding_approvals,
+            &SessionId::new("thread-1"),
+        )
+        .await;
+
+        assert_eq!(cancelled, 1);
+        assert!(matching_rx.await.is_ok());
+        assert!(other_rx.try_recv().is_err());
+        let remaining = outstanding_approvals.lock().await;
+        assert!(remaining.contains_key("thread-2:item-2"));
+        assert!(!remaining.contains_key("thread-1:item-1"));
     }
 
     #[test]
