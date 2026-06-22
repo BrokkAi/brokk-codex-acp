@@ -1,10 +1,10 @@
 # Brokk Codex ACP
 
-> ⚠️ **Alpha — work in progress, expect a hot mess.** This is early,
-> incomplete, and unstable. Core features are missing, APIs and behavior will
-> change without notice, and things will break. It is **not** ready for
-> production use. Use at your own risk, pin a specific version, and don't be
-> surprised by sharp edges. Feedback and issues are welcome.
+> ⚠️ **Alpha — work in progress.** This adapter now covers the core ACP to
+> `codex app-server` bridge, but both Codex app-server and the ACP projection
+> are still evolving. APIs and behavior may change before a stable release.
+> Use at your own risk, pin a specific version, and expect sharp edges.
+> Feedback and issues are welcome.
 
 Brokk Codex ACP is an Agent Client Protocol server for Codex.
 
@@ -18,10 +18,11 @@ See [PLANS.md](PLANS.md) for the implementation plan.
 
 ## Status
 
-**Alpha / pre-0.1 in spirit.** This is an early, rough adapter under active
-construction. Large parts of the ACP surface are stubbed or unimplemented, error
-handling is thin, there is little test coverage, and breaking changes should be
-expected on every release until this stabilizes.
+**Alpha.** The adapter has a working app-server-backed ACP serving path with
+session lifecycle, turn streaming, approvals, skills, app/plugin/MCP catalog
+commands, config options, and history replay. It is still stabilizing against
+Codex app-server API changes and ACP extension decisions, so breaking changes
+should be expected until a stable release.
 
 The project currently includes:
 

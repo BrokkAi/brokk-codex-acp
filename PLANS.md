@@ -388,10 +388,25 @@ app-server command output and terminal interaction events today; true
 `terminal/create` embedding should only be added if app-server exposes a
 client-terminal handoff for commands it does not execute itself.
 
-## Immediate Roadmap
+## Remaining Roadmap
 
-The next work should stay focused on making normal Codex turns feel real in an
-ACP client before expanding into catalogs and slash commands.
+The adapter now has the core app-server bridge, session lifecycle, turn
+streaming, approvals, skills, catalogs, config options, and most backend slash
+commands in place. Remaining work should focus on hardening the integration
+rather than adding ACP-incompatible product UI surfaces.
+
+- Keep this plan aligned with the current upstream `codex app-server` README
+  and generated schema as app-server APIs evolve.
+- Add first-class ACP projections for newly observed persisted history item
+  variants instead of relying on generic raw diagnostics.
+- Expand real-app-server smoke coverage beyond initialization and basic
+  catalogs, especially for session lifecycle, a simple text turn, and history
+  load.
+- Add release/install verification for the packaged binary artifacts and
+  crates.io dry-run path.
+- Revisit deferred surfaces only when ACP or the hosting product has a clear
+  capability contract for them, such as active-turn steering, remote
+  environments, client-supplied dynamic tools, or realtime audio playback.
 
 ## Release Strategy
 
