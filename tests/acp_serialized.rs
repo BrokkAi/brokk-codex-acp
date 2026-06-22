@@ -169,6 +169,12 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
         "session updates: {session_updates:#?}"
     );
     assert!(
+        session_updates.iter().any(|update| {
+            update["sessionUpdate"] == "agent_thought_chunk" && update["content"]["text"] == "\n\n"
+        }),
+        "session updates: {session_updates:#?}"
+    );
+    assert!(
         session_updates
             .iter()
             .any(|update| update["sessionUpdate"] == "plan"),
@@ -1807,6 +1813,16 @@ for line in sys.stdin:
                     "turnId": "turn-serialized-notifications",
                     "itemId": "reasoning-1",
                     "delta": "thinking",
+                    "summaryIndex": 0,
+                },
+            })
+            send({
+                "method": "item/reasoning/summaryPartAdded",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "itemId": "reasoning-1",
+                    "summaryIndex": 1,
                 },
             })
             send({

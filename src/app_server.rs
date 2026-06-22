@@ -971,6 +971,7 @@ impl AppServerClient {
                 | "item/completed"
                 | "item/commandExecution/outputDelta"
                 | "item/reasoning/summaryTextDelta"
+                | "item/reasoning/summaryPartAdded"
                 | "item/reasoning/textDelta"
                 | "turn/diff/updated"
                 | "turn/plan/updated"
@@ -3078,6 +3079,14 @@ fn decode_prompt_event(
             .get("delta")
             .and_then(Value::as_str)
             .map(|delta| AppServerPromptEvent::AgentThoughtDelta(delta.to_owned()))),
+        "item/reasoning/summaryPartAdded" => {
+            let summary_index = params
+                .get("summaryIndex")
+                .and_then(Value::as_u64)
+                .unwrap_or_default();
+            Ok((summary_index > 0)
+                .then(|| AppServerPromptEvent::AgentThoughtDelta("\n\n".to_owned())))
+        }
         "turn/diff/updated" => {
             let Some(turn_id) =
                 string_field(params, "turnId").or_else(|| active_turn_id.map(str::to_owned))

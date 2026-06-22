@@ -45,8 +45,9 @@ The project currently includes:
   Codex app-server `turn/start` inputs. Embedded resources are passed through
   app-server `additionalContext`; audio prompt blocks remain unsupported until
   app-server exposes a matching user-input variant.
-- Initial turn event projection for reasoning chunks, command/file/tool item
-  lifecycles, command output, plan updates, turn diffs, and usage updates.
+- Initial turn event projection for reasoning chunks and summary boundaries,
+  command/file/tool item lifecycles, command output, plan updates, turn diffs,
+  and usage updates.
 - Initial skills discovery through app-server `skills/list`, projected as ACP
   available commands for enabled skills alongside adapter-owned commands.
 - Structured `$skill-name` and `/skill skill-name` invocation when app-server

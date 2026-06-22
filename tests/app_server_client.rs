@@ -462,6 +462,7 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         events,
         vec![
             "thought:thinking",
+            "thought:\n\n",
             "plan:1",
             "tool-started:cmd-1:cargo test",
             "tool-updated:cmd-1",
@@ -1973,6 +1974,16 @@ for line in sys.stdin:
                     "turnId": "turn-1",
                     "itemId": "reasoning-1",
                     "delta": "thinking",
+                    "summaryIndex": 0,
+                },
+            })
+            send({
+                "method": "item/reasoning/summaryPartAdded",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "reasoning-1",
+                    "summaryIndex": 1,
                 },
             })
             send({
