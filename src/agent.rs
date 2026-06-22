@@ -85,6 +85,7 @@ const DYNAMIC_TOOL_CALL_METHOD: &str = "_brokk_codex_acp/dynamic_tool_call";
 const ARCHIVE_COMMAND: &str = "archive";
 const APPS_COMMAND: &str = "apps";
 const COMPACT_COMMAND: &str = "compact";
+const CONFIG_COMMAND: &str = "config";
 const DELETE_COMMAND: &str = "delete";
 const FEATURE_COMMAND: &str = "feature";
 const FEATURES_COMMAND: &str = "features";
@@ -1279,6 +1280,25 @@ impl CodexAcpAgent {
                     .await
                     .map_err(acp_internal_error)?;
                 publish_catalog_message(session_id, "Apps", catalog_summary("Apps", &response), cx)
+            }
+            BuiltinCommand::Config { cwd } => {
+                let cwd = match cwd {
+                    Some(cwd) => Some(cwd),
+                    None => self.session_cwd(session_id).await,
+                };
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .config_read(cwd.clone(), true)
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(
+                    session_id,
+                    "Config",
+                    config_summary(cwd.as_deref(), &response),
+                    cx,
+                )
             }
             BuiltinCommand::Delete => {
                 self.cancel_session_work(session_id).await;
@@ -2983,6 +3003,9 @@ enum BuiltinCommand {
     Archive,
     Apps,
     Compact,
+    Config {
+        cwd: Option<String>,
+    },
     Delete,
     Feature {
         name: String,
@@ -3080,6 +3103,7 @@ enum CommandHandler {
     Archive,
     Apps,
     Compact,
+    Config,
     Delete,
     Feature,
     Features,
@@ -3147,6 +3171,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: None,
         availability: CommandAvailability::RequiresNoActiveTurn,
         handler: CommandHandler::Compact,
+    },
+    BuiltinCommandSpec {
+        name: CONFIG_COMMAND,
+        aliases: &[],
+        description: "Show effective Codex configuration",
+        input_hint: Some("optional cwd"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Config,
     },
     BuiltinCommandSpec {
         name: DELETE_COMMAND,
@@ -3450,6 +3482,7 @@ fn parse_command_from_spec(
         CommandHandler::Compact => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Compact)
         }
+        CommandHandler::Config => parse_config_command(rest),
         CommandHandler::Delete => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Delete)
         }
@@ -3536,6 +3569,13 @@ fn parse_no_argument_command(
         );
     }
     Ok(Some(command))
+}
+
+fn parse_config_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
+    let cwd = rest.trim();
+    Ok(Some(BuiltinCommand::Config {
+        cwd: (!cwd.is_empty()).then(|| cwd.to_owned()),
+    }))
 }
 
 fn parse_memory_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
@@ -5697,6 +5737,41 @@ fn catalog_summary(title: &str, value: &serde_json::Value) -> String {
     lines.join("\n")
 }
 
+fn config_summary(cwd: Option<&str>, value: &serde_json::Value) -> String {
+    let config = value.get("config").unwrap_or(value);
+    let mut lines = vec!["Config: effective values".to_owned()];
+    if let Some(cwd) = cwd {
+        lines.push(format!("- CWD: {cwd}"));
+    }
+
+    for (label, key) in [
+        ("Model", "model"),
+        ("Model provider", "model_provider"),
+        ("Reasoning effort", "model_reasoning_effort"),
+        ("Reasoning summary", "model_reasoning_summary"),
+        ("Service tier", "service_tier"),
+        ("Approval policy", "approval_policy"),
+        ("Approvals reviewer", "approvals_reviewer"),
+        ("Sandbox mode", "sandbox_mode"),
+        ("Web search", "web_search"),
+    ] {
+        if let Some(field) = config.get(key)
+            && !field.is_null()
+        {
+            lines.push(format!("- {label}: {}", compact_json(field)));
+        }
+    }
+
+    if let Some(origins) = value.get("origins").and_then(serde_json::Value::as_object) {
+        lines.push(format!("- Origins: {} entries", origins.len()));
+    }
+    if let Some(layers) = value.get("layers").and_then(serde_json::Value::as_array) {
+        lines.push(format!("- Layers: {} entries", layers.len()));
+    }
+
+    lines.join("\n")
+}
+
 fn experimental_features_summary(
     response: &crate::app_server::ExperimentalFeatureListResponse,
 ) -> String {
@@ -6419,6 +6494,7 @@ mod tests {
     fn parse_builtin_command_recognizes_catalog_commands() {
         for text in [
             "/apps",
+            "/config /repo with spaces",
             "/delete",
             "/feature memories enable",
             "/features",
@@ -6449,6 +6525,11 @@ mod tests {
             let command = parse_builtin_command(text).unwrap().unwrap();
             match text {
                 "/apps" => assert!(matches!(command, BuiltinCommand::Apps)),
+                "/config /repo with spaces" => assert!(matches!(
+                    command,
+                    BuiltinCommand::Config { cwd }
+                        if cwd.as_deref() == Some("/repo with spaces")
+                )),
                 "/delete" => assert!(matches!(command, BuiltinCommand::Delete)),
                 "/feature memories enable" => assert!(matches!(
                     command,
@@ -6965,6 +7046,7 @@ mod tests {
                 "archive",
                 "apps",
                 "compact",
+                "config",
                 "delete",
                 "feature",
                 "features",

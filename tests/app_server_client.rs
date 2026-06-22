@@ -773,6 +773,11 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     let apps = client.app_list().await?;
     assert_eq!(apps["data"][0]["displayName"], "GitHub");
 
+    let config = client.config_read(Some("/repo".to_string()), true).await?;
+    assert_eq!(config["config"]["model"], "gpt-5-codex");
+    assert_eq!(config["config"]["sandbox_mode"], "workspace-write");
+    assert_eq!(config["layers"].as_array().map(Vec::len), Some(1));
+
     let plugins = client.plugin_list().await?;
     assert_eq!(plugins["data"][0]["name"], "github");
 
@@ -1614,6 +1619,32 @@ for line in sys.stdin:
                     "displayName": "GitHub",
                     "connectorId": "github",
                     "isAccessible": True,
+                },
+            ],
+        })
+    elif method == "config/read":
+        assert params == {
+            "cwd": "/repo",
+            "includeLayers": True,
+        }
+        response(message_id, {
+            "config": {
+                "model": "gpt-5-codex",
+                "model_provider": "openai",
+                "approval_policy": "on-request",
+                "sandbox_mode": "workspace-write",
+            },
+            "origins": {
+                "model": {
+                    "name": {"type": "user", "file": "/codex/config.toml"},
+                    "version": "sha256:model",
+                },
+            },
+            "layers": [
+                {
+                    "name": {"type": "user", "file": "/codex/config.toml"},
+                    "version": "sha256:user",
+                    "config": {"model": "gpt-5-codex"},
                 },
             ],
         })

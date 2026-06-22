@@ -385,6 +385,21 @@ impl AppServerClient {
         self.request("app/list", EmptyParams {}).await
     }
 
+    pub async fn config_read(
+        &mut self,
+        cwd: Option<String>,
+        include_layers: bool,
+    ) -> anyhow::Result<Value> {
+        self.request(
+            "config/read",
+            ConfigReadParams {
+                cwd,
+                include_layers,
+            },
+        )
+        .await
+    }
+
     pub async fn experimental_feature_list(
         &mut self,
         thread_id: String,
@@ -1877,6 +1892,14 @@ pub struct SkillsExtraRootsSetResponse {}
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct EmptyParams {}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConfigReadParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cwd: Option<String>,
+    include_layers: bool,
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

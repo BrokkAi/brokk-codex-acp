@@ -805,6 +805,17 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
     for (command, expected_fragments) in [
         ("/apps", &["Apps: 1 entries", "- GitHub"][..]),
         (
+            "/config /repo",
+            &[
+                "Config: effective values",
+                "- CWD: /repo",
+                "- Model: \"gpt-5-codex\"",
+                "- Sandbox mode: \"workspace-write\"",
+                "- Origins: 1 entries",
+                "- Layers: 1 entries",
+            ],
+        ),
+        (
             "/features",
             &[
                 "Features: 2 entries",
@@ -1454,6 +1465,34 @@ for line in sys.stdin:
                         "displayName": "GitHub",
                         "connectorId": "github",
                         "isAccessible": True,
+                    },
+                ],
+            },
+        })
+    elif method == "config/read":
+        assert params == {
+            "cwd": "/repo",
+            "includeLayers": True,
+        }
+        response(message_id, {
+            "result": {
+                "config": {
+                    "model": "gpt-5-codex",
+                    "model_provider": "openai",
+                    "approval_policy": "on-request",
+                    "sandbox_mode": "workspace-write",
+                },
+                "origins": {
+                    "model": {
+                        "name": {"type": "user", "file": "/codex/config.toml"},
+                        "version": "sha256:model",
+                    },
+                },
+                "layers": [
+                    {
+                        "name": {"type": "user", "file": "/codex/config.toml"},
+                        "version": "sha256:user",
+                        "config": {"model": "gpt-5-codex"},
                     },
                 ],
             },
