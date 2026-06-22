@@ -3377,7 +3377,7 @@ fn fallback_interactive_request_response(method: &str, _params: &Value) -> Optio
             "content": null,
             "_meta": null,
         })),
-        "item/tool/requestUserInput" => Some(json!({
+        "item/tool/requestUserInput" | "tool/requestUserInput" => Some(json!({
             "answers": {},
         })),
         "item/tool/call" => Some(json!({
@@ -4022,6 +4022,12 @@ mod tests {
         assert_eq!(
             fallback_interactive_request_response("item/tool/requestUserInput", &json!({}))
                 .unwrap(),
+            json!({
+                "answers": {},
+            })
+        );
+        assert_eq!(
+            fallback_interactive_request_response("tool/requestUserInput", &json!({})).unwrap(),
             json!({
                 "answers": {},
             })

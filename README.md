@@ -65,6 +65,9 @@ The project currently includes:
   payload and are returned unchanged when selected.
 - Server-initiated `currentTime/read` requests are answered with the adapter
   host's current Unix timestamp so external-clock reminders do not block turns.
+- Server-initiated `tool/requestUserInput` and `item/tool/requestUserInput`
+  requests receive explicit empty-answer fallbacks when no rich ACP UI is
+  available.
 - Unsupported server-initiated app-server requests receive explicit JSON-RPC
   method-not-found errors instead of being silently ignored.
 - Unexpected `attestation/generate` requests receive an explicit JSON-RPC

@@ -676,6 +676,13 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         run_text_turn_and_collect_messages(&mut client, "user input callback").await?;
     assert_eq!(user_input_summaries, vec!["message:empty user input"]);
 
+    let top_level_user_input_summaries =
+        run_text_turn_and_collect_messages(&mut client, "top-level user input callback").await?;
+    assert_eq!(
+        top_level_user_input_summaries,
+        vec!["message:empty top-level user input"]
+    );
+
     let dynamic_tool_summaries =
         run_text_turn_and_collect_messages(&mut client, "dynamic tool callback").await?;
     assert_eq!(dynamic_tool_summaries, vec!["message:failed dynamic tool"]);
@@ -2183,6 +2190,48 @@ for line in sys.stdin:
                 "params": {
                     "threadId": "thread-1",
                     "turn": {"id": "turn-user-input", "status": "completed"},
+                },
+            })
+        elif params["input"] == [{"type": "text", "text": "top-level user input callback"}]:
+            response(message_id, {"turn": {"id": "turn-top-level-user-input", "status": "running"}})
+            send({
+                "id": "top-level-user-input-request-1",
+                "method": "tool/requestUserInput",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-top-level-user-input",
+                    "questions": [
+                        {
+                            "id": "confirm",
+                            "header": "Confirm",
+                            "question": "Proceed?",
+                            "options": [
+                                {"label": "Yes", "description": "Continue"},
+                                {"label": "No", "description": "Stop"},
+                            ],
+                        },
+                    ],
+                },
+            })
+            top_level_user_input_response = json.loads(sys.stdin.readline())
+            assert top_level_user_input_response == {
+                "id": "top-level-user-input-request-1",
+                "result": {"answers": {}},
+            }
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-top-level-user-input",
+                    "itemId": "item-top-level-user-input",
+                    "delta": "empty top-level user input",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {"id": "turn-top-level-user-input", "status": "completed"},
                 },
             })
         elif params["input"] == [{"type": "text", "text": "dynamic tool callback"}]:

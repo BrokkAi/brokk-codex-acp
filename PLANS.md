@@ -200,9 +200,10 @@ The current repository has the first working ACP/app-server bridge in place:
 - Server-initiated request handling:
   - `currentTime/read` -> JSON-RPC response with the adapter host's current
     Unix timestamp in seconds.
-  - `mcpServer/elicitation/request`, `item/tool/requestUserInput`, and
-    `item/tool/call` -> explicit cancel/empty/failure fallback responses when
-    no ACP-compatible rich UI is available.
+  - `mcpServer/elicitation/request`, `tool/requestUserInput`,
+    `item/tool/requestUserInput`, and `item/tool/call` -> explicit
+    cancel/empty/failure fallback responses when no ACP-compatible rich UI is
+    available.
   - `attestation/generate` -> explicit JSON-RPC failure when app-server asks
     unexpectedly; the adapter does not advertise or provide attestation tokens.
   - Unsupported server-initiated app-server requests receive a JSON-RPC
@@ -888,7 +889,7 @@ app-server item id -> ACP tool call id / message stream id
 | `turn/plan/updated` | `plan` | Send the full plan every time. |
 | `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` | `session/request_permission` | Implemented for simple decisions; rich command `availableDecisions` such as exec-policy and network-policy amendments keep their original app-server payload under ACP option metadata and are returned unchanged when selected. App-server remains blocked until the ACP client answers. |
 | `item/permissions/requestApproval` | `session/request_permission` | Implemented for full requested-profile grants scoped to turn/session and rejection. Partial grants are still pending. |
-| `mcpServer/elicitation/request`, `item/tool/call`, `item/tool/requestUserInput` | fallback response now; future ACP elicitation or extension request | Implemented as explicit cancel/empty/failure responses so app-server does not block. Rich ACP UI is still pending. |
+| `mcpServer/elicitation/request`, `item/tool/call`, `tool/requestUserInput`, `item/tool/requestUserInput` | fallback response now; future ACP elicitation or extension request | Implemented as explicit cancel/empty/failure responses so app-server does not block. Rich ACP UI is still pending. |
 | `attestation/generate` | JSON-RPC error | Implemented as an explicit request failure because the adapter does not advertise or provide native attestation tokens. |
 | `skills/changed` | `available_commands_update` | Implemented through the background app-server notification dispatcher; re-runs app-server `skills/list` with `forceReload`. |
 | `thread/settings/updated` | `config_option_update` | Implemented through the background app-server notification dispatcher; refreshes model, collaboration-mode, and permission catalogs before publishing current options. |
