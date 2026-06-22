@@ -37,9 +37,9 @@ The project currently includes:
 - `session/fork` is exposed through the ACP Rust crate's unstable RFD/extension
   feature, not as stable ACP v1 behavior.
 - `session/list` preserves app-server thread preview, status, recency, model
-  provider, agent, and parent-thread metadata under `_meta.brokk_codex_acp`,
-  and reports previously observed additional directories from adapter state
-  persisted under Codex home.
+  provider, agent, session, path, ephemeral, fork, and parent-thread metadata
+  under `_meta.brokk_codex_acp`, and reports previously observed additional
+  directories from adapter state persisted under Codex home.
 - Initial prompt streaming from Codex `item/agentMessage/delta` notifications to
   ACP agent message chunks.
 - Text, resource-link, embedded resource, and image prompt blocks routed to

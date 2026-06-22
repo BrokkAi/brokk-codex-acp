@@ -109,6 +109,18 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         listed.data[0].parent_thread_id.as_deref(),
         Some("thread-parent")
     );
+    assert_eq!(listed.data[0].session_id.as_deref(), Some("session-root"));
+    assert_eq!(
+        listed.data[0].path.as_deref(),
+        Some(std::path::Path::new(
+            "/tmp/fake-codex-home/sessions/thread-1.jsonl"
+        ))
+    );
+    assert_eq!(listed.data[0].ephemeral, Some(false));
+    assert_eq!(
+        listed.data[0].forked_from_id.as_deref(),
+        Some("thread-source")
+    );
 
     client
         .thread_name_set("thread-1".to_string(), "Renamed Thread".to_string())
@@ -1601,7 +1613,10 @@ for line in sys.stdin:
             "data": [
                 {
                     "id": "thread-1",
+                    "sessionId": "session-root",
                     "cwd": "/repo",
+                    "path": "/tmp/fake-codex-home/sessions/thread-1.jsonl",
+                    "ephemeral": False,
                     "name": "Started Thread",
                     "preview": "Started preview",
                     "status": {"type": "notLoaded"},
@@ -1612,6 +1627,7 @@ for line in sys.stdin:
                     "agentNickname": "Codex",
                     "agentRole": "primary",
                     "parentThreadId": "thread-parent",
+                    "forkedFromId": "thread-source",
                 }
             ],
             "nextCursor": None,

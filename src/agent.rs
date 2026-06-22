@@ -5402,6 +5402,9 @@ fn session_info_meta_from_app_server_thread(
 ) -> Option<serde_json::Map<String, serde_json::Value>> {
     let mut adapter_meta = serde_json::Map::new();
 
+    insert_optional_string(&mut adapter_meta, "sessionId", thread.session_id.as_ref());
+    insert_optional_path(&mut adapter_meta, "path", thread.path.as_ref());
+    insert_optional_bool(&mut adapter_meta, "ephemeral", thread.ephemeral);
     insert_optional_string(&mut adapter_meta, "preview", thread.preview.as_ref());
     insert_optional_value(&mut adapter_meta, "threadStatus", thread.status.as_ref());
     insert_optional_string(
@@ -5423,6 +5426,11 @@ fn session_info_meta_from_app_server_thread(
         "parentThreadId",
         thread.parent_thread_id.as_ref(),
     );
+    insert_optional_string(
+        &mut adapter_meta,
+        "forkedFromId",
+        thread.forked_from_id.as_ref(),
+    );
 
     if adapter_meta.is_empty() {
         None
@@ -5433,6 +5441,29 @@ fn session_info_meta_from_app_server_thread(
             serde_json::Value::Object(adapter_meta),
         );
         Some(meta)
+    }
+}
+
+fn insert_optional_path(
+    meta: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    value: Option<&PathBuf>,
+) {
+    if let Some(value) = value {
+        meta.insert(
+            key.to_owned(),
+            serde_json::Value::String(value.to_string_lossy().into_owned()),
+        );
+    }
+}
+
+fn insert_optional_bool(
+    meta: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    value: Option<bool>,
+) {
+    if let Some(value) = value {
+        meta.insert(key.to_owned(), serde_json::Value::Bool(value));
     }
 }
 
@@ -9286,7 +9317,12 @@ mod tests {
         let session = session_info_from_app_server_thread(
             AppServerThread {
                 id: "thread-1".to_owned(),
+                session_id: Some("session-root".to_owned()),
                 cwd: Some(std::path::PathBuf::from("/repo")),
+                path: Some(std::path::PathBuf::from(
+                    "/tmp/fake-codex-home/sessions/thread-1.jsonl",
+                )),
+                ephemeral: Some(false),
                 turns: Vec::new(),
                 name: None,
                 preview: Some("Recent work summary".to_owned()),
@@ -9298,6 +9334,7 @@ mod tests {
                 agent_nickname: Some("Codex".to_owned()),
                 agent_role: Some("primary".to_owned()),
                 parent_thread_id: Some("thread-parent".to_owned()),
+                forked_from_id: Some("thread-source".to_owned()),
             },
             vec![std::path::PathBuf::from("/shared")],
         )
@@ -9324,6 +9361,13 @@ mod tests {
         assert_eq!(adapter_meta["modelProvider"], "openai");
         assert_eq!(adapter_meta["updatedAt"], 1_700_000_100);
         assert_eq!(adapter_meta["parentThreadId"], "thread-parent");
+        assert_eq!(adapter_meta["sessionId"], "session-root");
+        assert_eq!(
+            adapter_meta["path"],
+            "/tmp/fake-codex-home/sessions/thread-1.jsonl"
+        );
+        assert_eq!(adapter_meta["ephemeral"], false);
+        assert_eq!(adapter_meta["forkedFromId"], "thread-source");
     }
 
     #[test]

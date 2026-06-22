@@ -121,8 +121,8 @@ The current repository has the first working ACP/app-server bridge in place:
     by `thread/resume`.
   - `session/resume`
   - `session/list`, including preservation of app-server thread preview,
-    status, recency, model-provider, agent, and parent-thread metadata under
-    `_meta.brokk_codex_acp`.
+    status, recency, model-provider, agent, session, path, ephemeral, fork, and
+    parent-thread metadata under `_meta.brokk_codex_acp`.
   - `session/close`
   - `session/fork` through the Rust crate extension, not stable ACP v1.
   - `session/delete` through the Rust crate's `unstable_session_delete` feature,
@@ -813,8 +813,9 @@ Return:
 - title/name if available
 - ACP `updatedAt` converted from app-server Unix seconds to an ISO 8601 UTC
   timestamp when app-server provides `updatedAt`
-- app-server preview, status, model-provider, timestamp, recency, agent, and
-  parent-thread fields under `_meta.brokk_codex_acp`
+- app-server preview, status, model-provider, timestamp, recency, agent,
+  session, path, ephemeral, fork, and parent-thread fields under
+  `_meta.brokk_codex_acp`
 - adapter-specific archived/deleted metadata only under `_meta`; stable
   `SessionInfo` has no first-class archive field.
 

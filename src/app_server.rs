@@ -1894,7 +1894,13 @@ pub struct ThreadListResponse {
 pub struct AppServerThread {
     pub id: String,
     #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default)]
     pub cwd: Option<PathBuf>,
+    #[serde(default)]
+    pub path: Option<PathBuf>,
+    #[serde(default)]
+    pub ephemeral: Option<bool>,
     #[serde(default)]
     pub turns: Vec<AppServerTurnHistory>,
     #[serde(default)]
@@ -1917,6 +1923,8 @@ pub struct AppServerThread {
     pub agent_role: Option<String>,
     #[serde(default)]
     pub parent_thread_id: Option<String>,
+    #[serde(default)]
+    pub forked_from_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
