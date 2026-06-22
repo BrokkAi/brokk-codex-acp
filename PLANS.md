@@ -240,13 +240,14 @@ The current repository has the first working ACP/app-server bridge in place:
     ACP permission options and preserves app-server's blocking request
     semantics while awaiting the ACP client.
 - Slash commands:
-  - built-in `account`, `archive`, `apps`, `compact`, `config`, `delete`,
-    `feature`, `features`, `fork`, `goal`, `hooks`, `init`, `kill`,
-    `marketplace-add`, `marketplace-remove`, `memory`, `mcp`, `mcp-reload`,
-    `model`, `new`, `permissions`, `plan`, `plugins`, `ps`, `rate-limits`,
-    `rename`, `resume`, `review`, `rollback`, `skill-roots`, `status`, `stop`,
-    `unarchive`, `usage`, and `workspace-messages` commands are published
-    through ACP `available_commands_update` alongside enabled skills.
+  - built-in `account`, `archive`, `apps`, `compact`, `config`,
+    `config-requirements`, `delete`, `feature`, `features`, `fork`, `goal`,
+    `hooks`, `init`, `kill`, `marketplace-add`, `marketplace-remove`,
+    `memory`, `mcp`, `mcp-reload`, `model`, `new`, `permissions`, `plan`,
+    `plugins`, `ps`, `rate-limits`, `rename`, `resume`, `review`, `rollback`,
+    `skill-roots`, `status`, `stop`, `unarchive`, `usage`, and
+    `workspace-messages` commands are published through ACP
+    `available_commands_update` alongside enabled skills.
   - `/archive` is intercepted by the adapter, mapped to `thread/archive`, and
     reflected to ACP clients through `session_info_update._meta`.
   - `/unarchive` is intercepted by the adapter, mapped to `thread/unarchive`,
@@ -257,6 +258,9 @@ The current repository has the first working ACP/app-server bridge in place:
     adapter waits for `turn/started` to learn the active turn id.
   - `/config [cwd]` is intercepted by the adapter, mapped to `config/read`,
     and reflected as a short ACP agent-message summary of effective settings.
+  - `/config-requirements` is intercepted by the adapter, mapped to
+    `configRequirements/read`, and reflected as a short ACP agent-message
+    summary of managed constraints.
   - `/fork` is intercepted by the adapter, mapped to `thread/fork`, initializes
     adapter state for the returned thread/session id, and reports the new
     session id as an ACP agent-message summary.
@@ -507,24 +511,26 @@ client behavior, not model prompts.
 Tasks:
 
 - [x] Add an initial parser for leading slash commands, currently `/account`,
-  `/archive`, `/apps`, `/compact`, `/config`, `/delete`, `/feature`,
-  `/features`, `/fork`, `/goal`, `/hooks`, `/init`, `/kill`, `/marketplace-add`,
-  `/marketplace-remove`, `/memory`, `/mcp`, `/mcp-reload`, `/model`, `/new`,
-  `/permissions`, `/plan`, `/plugins`, `/ps`, `/rate-limits`, `/rename`,
-  `/resume`, `/review`, `/rollback`, `/skill-roots`, `/status`, `/stop`,
-  `/unarchive`, `/usage`, and `/workspace-messages`.
+  `/archive`, `/apps`, `/compact`, `/config`, `/config-requirements`,
+  `/delete`, `/feature`, `/features`, `/fork`, `/goal`, `/hooks`, `/init`,
+  `/kill`, `/marketplace-add`, `/marketplace-remove`, `/memory`, `/mcp`,
+  `/mcp-reload`, `/model`, `/new`, `/permissions`, `/plan`, `/plugins`, `/ps`,
+  `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
+  `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
+  `/workspace-messages`.
 - [x] Build the full command registry with aliases, availability, required
   active turn state, and handler metadata.
 - [x] Publish adapter-owned ACP available commands plus skills.
 - Implement backend commands first: `/new`, `/resume`, `/review`,
   `/compact`, `/rename`, `/model`, `/permissions`, `/mcp`, `/apps`,
   `/plugins`, `/hooks`, and `/status`. Implemented so far: `/account`,
-  `/archive`, `/apps`, `/compact`, `/config`, `/delete`, `/feature`,
-  `/features`, `/fork`, `/goal`, `/hooks`, `/init`, `/kill`, `/marketplace-add`,
-  `/marketplace-remove`, `/memory`, `/mcp`, `/mcp-reload`, `/model`, `/new`,
-  `/permissions`, `/plan`, `/plugins`, `/ps`, `/rate-limits`, `/rename`,
-  `/resume`, `/review`, `/rollback`, `/skill-roots`, `/status`, `/stop`,
-  `/unarchive`, `/usage`, and `/workspace-messages`. `/fork` is implemented only as an extension command
+  `/archive`, `/apps`, `/compact`, `/config`, `/config-requirements`,
+  `/delete`, `/feature`, `/features`, `/fork`, `/goal`, `/hooks`, `/init`,
+  `/kill`, `/marketplace-add`, `/marketplace-remove`, `/memory`, `/mcp`,
+  `/mcp-reload`, `/model`, `/new`, `/permissions`, `/plan`, `/plugins`, `/ps`,
+  `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
+  `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
+  `/workspace-messages`. `/fork` is implemented only as an extension command
   backed by Codex `thread/fork`, not as required ACP v1 behavior.
 - [x] Return explicit unsupported-command responses for slash commands that are
   not currently handled by the adapter. `/skill ...` remains a supported
@@ -1026,6 +1032,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/goal ...` | `thread/goal/*` `[implemented for get, clear, and objective updates]` |
 | `/plan` | `thread/settings/update` with collaboration mode `[implemented]` |
 | `/config [cwd]` | `config/read` `[implemented as summary]` |
+| `/config-requirements` | `configRequirements/read` `[implemented as summary]` |
 | `/account` | `account/read` `[implemented as summary]` |
 | `/model` | `model/list` plus ACP config-option refresh `[implemented]` |
 | `/permissions` | `permissionProfile/list` plus ACP config-option refresh `[implemented]` |
@@ -1265,6 +1272,8 @@ model prompts:
 - [x] `/apps` calls `app/list` and returns an ACP agent-message summary.
 - [x] `/config [cwd]` calls `config/read` and returns an ACP agent-message
   summary.
+- [x] `/config-requirements` calls `configRequirements/read` and returns an ACP
+  agent-message summary.
 - [x] `/account` calls `account/read` and returns an ACP agent-message summary.
 - [x] `/plugins` calls `plugin/list` and `plugin/installed` and returns an ACP
   agent-message summary.
@@ -1540,6 +1549,7 @@ Manual flows:
 - [x] Implement `/compact`.
 - [x] Implement `/init`.
 - [x] Implement `/rename`.
+- [x] Implement `/config-requirements`.
 - [x] Implement `/archive`.
 - [x] Implement `/rollback`.
 - [x] Implement `/goal`.
@@ -1603,6 +1613,7 @@ Manual flows:
 - [x] Add apps/plugins/MCP commands.
 - [x] Add MCP config reload command.
 - [x] Add effective config display.
+- [x] Add config requirements display.
 - [x] Add marketplace add/remove commands.
 - [x] Add account status display.
 - [x] Add experimental feature flag display.

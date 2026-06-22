@@ -57,7 +57,8 @@ The project currently includes:
 - App-server `skills/extraRoots/set` mapping through `/skill-roots <paths...>`;
   roots are process-local and not persisted by Codex app-server.
 - Initial slash-command routing for `/rename <title>`, `/archive`, `/goal`,
-  `/compact`, `/config [cwd]`, `/review`, `/init`, `/new`, `/resume`,
+  `/compact`, `/config [cwd]`, `/config-requirements`, `/review`, `/init`,
+  `/new`, `/resume`,
   `/fork`, `/delete`, `/account`, `/apps`, `/plugins`,
   `/plugin <pluginName@marketplacePath>`,
   `/plugin-install <pluginName@marketplacePath>`,

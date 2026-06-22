@@ -826,6 +826,16 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             ],
         ),
         (
+            "/config-requirements",
+            &[
+                "Config requirements: managed constraints",
+                "- Allowed approval policies: [\"on-request\",\"never\"]",
+                "- Allowed sandbox modes: [\"workspace-write\"]",
+                "- Allow remote control: false",
+                "- Network: {\"managedAllowedDomainsOnly\":true}",
+            ],
+        ),
+        (
             "/rate-limits",
             &[
                 "Rate limits: current account",
@@ -1541,6 +1551,28 @@ for line in sys.stdin:
                         "config": {"model": "gpt-5-codex"},
                     },
                 ],
+            },
+        })
+    elif method == "configRequirements/read":
+        assert params == {}
+        response(message_id, {
+            "result": {
+                "requirements": {
+                    "allowedApprovalPolicies": ["on-request", "never"],
+                    "allowedSandboxModes": ["workspace-write"],
+                    "allowedPermissionProfiles": {
+                        "trusted": True,
+                        "untrusted": False,
+                    },
+                    "defaultPermissions": "trusted",
+                    "allowRemoteControl": False,
+                    "featureRequirements": {
+                        "remote_control": False,
+                    },
+                    "network": {
+                        "managedAllowedDomainsOnly": True,
+                    },
+                },
             },
         })
     elif method == "account/read":

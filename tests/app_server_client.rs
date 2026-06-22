@@ -778,6 +778,16 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     assert_eq!(config["config"]["sandbox_mode"], "workspace-write");
     assert_eq!(config["layers"].as_array().map(Vec::len), Some(1));
 
+    let config_requirements = client.config_requirements_read().await?;
+    assert_eq!(
+        config_requirements["requirements"]["allowedApprovalPolicies"][0],
+        "on-request"
+    );
+    assert_eq!(
+        config_requirements["requirements"]["allowRemoteControl"],
+        false
+    );
+
     let account = client.account_read(false).await?;
     assert_eq!(account["account"]["type"], "chatgpt");
     assert_eq!(account["account"]["email"], "user@example.com");
@@ -1670,6 +1680,26 @@ for line in sys.stdin:
                     "config": {"model": "gpt-5-codex"},
                 },
             ],
+        })
+    elif method == "configRequirements/read":
+        assert params == {}
+        response(message_id, {
+            "requirements": {
+                "allowedApprovalPolicies": ["on-request", "never"],
+                "allowedSandboxModes": ["workspace-write"],
+                "allowedPermissionProfiles": {
+                    "trusted": True,
+                    "untrusted": False,
+                },
+                "defaultPermissions": "trusted",
+                "allowRemoteControl": False,
+                "featureRequirements": {
+                    "remote_control": False,
+                },
+                "network": {
+                    "managedAllowedDomainsOnly": True,
+                },
+            },
         })
     elif method == "account/read":
         assert params == {

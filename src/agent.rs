@@ -87,6 +87,7 @@ const ARCHIVE_COMMAND: &str = "archive";
 const APPS_COMMAND: &str = "apps";
 const COMPACT_COMMAND: &str = "compact";
 const CONFIG_COMMAND: &str = "config";
+const CONFIG_REQUIREMENTS_COMMAND: &str = "config-requirements";
 const DELETE_COMMAND: &str = "delete";
 const FEATURE_COMMAND: &str = "feature";
 const FEATURES_COMMAND: &str = "features";
@@ -1312,6 +1313,21 @@ impl CodexAcpAgent {
                     session_id,
                     "Config",
                     config_summary(cwd.as_deref(), &response),
+                    cx,
+                )
+            }
+            BuiltinCommand::ConfigRequirements => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .config_requirements_read()
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(
+                    session_id,
+                    "Config requirements",
+                    config_requirements_summary(&response),
                     cx,
                 )
             }
@@ -3076,6 +3092,7 @@ enum BuiltinCommand {
     Config {
         cwd: Option<String>,
     },
+    ConfigRequirements,
     Delete,
     Feature {
         name: String,
@@ -3179,6 +3196,7 @@ enum CommandHandler {
     Apps,
     Compact,
     Config,
+    ConfigRequirements,
     Delete,
     Feature,
     Features,
@@ -3266,6 +3284,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: Some("optional cwd"),
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::Config,
+    },
+    BuiltinCommandSpec {
+        name: CONFIG_REQUIREMENTS_COMMAND,
+        aliases: &[],
+        description: "Show managed Codex configuration requirements",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::ConfigRequirements,
     },
     BuiltinCommandSpec {
         name: DELETE_COMMAND,
@@ -3605,6 +3631,9 @@ fn parse_command_from_spec(
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Compact)
         }
         CommandHandler::Config => parse_config_command(rest),
+        CommandHandler::ConfigRequirements => {
+            parse_no_argument_command(rest, spec.name, BuiltinCommand::ConfigRequirements)
+        }
         CommandHandler::Delete => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Delete)
         }
@@ -5904,6 +5933,53 @@ fn config_summary(cwd: Option<&str>, value: &serde_json::Value) -> String {
     lines.join("\n")
 }
 
+fn config_requirements_summary(value: &serde_json::Value) -> String {
+    let mut lines = vec!["Config requirements: managed constraints".to_owned()];
+    let Some(requirements) = value.get("requirements") else {
+        if !value.is_null() {
+            lines.push(format!("- Response: {}", compact_json(value)));
+        }
+        return lines.join("\n");
+    };
+    if requirements.is_null() {
+        lines.push("- Requirements: none configured".to_owned());
+        return lines.join("\n");
+    }
+
+    for (label, key) in [
+        ("Allowed approval policies", "allowedApprovalPolicies"),
+        ("Allowed approvals reviewers", "allowedApprovalsReviewers"),
+        ("Allowed sandbox modes", "allowedSandboxModes"),
+        (
+            "Allowed Windows sandbox implementations",
+            "allowedWindowsSandboxImplementations",
+        ),
+        ("Allowed web search modes", "allowedWebSearchModes"),
+        ("Allowed permission profiles", "allowedPermissionProfiles"),
+        ("Default permissions", "defaultPermissions"),
+        ("Allow managed hooks only", "allowManagedHooksOnly"),
+        ("Allow appshots", "allowAppshots"),
+        ("Allow remote control", "allowRemoteControl"),
+        ("Computer use", "computerUse"),
+        ("Feature requirements", "featureRequirements"),
+        ("Hooks", "hooks"),
+        ("Enforce residency", "enforceResidency"),
+        ("Network", "network"),
+    ] {
+        if let Some(field) = requirements.get(key)
+            && !field.is_null()
+        {
+            lines.push(format!("- {label}: {}", compact_json(field)));
+        }
+    }
+
+    if lines.len() == 1 {
+        lines.push(format!("- Requirements: {}", compact_json(requirements)));
+    }
+
+    lines.join("\n")
+}
+
 fn account_summary(value: &serde_json::Value) -> String {
     let mut lines = vec!["Account: current status".to_owned()];
 
@@ -6784,6 +6860,7 @@ mod tests {
             "/account",
             "/apps",
             "/config /repo with spaces",
+            "/config-requirements",
             "/delete",
             "/feature memories enable",
             "/features",
@@ -6824,6 +6901,9 @@ mod tests {
                     BuiltinCommand::Config { cwd }
                         if cwd.as_deref() == Some("/repo with spaces")
                 )),
+                "/config-requirements" => {
+                    assert!(matches!(command, BuiltinCommand::ConfigRequirements))
+                }
                 "/delete" => assert!(matches!(command, BuiltinCommand::Delete)),
                 "/feature memories enable" => assert!(matches!(
                     command,
@@ -7348,6 +7428,7 @@ mod tests {
                 "apps",
                 "compact",
                 "config",
+                "config-requirements",
                 "delete",
                 "feature",
                 "features",
@@ -7425,6 +7506,33 @@ mod tests {
         assert_eq!(
             summary,
             "Account: current status\n- Requires OpenAI auth: true\n- Auth mode: Chatgpt\n- Email: \"user@example.com\"\n- Plan type: \"pro\""
+        );
+    }
+
+    #[test]
+    fn config_requirements_summary_lists_managed_constraints() {
+        let summary = config_requirements_summary(&serde_json::json!({
+            "requirements": {
+                "allowedApprovalPolicies": ["on-request", "never"],
+                "allowedSandboxModes": ["workspace-write"],
+                "allowedPermissionProfiles": {
+                    "trusted": true,
+                    "untrusted": false
+                },
+                "defaultPermissions": "trusted",
+                "allowRemoteControl": false,
+                "featureRequirements": {
+                    "remote_control": false
+                },
+                "network": {
+                    "managedAllowedDomainsOnly": true
+                }
+            }
+        }));
+
+        assert_eq!(
+            summary,
+            "Config requirements: managed constraints\n- Allowed approval policies: [\"on-request\",\"never\"]\n- Allowed sandbox modes: [\"workspace-write\"]\n- Allowed permission profiles: {\"trusted\":true,\"untrusted\":false}\n- Default permissions: \"trusted\"\n- Allow remote control: false\n- Feature requirements: {\"remote_control\":false}\n- Network: {\"managedAllowedDomainsOnly\":true}"
         );
     }
 

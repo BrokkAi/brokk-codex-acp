@@ -400,6 +400,11 @@ impl AppServerClient {
         .await
     }
 
+    pub async fn config_requirements_read(&mut self) -> anyhow::Result<Value> {
+        self.request("configRequirements/read", EmptyParams {})
+            .await
+    }
+
     pub async fn account_read(&mut self, refresh_token: bool) -> anyhow::Result<Value> {
         self.request("account/read", AccountReadParams { refresh_token })
             .await
