@@ -1133,6 +1133,36 @@ async fn app_server_client_maps_error_responses() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn history_replay_preserves_unknown_items_as_diagnostics() {
+    let turn = AppServerTurnHistory {
+        id: "turn-unknown".to_owned(),
+        items: vec![serde_json::json!({
+            "id": "unknown-item",
+            "type": "futureItem",
+            "status": "completed",
+            "payload": {
+                "summary": "new app-server item"
+            }
+        })],
+    };
+
+    let summaries = history_events_for_thread_turns(&[turn]);
+    assert_eq!(summaries.len(), 1);
+    assert!(
+        summaries[0].starts_with(
+            "message:Unsupported Codex history item `futureItem`: {\"id\":\"unknown-item\""
+        ),
+        "unexpected diagnostic: {}",
+        summaries[0]
+    );
+    assert!(
+        summaries[0].contains("\"summary\":\"new app-server item\""),
+        "diagnostic should include the raw persisted item: {}",
+        summaries[0]
+    );
+}
+
 async fn run_text_turn_and_collect_messages(
     client: &mut AppServerClient,
     text: &str,

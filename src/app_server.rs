@@ -4902,8 +4902,21 @@ fn history_events_for_item(turn_id: &str, item: &Value) -> Vec<AppServerHistoryE
             .map(Box::new)
             .map(AppServerHistoryEvent::PromptEvent)
             .collect(),
-        _ => Vec::new(),
+        _ => unknown_history_item_event(item_type, item)
+            .map(AppServerPromptEvent::AgentMessageDelta)
+            .map(Box::new)
+            .map(AppServerHistoryEvent::PromptEvent)
+            .into_iter()
+            .collect(),
     }
+}
+
+fn unknown_history_item_event(item_type: &str, item: &Value) -> Option<AppServerAgentMessageDelta> {
+    let raw = serde_json::to_string(item).ok()?;
+    Some(AppServerAgentMessageDelta {
+        item_id: item_id(item),
+        delta: format!("Unsupported Codex history item `{item_type}`: {raw}"),
+    })
 }
 
 fn tool_history_events(item: &Value) -> Vec<AppServerPromptEvent> {

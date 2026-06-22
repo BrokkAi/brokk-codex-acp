@@ -102,9 +102,21 @@ async fn serialized_load_replays_history_before_response() -> anyhow::Result<()>
         replay_updates,
         [
             "user_message_chunk:loaded hello",
+            "agent_message_chunk:Unsupported Codex history item `futureItem`: {\"id\":\"load-future\",\"type\":\"futureItem\",\"status\":\"completed\",\"payload\":{\"summary\":\"new persisted item\"}}",
             "agent_message_chunk:loaded response"
         ],
         "notifications before session/load response: {notifications:#?}"
+    );
+    assert!(
+        notifications.iter().any(|notification| {
+            let update = &notification["params"]["update"];
+            update["sessionUpdate"] == "agent_message_chunk"
+                && update["messageId"] == "load-future"
+                && update["content"]["text"].as_str().is_some_and(|text| {
+                    text.contains("Unsupported Codex history item `futureItem`")
+                })
+        }),
+        "unknown history item replay did not preserve a diagnostic message id: {notifications:#?}"
     );
     assert!(
         notifications.iter().any(|notification| {
@@ -1632,6 +1644,14 @@ for line in sys.stdin:
                                             "diff": "@@ -1 +1 @@",
                                         },
                                     ],
+                                },
+                                {
+                                    "id": "load-future",
+                                    "type": "futureItem",
+                                    "status": "completed",
+                                    "payload": {
+                                        "summary": "new persisted item",
+                                    },
                                 },
                                 {
                                     "type": "agentMessage",
