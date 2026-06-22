@@ -2440,6 +2440,7 @@ pub enum AppServerTurnInput {
     Text { text: String },
     Image { url: String },
     Skill { name: String, path: String },
+    Mention { name: String, path: String },
 }
 
 #[derive(Clone, Debug, Default)]

@@ -31,7 +31,7 @@ use agent_client_protocol::{
     on_receive_request,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::sync::{Mutex, broadcast, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{debug, trace, warn};
@@ -1239,6 +1239,10 @@ impl CodexAcpAgent {
             return input;
         };
         let text = text.clone();
+        if !prompt_contains_structured_reference(&text) {
+            input.input = vec![AppServerTurnInput::Text { text }];
+            return input;
+        }
 
         let Some(cwd) = self
             .session_cwds
@@ -1259,8 +1263,41 @@ impl CodexAcpAgent {
             .cloned()
             .unwrap_or_default();
 
-        input.input = prompt_input_with_skills(text, &skills);
+        let skill_input = prompt_input_with_skills(text.clone(), &skills);
+        if !matches!(skill_input.as_slice(), [AppServerTurnInput::Text { .. }]) {
+            input.input = skill_input;
+            return input;
+        }
+
+        input.input = self.prompt_input_with_mentions(text).await;
         input
+    }
+
+    async fn prompt_input_with_mentions(&self, text: String) -> Vec<AppServerTurnInput> {
+        let mut app_server = self.app_server.lock().await;
+        let apps = match app_server.app_list().await {
+            Ok(apps) => apps,
+            Err(error) => {
+                warn!(
+                    ?error,
+                    "failed to refresh app catalog for prompt mention lookup"
+                );
+                Value::Null
+            }
+        };
+        let plugins = match app_server.plugin_installed().await {
+            Ok(plugins) => plugins,
+            Err(error) => {
+                warn!(
+                    ?error,
+                    "failed to refresh installed plugin catalog for prompt mention lookup"
+                );
+                Value::Null
+            }
+        };
+        drop(app_server);
+
+        prompt_input_with_app_plugin_mentions(text, &apps, &plugins)
     }
 
     async fn run_builtin_command(
@@ -3130,6 +3167,165 @@ fn prompt_input_with_skills(text: String, skills: &[AppServerSkill]) -> Vec<AppS
             path,
         },
     ]
+}
+
+fn prompt_input_with_app_plugin_mentions(
+    text: String,
+    apps: &Value,
+    plugins: &Value,
+) -> Vec<AppServerTurnInput> {
+    let references = prompt_reference_tokens(&text);
+    if references.is_empty() {
+        return vec![AppServerTurnInput::Text { text }];
+    }
+
+    let mut mentions = Vec::new();
+    let mut seen_paths = HashSet::new();
+    for mention in app_mentions_for_tokens(apps, &references)
+        .into_iter()
+        .chain(plugin_mentions_for_tokens(plugins, &references))
+    {
+        if seen_paths.insert(mention.path.clone()) {
+            mentions.push(AppServerTurnInput::Mention {
+                name: mention.name,
+                path: mention.path,
+            });
+        }
+    }
+
+    if mentions.is_empty() {
+        return vec![AppServerTurnInput::Text { text }];
+    }
+
+    let mut input = vec![AppServerTurnInput::Text { text }];
+    input.extend(mentions);
+    input
+}
+
+fn prompt_contains_structured_reference(text: &str) -> bool {
+    text.split_whitespace()
+        .any(|token| matches!(token.as_bytes().first(), Some(b'$' | b'@')))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PromptReference {
+    prefix: char,
+    name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PromptMention {
+    name: String,
+    path: String,
+}
+
+fn prompt_reference_tokens(text: &str) -> Vec<PromptReference> {
+    text.split_whitespace()
+        .filter_map(|token| {
+            let prefix = token.chars().next()?;
+            if prefix != '$' && prefix != '@' {
+                return None;
+            }
+            let name = trim_reference_token(&token[prefix.len_utf8()..]);
+            if name.is_empty() {
+                return None;
+            }
+            Some(PromptReference {
+                prefix,
+                name: name.to_owned(),
+            })
+        })
+        .collect()
+}
+
+fn trim_reference_token(token: &str) -> &str {
+    token.trim_end_matches(|ch: char| {
+        !(ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '@' | '.'))
+    })
+}
+
+fn app_mentions_for_tokens(apps: &Value, references: &[PromptReference]) -> Vec<PromptMention> {
+    let Some(data) = apps.get("data").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    data.iter()
+        .filter(|app| {
+            app.get("isAccessible")
+                .and_then(Value::as_bool)
+                .unwrap_or(true)
+        })
+        .filter_map(|app| {
+            let connector_id = first_string_at_paths(app, &[&["connectorId"][..], &["id"]])?;
+            let display_name = first_string_at_paths(
+                app,
+                &[
+                    &["displayName"][..],
+                    &["name"],
+                    &["title"],
+                    &["connectorId"],
+                ],
+            )
+            .unwrap_or(connector_id);
+            let slug = mention_slug(display_name);
+            let matched = references.iter().any(|reference| {
+                reference.prefix == '$'
+                    && (reference.name == connector_id || reference.name == slug)
+            });
+            matched.then(|| PromptMention {
+                name: display_name.to_owned(),
+                path: format!("app://{connector_id}"),
+            })
+        })
+        .collect()
+}
+
+fn plugin_mentions_for_tokens(
+    plugins: &Value,
+    references: &[PromptReference],
+) -> Vec<PromptMention> {
+    let Some(data) = plugins.get("data").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    data.iter()
+        .filter_map(|plugin| {
+            let plugin_id = first_string_at_paths(
+                plugin,
+                &[&["pluginId"][..], &["id"], &["installedPluginId"]],
+            )?;
+            let name =
+                first_string_at_paths(plugin, &[&["displayName"][..], &["name"], &["pluginName"]])
+                    .unwrap_or(plugin_id);
+            let slug = mention_slug(name);
+            let matched = references.iter().any(|reference| {
+                reference.prefix == '@'
+                    && (reference.name == name
+                        || reference.name == slug
+                        || reference.name == plugin_id
+                        || reference.name == plugin_id.split('@').next().unwrap_or(plugin_id))
+            });
+            matched.then(|| PromptMention {
+                name: name.to_owned(),
+                path: format!("plugin://{plugin_id}"),
+            })
+        })
+        .collect()
+}
+
+fn mention_slug(name: &str) -> String {
+    let mut slug = String::new();
+    let mut pending_dash = false;
+    for ch in name.chars().flat_map(char::to_lowercase) {
+        if ch.is_ascii_alphanumeric() {
+            if pending_dash && !slug.is_empty() {
+                slug.push('-');
+            }
+            pending_dash = false;
+            slug.push(ch);
+        } else {
+            pending_dash = true;
+        }
+    }
+    slug
 }
 
 struct SkillInvocation {
@@ -6873,6 +7069,81 @@ mod tests {
                     if text == "$skill-creator Make a test skill"
             ));
         }
+    }
+
+    #[test]
+    fn prompt_input_adds_structured_app_mentions() {
+        let input = prompt_input_with_app_plugin_mentions(
+            "$demo-app Pull the latest updates.".to_owned(),
+            &json!({
+                "data": [
+                    {
+                        "displayName": "Demo App",
+                        "connectorId": "demo-app",
+                        "isAccessible": true,
+                    },
+                ],
+            }),
+            &json!({"data": []}),
+        );
+
+        assert!(matches!(
+            &input[..],
+            [
+                AppServerTurnInput::Text { text },
+                AppServerTurnInput::Mention { name, path },
+            ] if text == "$demo-app Pull the latest updates."
+                && name == "Demo App"
+                && path == "app://demo-app"
+        ));
+    }
+
+    #[test]
+    fn prompt_input_adds_structured_plugin_mentions() {
+        let input = prompt_input_with_app_plugin_mentions(
+            "@github Summarize the latest updates.".to_owned(),
+            &json!({"data": []}),
+            &json!({
+                "data": [
+                    {
+                        "pluginId": "github@openai",
+                        "name": "github",
+                    },
+                ],
+            }),
+        );
+
+        assert!(matches!(
+            &input[..],
+            [
+                AppServerTurnInput::Text { text },
+                AppServerTurnInput::Mention { name, path },
+            ] if text == "@github Summarize the latest updates."
+                && name == "github"
+                && path == "plugin://github@openai"
+        ));
+    }
+
+    #[test]
+    fn prompt_input_ignores_unresolved_or_inaccessible_mentions() {
+        let input = prompt_input_with_app_plugin_mentions(
+            "$demo-app @missing Pull updates.".to_owned(),
+            &json!({
+                "data": [
+                    {
+                        "displayName": "Demo App",
+                        "connectorId": "demo-app",
+                        "isAccessible": false,
+                    },
+                ],
+            }),
+            &json!({"data": []}),
+        );
+
+        assert!(matches!(
+            &input[..],
+            [AppServerTurnInput::Text { text }] if text == "$demo-app @missing Pull updates."
+        ));
     }
 
     #[test]

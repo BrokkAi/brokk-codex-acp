@@ -387,6 +387,28 @@ async fn serialized_embedded_resource_prompt_sends_app_server_additional_context
 }
 
 #[tokio::test]
+async fn serialized_app_plugin_mentions_send_structured_app_server_mentions() -> anyhow::Result<()>
+{
+    let (prompt, notifications) = run_serialized_prompt_blocks(json!([
+        {
+            "type": "text",
+            "text": "$github @github Summarize updates.",
+        },
+    ]))
+    .await?;
+
+    assert_eq!(prompt["result"]["stopReason"], "end_turn");
+    assert!(
+        agent_message_texts(&notifications)
+            .iter()
+            .any(|text| text == "mentions accepted"),
+        "notifications: {notifications:#?}"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn serialized_mcp_elicitation_uses_acp_elicitation_create() -> anyhow::Result<()> {
     let fake_codex = fake_codex_app_server(SERIALIZED_RENAME_CODEX_APP_SERVER)?;
     let mut app_server =
@@ -2847,6 +2869,32 @@ for line in sys.stdin:
                 "params": {
                     "threadId": "thread-serialized",
                     "turn": {"id": "turn-serialized-resource", "status": "completed"},
+                },
+            })
+        elif params["input"] == [
+            {"type": "text", "text": "$github @github Summarize updates."},
+            {"type": "mention", "name": "GitHub", "path": "app://github"},
+            {"type": "mention", "name": "github", "path": "plugin://github@openai"},
+        ]:
+            response(message_id, {
+                "result": {
+                    "turn": {"id": "turn-serialized-mentions", "status": "running"},
+                },
+            })
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-mentions",
+                    "itemId": "item-serialized-mentions",
+                    "delta": "mentions accepted",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turn": {"id": "turn-serialized-mentions", "status": "completed"},
                 },
             })
         elif params["input"] == [{"type": "text", "text": "close me"}]:

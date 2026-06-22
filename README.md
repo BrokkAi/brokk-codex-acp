@@ -52,6 +52,9 @@ The project currently includes:
   available commands for enabled skills alongside adapter-owned commands.
 - Structured `$skill-name` and `/skill skill-name` invocation when app-server
   returns a skill path, with plain-text fallback otherwise.
+- Structured app and plugin mention invocation when app-server catalogs resolve
+  `$app-slug` or `@plugin-name` prompt tokens, with plain-text fallback
+  otherwise.
 - App-server `skills/config/write` mapping for skill enable/disable state,
   exposed through ACP session config options named `skill:<name>`.
 - App-server `skills/extraRoots/set` mapping through `/skill-roots <paths...>`;

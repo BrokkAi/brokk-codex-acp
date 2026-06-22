@@ -363,7 +363,10 @@ populated from app-server models, collaboration modes, permission profiles, and
 thread settings. Dynamic tool callbacks route through a custom ACP extension
 request with app-server fallback semantics, and file-change items emit
 structured ACP diff content when app-server provides per-file paths, including
-live file-change patch updates. Native realtime audio playback, audio prompt
+live file-change patch updates. Text prompts that invoke apps or installed
+plugins with `$app-slug` or `@plugin-name` are enriched with app-server
+`mention` input items when the app/plugin catalogs can resolve the target, with
+plain-text fallback otherwise. Native realtime audio playback, audio prompt
 blocks, and the remaining history
 fidelity edges remain planned work. ACP terminal content is projected through
 app-server command output and terminal interaction events today; true
@@ -1333,6 +1336,12 @@ model prompts:
 - [x] `/hooks` calls `hooks/list` and returns an ACP agent-message summary.
 - [x] `/status` calls `thread/loaded/list` and returns an ACP agent-message
   summary.
+- [x] `$app-slug` text prompts add a structured `mention` input item with the
+  resolved `app://<connector-id>` path when `app/list` can identify an
+  accessible app.
+- [x] `@plugin-name` text prompts add a structured `mention` input item with
+  the resolved `plugin://<plugin-name>@<marketplace-name>` path when
+  `plugin/installed` can identify the installed plugin.
 - resource reads and direct tool calls should only be exposed when an ACP client
   has a clear UI affordance for them.
 
