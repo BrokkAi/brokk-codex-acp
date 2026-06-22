@@ -301,18 +301,19 @@ The current repository has the first working ACP/app-server bridge in place:
   - `thread/goal/updated` and `thread/goal/cleared` app-server notifications are
     projected to ACP `session_info_update._meta`.
 
-This baseline intentionally supports only text and resource-link prompt blocks
-as input, and advertises stable ACP v1 `sessionCapabilities.list`, `.resume`,
-`.close`, and `.delete`. It also advertises the Rust crate's unstable session
-fork and elicitation extensions. Session config options are populated from
-app-server models, collaboration modes, permission profiles, and thread
-settings. Dynamic tool callbacks route through a custom ACP extension request
-with app-server fallback semantics, and file-change items emit structured ACP
-diff content when app-server provides per-file paths. Native realtime audio
-playback and the remaining history fidelity edges remain planned work. ACP
-terminal content is projected through app-server command events today; true
-`terminal/create` embedding should only be added if app-server exposes a
-client-terminal handoff for commands it does not execute itself.
+This baseline supports text, resource-link, and image prompt blocks as input,
+and advertises stable ACP v1 `sessionCapabilities.list`, `.resume`, `.close`,
+and `.delete`. It also advertises the Rust crate's unstable session fork and
+elicitation extensions. Session config options are populated from app-server
+models, collaboration modes, permission profiles, and thread settings. Dynamic
+tool callbacks route through a custom ACP extension request with app-server
+fallback semantics, and file-change items emit structured ACP diff content when
+app-server provides per-file paths. Native realtime audio playback, audio
+prompt blocks, embedded resource prompt blocks, and the remaining history
+fidelity edges remain planned work. ACP terminal content is projected through
+app-server command events today; true `terminal/create` embedding should only
+be added if app-server exposes a client-terminal handoff for commands it does
+not execute itself.
 
 ## Immediate Roadmap
 

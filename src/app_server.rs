@@ -2111,10 +2111,11 @@ struct TurnInterruptParams {
 #[serde(rename_all = "camelCase")]
 struct TurnInterruptResponse {}
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum AppServerTurnInput {
     Text { text: String },
+    Image { url: String },
     Skill { name: String, path: String },
 }
 

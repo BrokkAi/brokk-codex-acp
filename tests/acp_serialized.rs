@@ -292,6 +292,32 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
 }
 
 #[tokio::test]
+async fn serialized_image_prompt_sends_app_server_image_input() -> anyhow::Result<()> {
+    let (prompt, notifications) = run_serialized_prompt_blocks(json!([
+        {
+            "type": "text",
+            "text": "describe this",
+        },
+        {
+            "type": "image",
+            "data": "iVBORw0KGgo=",
+            "mimeType": "image/png",
+        },
+    ]))
+    .await?;
+
+    assert_eq!(prompt["result"]["stopReason"], "end_turn");
+    assert!(
+        agent_message_texts(&notifications)
+            .iter()
+            .any(|text| text == "image accepted"),
+        "notifications: {notifications:#?}"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn serialized_mcp_elicitation_uses_acp_elicitation_create() -> anyhow::Result<()> {
     let fake_codex = fake_codex_app_server(SERIALIZED_RENAME_CODEX_APP_SERVER)?;
     let mut app_server =
@@ -853,6 +879,16 @@ fn agent_message_texts(notifications: &[Value]) -> Vec<String> {
 }
 
 async fn run_serialized_prompt(prompt_text: &str) -> anyhow::Result<(Value, Vec<Value>)> {
+    run_serialized_prompt_blocks(json!([
+        {
+            "type": "text",
+            "text": prompt_text,
+        },
+    ]))
+    .await
+}
+
+async fn run_serialized_prompt_blocks(prompt_blocks: Value) -> anyhow::Result<(Value, Vec<Value>)> {
     let fake_codex = fake_codex_app_server(SERIALIZED_RENAME_CODEX_APP_SERVER)?;
     let mut app_server =
         AppServerClient::spawn(AppServerCommand::new(fake_codex.path().to_owned())).await?;
@@ -917,12 +953,7 @@ async fn run_serialized_prompt(prompt_text: &str) -> anyhow::Result<(Value, Vec<
             "method": "session/prompt",
             "params": {
                 "sessionId": session_id,
-                "prompt": [
-                    {
-                        "type": "text",
-                        "text": prompt_text,
-                    },
-                ],
+                "prompt": prompt_blocks,
             },
         }),
     )
@@ -2183,6 +2214,31 @@ for line in sys.stdin:
                 "params": {
                     "threadId": "thread-serialized",
                     "turn": {"id": "turn-serialized-dynamic-tool", "status": "completed"},
+                },
+            })
+        elif params["input"] == [
+            {"type": "text", "text": "describe this"},
+            {"type": "image", "url": "data:image/png;base64,iVBORw0KGgo="},
+        ]:
+            response(message_id, {
+                "result": {
+                    "turn": {"id": "turn-serialized-image", "status": "running"},
+                },
+            })
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-image",
+                    "itemId": "item-serialized-image",
+                    "delta": "image accepted",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turn": {"id": "turn-serialized-image", "status": "completed"},
                 },
             })
         elif params["input"] == [{"type": "text", "text": "close me"}]:

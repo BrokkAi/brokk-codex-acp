@@ -1032,24 +1032,29 @@ impl CodexAcpAgent {
         request: PromptRequest,
         cx: ConnectionTo<Client>,
     ) -> Result<PromptResponse, Error> {
-        let text = prompt_text(request.prompt)?;
+        let mut input = prompt_input_blocks(request.prompt)?;
         let session_id = request.session_id.clone();
         let thread_id = request.session_id.0.to_string();
         debug!(method = "session/prompt", thread_id, "handling ACP request");
 
-        if let Some(command) = parse_shell_command(&text)? {
-            return self
-                .run_shell_command(command, &session_id, &thread_id, &cx)
-                .await;
+        if let Some(text) = prompt_command_text(&input) {
+            if let Some(command) = parse_shell_command(text)? {
+                return self
+                    .run_shell_command(command, &session_id, &thread_id, &cx)
+                    .await;
+            }
+
+            if let Some(command) = parse_builtin_command(text)? {
+                return self
+                    .run_builtin_command(command, &session_id, &thread_id, &cx)
+                    .await;
+            }
+        } else if prompt_starts_with_command_prefix(&input) {
+            return Err(Error::invalid_params()
+                .data("slash and bang commands are only supported for text-only prompts"));
         }
 
-        if let Some(command) = parse_builtin_command(&text)? {
-            return self
-                .run_builtin_command(command, &session_id, &thread_id, &cx)
-                .await;
-        }
-
-        let input = self.prompt_input(&request.session_id, text).await;
+        input = self.prompt_input(&request.session_id, input).await;
         self.run_turn_inputs(&session_id, &thread_id, input, &cx)
             .await
     }
@@ -1136,7 +1141,16 @@ impl CodexAcpAgent {
         cancel_outstanding_approvals_for_session(&self.outstanding_approvals, session_id).await;
     }
 
-    async fn prompt_input(&self, session_id: &SessionId, text: String) -> Vec<AppServerTurnInput> {
+    async fn prompt_input(
+        &self,
+        session_id: &SessionId,
+        input: Vec<AppServerTurnInput>,
+    ) -> Vec<AppServerTurnInput> {
+        let [AppServerTurnInput::Text { text }] = input.as_slice() else {
+            return input;
+        };
+        let text = text.clone();
+
         let Some(cwd) = self
             .session_cwds
             .lock()
@@ -2564,7 +2578,7 @@ impl CodexAcpAgent {
     fn capabilities() -> AgentCapabilities {
         AgentCapabilities::new()
             .load_session(true)
-            .prompt_capabilities(PromptCapabilities::new())
+            .prompt_capabilities(PromptCapabilities::new().image(true))
             .session_capabilities(
                 // Fork is exposed by the Rust ACP crate behind its unstable
                 // RFD/extension feature; it is not stable ACP v1 behavior.
@@ -2593,35 +2607,77 @@ fn acp_app_server_method_error(method: &str, error: anyhow::Error) -> Error {
     }
 }
 
-fn prompt_text(prompt: Vec<ContentBlock>) -> Result<String, Error> {
+fn prompt_input_blocks(prompt: Vec<ContentBlock>) -> Result<Vec<AppServerTurnInput>, Error> {
+    let mut input = Vec::new();
     let mut text = String::new();
+
+    fn append_text(text: &mut String, value: &str) {
+        if !text.is_empty() {
+            text.push('\n');
+        }
+        text.push_str(value);
+    }
+
+    fn flush_text(input: &mut Vec<AppServerTurnInput>, text: &mut String) {
+        if !text.trim().is_empty() {
+            input.push(AppServerTurnInput::Text {
+                text: std::mem::take(text),
+            });
+        } else {
+            text.clear();
+        }
+    }
 
     for block in prompt {
         match block {
             ContentBlock::Text(text_content) => {
-                if !text.is_empty() {
-                    text.push('\n');
-                }
-                text.push_str(&text_content.text);
+                append_text(&mut text, &text_content.text);
             }
             ContentBlock::ResourceLink(resource) => {
-                if !text.is_empty() {
-                    text.push('\n');
-                }
-                text.push_str(&format!("@{}", resource.uri));
+                append_text(&mut text, &format!("@{}", resource.uri));
+            }
+            ContentBlock::Image(image) => {
+                flush_text(&mut input, &mut text);
+                let url = if let Some(uri) = image.uri.filter(|uri| !uri.trim().is_empty()) {
+                    uri
+                } else if !image.data.trim().is_empty() {
+                    format!("data:{};base64,{}", image.mime_type, image.data)
+                } else {
+                    return Err(
+                        Error::invalid_params().data("image prompt blocks require data or uri")
+                    );
+                };
+                input.push(AppServerTurnInput::Image { url });
             }
             _ => {
-                return Err(Error::invalid_params()
-                    .data("only text and resource link prompt blocks are supported so far"));
+                return Err(Error::invalid_params().data(
+                    "only text, resource link, and image prompt blocks are supported so far",
+                ));
             }
         }
     }
 
-    if text.trim().is_empty() {
-        return Err(Error::invalid_params().data("prompt text cannot be empty"));
+    flush_text(&mut input, &mut text);
+
+    if input.is_empty() {
+        return Err(Error::invalid_params().data("prompt cannot be empty"));
     }
 
-    Ok(text)
+    Ok(input)
+}
+
+fn prompt_command_text(input: &[AppServerTurnInput]) -> Option<&str> {
+    match input {
+        [AppServerTurnInput::Text { text }] => Some(text),
+        _ => None,
+    }
+}
+
+fn prompt_starts_with_command_prefix(input: &[AppServerTurnInput]) -> bool {
+    matches!(
+        input.first(),
+        Some(AppServerTurnInput::Text { text }) if text.trim_start().starts_with(['/', '!'])
+    )
 }
 
 fn prompt_input_with_skills(text: String, skills: &[AppServerSkill]) -> Vec<AppServerTurnInput> {
@@ -5539,6 +5595,41 @@ mod tests {
                     if text == "$skill-creator Make a test skill"
             ));
         }
+    }
+
+    #[test]
+    fn prompt_input_blocks_maps_images_to_app_server_input() {
+        let input = prompt_input_blocks(vec![
+            ContentBlock::Text(TextContent::new("describe this")),
+            ContentBlock::Image(agent_client_protocol::schema::ImageContent::new(
+                "iVBORw0KGgo=",
+                "image/png",
+            )),
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            &input[..],
+            [
+                AppServerTurnInput::Text { text },
+                AppServerTurnInput::Image { url },
+            ] if text == "describe this" && url == "data:image/png;base64,iVBORw0KGgo="
+        ));
+        assert!(prompt_command_text(&input).is_none());
+    }
+
+    #[test]
+    fn prompt_starts_with_command_prefix_detects_multimodal_commands() {
+        let input = prompt_input_blocks(vec![
+            ContentBlock::Text(TextContent::new("/rename title")),
+            ContentBlock::Image(agent_client_protocol::schema::ImageContent::new(
+                "iVBORw0KGgo=",
+                "image/png",
+            )),
+        ])
+        .unwrap();
+
+        assert!(prompt_starts_with_command_prefix(&input));
     }
 
     #[test]
