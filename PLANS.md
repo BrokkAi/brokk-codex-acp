@@ -174,6 +174,8 @@ The current repository has the first working ACP/app-server bridge in place:
   - `thread/tokenUsage/updated` -> ACP usage updates through the unstable
     `unstable_session_usage` crate feature
   - `turn/completed` -> ACP prompt response completion
+  - `model/verification` -> ACP agent-message diagnostics for additional
+    account verification requirements.
   - `mcpServer/startupStatus/updated` -> ACP agent-message diagnostics for
     thread-scoped MCP startup state and failures.
 - Server-initiated request handling:
@@ -871,6 +873,7 @@ app-server item id -> ACP tool call id / message stream id
 | `thread/status/changed` | `session_info_update._meta` | Implemented through the background app-server notification dispatcher; preserves the full app-server status payload under adapter metadata. |
 | `thread/deleted` / `thread/closed` | `session_info_update._meta` | Implemented through adapter lifecycle metadata so ACP clients can react to app-server lifecycle events. |
 | `model/rerouted` | `agent_message_chunk` | Implemented as a non-invasive user-visible diagnostic chunk. |
+| `model/verification` | `agent_message_chunk` | Implemented as a user-visible diagnostic chunk summarizing additional verification requirements. |
 | `mcpServer/startupStatus/updated` | `agent_message_chunk` | Implemented for thread-scoped MCP startup diagnostics; app-scoped updates have no stable ACP session target and are ignored. |
 | `warning` / `error` | `agent_message_chunk` | Implemented with retry/details/error-code text when app-server provides it. |
 

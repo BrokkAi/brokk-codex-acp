@@ -210,6 +210,7 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
         "MCP server `filesystem` startup status: Failed.",
         "spawn ENOENT",
         "Codex rerouted the model from `gpt-5-codex` to `gpt-5` (High Risk Cyber Activity) for this turn.",
+        "Codex requires additional verification: Trusted Access For Cyber.",
         "Codex error (retrying): transient failure",
         "retry details",
         "Code: Rate Limit",
@@ -1220,6 +1221,14 @@ for line in sys.stdin:
                     "fromModel": "gpt-5-codex",
                     "toModel": "gpt-5",
                     "reason": "highRiskCyberActivity",
+                },
+            })
+            send({
+                "method": "model/verification",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "verifications": ["trustedAccessForCyber"],
                 },
             })
             send({

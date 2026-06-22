@@ -394,6 +394,9 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
                             update.from_model, update.to_model
                         ));
                     }
+                    AppServerPromptEvent::ModelVerification(update) => {
+                        events.push(format!("model-verification:{}", update.verifications));
+                    }
                     AppServerPromptEvent::McpServerStartupStatus(update) => {
                         events.push(format!("mcp-startup:{}:{}", update.name, update.status));
                     }
@@ -779,6 +782,9 @@ fn summarize_prompt_event(event: AppServerPromptEvent) -> String {
         AppServerPromptEvent::Error(update) => format!("error:{}", update.message),
         AppServerPromptEvent::ModelRerouted(update) => {
             format!("model-rerouted:{}:{}", update.from_model, update.to_model)
+        }
+        AppServerPromptEvent::ModelVerification(update) => {
+            format!("model-verification:{}", update.verifications)
         }
         AppServerPromptEvent::McpServerStartupStatus(update) => {
             format!("mcp-startup:{}:{}", update.name, update.status)

@@ -35,15 +35,15 @@ use crate::app_server::{
     AppServerApprovalOption, AppServerApprovalRequest, AppServerClient, AppServerCollaborationMode,
     AppServerCollaborationModeMask, AppServerCollaborationModeSettings, AppServerErrorUpdate,
     AppServerHistoryEvent, AppServerMcpServerStartupStatusUpdate, AppServerMessage, AppServerModel,
-    AppServerModelReroutedUpdate, AppServerPermissionProfile, AppServerPlanStatus,
-    AppServerPromptCompletion, AppServerPromptEvent, AppServerSkill, AppServerThread,
-    AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
-    AppServerWarningUpdate, ThreadSettingsUpdateParams, decode_error,
-    decode_mcp_server_startup_status_updated, decode_model_rerouted, decode_thread_archived,
-    decode_thread_closed, decode_thread_deleted, decode_thread_goal_cleared,
-    decode_thread_goal_updated, decode_thread_name_updated, decode_thread_settings_updated,
-    decode_thread_status_changed, decode_thread_unarchived, decode_warning,
-    history_events_for_turns, is_app_server_method_unavailable,
+    AppServerModelReroutedUpdate, AppServerModelVerificationUpdate, AppServerPermissionProfile,
+    AppServerPlanStatus, AppServerPromptCompletion, AppServerPromptEvent, AppServerSkill,
+    AppServerThread, AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus,
+    AppServerTurnInput, AppServerWarningUpdate, ThreadSettingsUpdateParams, decode_error,
+    decode_mcp_server_startup_status_updated, decode_model_rerouted, decode_model_verification,
+    decode_thread_archived, decode_thread_closed, decode_thread_deleted,
+    decode_thread_goal_cleared, decode_thread_goal_updated, decode_thread_name_updated,
+    decode_thread_settings_updated, decode_thread_status_changed, decode_thread_unarchived,
+    decode_warning, history_events_for_turns, is_app_server_method_unavailable,
 };
 
 const MODEL_CONFIG_ID: &str = "model";
@@ -540,6 +540,20 @@ impl CodexAcpAgent {
                 }
                 let session_id = SessionId::new(update.thread_id.clone());
                 publish_agent_message(&session_id, model_rerouted_message(&update), cx)
+                    .map_err(acp_internal_error)?;
+            }
+            "model/verification" => {
+                let update = decode_model_verification(&params).map_err(acp_internal_error)?;
+                if self
+                    .active_prompts
+                    .lock()
+                    .await
+                    .contains_key(&update.thread_id)
+                {
+                    return Ok(());
+                }
+                let session_id = SessionId::new(update.thread_id.clone());
+                publish_agent_message(&session_id, model_verification_message(&update), cx)
                     .map_err(acp_internal_error)?;
             }
             "mcpServer/startupStatus/updated" => {
@@ -3589,6 +3603,11 @@ fn send_prompt_event(
             session_id,
             SessionUpdate::AgentMessageChunk(text_chunk(model_rerouted_message(&update))),
         ),
+        AppServerPromptEvent::ModelVerification(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(model_verification_message(&update))),
+        ),
         AppServerPromptEvent::McpServerStartupStatus(update) => send_session_update(
             cx,
             session_id,
@@ -3839,6 +3858,35 @@ fn model_rerouted_message(update: &AppServerModelReroutedUpdate) -> String {
         update.to_model,
         json_value_label(&update.reason)
     )
+}
+
+fn model_verification_message(update: &AppServerModelVerificationUpdate) -> String {
+    format!(
+        "Codex requires additional verification: {}.",
+        verification_summary(&update.verifications)
+    )
+}
+
+fn verification_summary(verifications: &serde_json::Value) -> String {
+    match verifications {
+        serde_json::Value::Array(items) => {
+            let labels = items.iter().map(json_value_label).collect::<Vec<_>>();
+            readable_label_list(labels).unwrap_or_else(|| "unknown verification".to_owned())
+        }
+        other => json_value_label(other),
+    }
+}
+
+fn readable_label_list(parts: Vec<String>) -> Option<String> {
+    match parts.as_slice() {
+        [] => None,
+        [only] => Some(only.clone()),
+        [first, second] => Some(format!("{first} and {second}")),
+        _ => {
+            let (last, rest) = parts.split_last()?;
+            Some(format!("{}, and {last}", rest.join(", ")))
+        }
+    }
 }
 
 fn mcp_startup_status_message(update: &AppServerMcpServerStartupStatusUpdate) -> String {
