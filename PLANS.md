@@ -667,11 +667,11 @@ Implemented baseline:
 - Replay structured plan entries, MCP tool calls, command/file tool lifecycles,
   command output, file diffs, reasoning, and agent/user message text fragments
   where the app-server history exposes them.
+- Preserve app-server agent-message item ids as ACP `messageId` values during
+  live streaming and history replay when the backend exposes them.
 
 Remaining work:
 
-- Preserve message IDs once the ACP crate feature is enabled and clients can use
-  them.
 - Convert newly added or unknown app-server item variants to high-fidelity ACP
   updates instead of generic raw JSON fallbacks as those variants appear.
 

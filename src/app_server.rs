@@ -918,7 +918,12 @@ impl AppServerClient {
                     if notification.thread_id == thread_id
                         && Some(notification.turn_id.as_str()) == active_turn_id.as_deref()
                     {
-                        on_event(AppServerPromptEvent::AgentMessageDelta(notification.delta))?;
+                        on_event(AppServerPromptEvent::AgentMessageDelta(
+                            AppServerAgentMessageDelta {
+                                item_id: notification.item_id,
+                                delta: notification.delta,
+                            },
+                        ))?;
                     }
                 }
                 "turn/completed" => {
@@ -2130,6 +2135,8 @@ struct AppServerTurn {
 struct AgentMessageDeltaNotification {
     thread_id: String,
     turn_id: String,
+    #[serde(default)]
+    item_id: Option<String>,
     delta: String,
 }
 
@@ -2148,7 +2155,7 @@ struct TurnCompletedNotification {
 }
 
 pub enum AppServerPromptEvent {
-    AgentMessageDelta(String),
+    AgentMessageDelta(AppServerAgentMessageDelta),
     AgentThoughtDelta(String),
     ToolCallStarted(AppServerToolCall),
     ToolCallUpdated(AppServerToolCallUpdate),
@@ -2171,6 +2178,12 @@ pub enum AppServerPromptEvent {
     AccountRateLimitsUpdated(AppServerAccountRateLimitsUpdatedUpdate),
     McpServerOAuthLoginCompleted(AppServerMcpServerOAuthLoginCompletedUpdate),
     FuzzyFileSearch(AppServerFuzzyFileSearchUpdate),
+}
+
+#[derive(Debug, Clone)]
+pub struct AppServerAgentMessageDelta {
+    pub item_id: Option<String>,
+    pub delta: String,
 }
 
 pub enum AppServerHistoryEvent {
@@ -3955,6 +3968,12 @@ fn history_events_for_item(turn_id: &str, item: &Value) -> Vec<AppServerHistoryE
             .into_iter()
             .collect(),
         "agentMessage" => agent_message_text(item)
+            .and_then(|delta| {
+                Some(AppServerAgentMessageDelta {
+                    item_id: Some(item_id(item)?),
+                    delta,
+                })
+            })
             .map(AppServerPromptEvent::AgentMessageDelta)
             .map(Box::new)
             .map(AppServerHistoryEvent::PromptEvent)

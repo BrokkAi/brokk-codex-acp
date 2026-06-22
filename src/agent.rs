@@ -12,7 +12,7 @@ use agent_client_protocol::schema::{
     DeleteSessionResponse, ElicitationAction, ElicitationContentValue, ElicitationFormMode,
     ElicitationMode, ElicitationSchema, ElicitationSessionScope, ElicitationUrlMode, EnumOption,
     ExtRequest, ForkSessionRequest, ForkSessionResponse, InitializeRequest, InitializeResponse,
-    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
+    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse, MessageId,
     NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionId,
     PermissionOptionKind, Plan, PlanEntry, PlanEntryPriority, PlanEntryStatus, PromptCapabilities,
     PromptRequest, PromptResponse, ProtocolVersion, RequestPermissionOutcome,
@@ -37,10 +37,10 @@ use tracing::{debug, trace, warn};
 
 use crate::app_server::{
     AppServerAccountLoginCompletedUpdate, AppServerAccountRateLimitsUpdatedUpdate,
-    AppServerAccountUpdatedUpdate, AppServerActivePermissionProfile, AppServerApprovalChoice,
-    AppServerApprovalDecision, AppServerApprovalOption, AppServerApprovalRequest,
-    AppServerApprovalResponseKind, AppServerClient, AppServerCollaborationMode,
-    AppServerCollaborationModeMask, AppServerCollaborationModeSettings,
+    AppServerAccountUpdatedUpdate, AppServerActivePermissionProfile, AppServerAgentMessageDelta,
+    AppServerApprovalChoice, AppServerApprovalDecision, AppServerApprovalOption,
+    AppServerApprovalRequest, AppServerApprovalResponseKind, AppServerClient,
+    AppServerCollaborationMode, AppServerCollaborationModeMask, AppServerCollaborationModeSettings,
     AppServerConfigWarningUpdate, AppServerDynamicToolCallRequest, AppServerErrorUpdate,
     AppServerFuzzyFileSearchUpdate, AppServerHistoryEvent, AppServerInteractiveRequest,
     AppServerMcpElicitationRequest, AppServerMcpServerOAuthLoginCompletedUpdate,
@@ -4047,7 +4047,7 @@ fn send_prompt_event(
         AppServerPromptEvent::AgentMessageDelta(delta) => send_session_update(
             cx,
             session_id,
-            SessionUpdate::AgentMessageChunk(text_chunk(delta)),
+            SessionUpdate::AgentMessageChunk(agent_message_chunk(delta)),
         ),
         AppServerPromptEvent::AgentThoughtDelta(delta) => send_session_update(
             cx,
@@ -5304,6 +5304,15 @@ fn compact_json(value: &serde_json::Value) -> String {
 
 fn text_chunk(text: String) -> ContentChunk {
     ContentChunk::new(ContentBlock::Text(TextContent::new(text)))
+}
+
+fn agent_message_chunk(message: AppServerAgentMessageDelta) -> ContentChunk {
+    let chunk = text_chunk(message.delta);
+    if let Some(item_id) = message.item_id {
+        chunk.message_id(MessageId::new(item_id))
+    } else {
+        chunk
+    }
 }
 
 fn text_tool_content(text: String) -> ToolCallContent {

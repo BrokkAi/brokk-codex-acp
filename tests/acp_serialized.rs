@@ -109,6 +109,15 @@ async fn serialized_load_replays_history_before_response() -> anyhow::Result<()>
     assert!(
         notifications.iter().any(|notification| {
             let update = &notification["params"]["update"];
+            update["sessionUpdate"] == "agent_message_chunk"
+                && update["messageId"] == "loaded-agent-message"
+                && update["content"]["text"] == "loaded response"
+        }),
+        "agent message replay did not preserve message id: {notifications:#?}"
+    );
+    assert!(
+        notifications.iter().any(|notification| {
+            let update = &notification["params"]["update"];
             update["sessionUpdate"] == "plan"
                 && update["entries"]
                     .as_array()
@@ -215,6 +224,7 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
         session_updates.iter().any(|update| {
             update["sessionUpdate"] == "agent_message_chunk"
                 && update["content"]["text"] == "serialized response"
+                && update["messageId"] == "item-1"
         }),
         "session updates: {session_updates:#?}"
     );
@@ -1248,6 +1258,7 @@ for line in sys.stdin:
                                 },
                                 {
                                     "type": "agentMessage",
+                                    "id": "loaded-agent-message",
                                     "content": [
                                         {"type": "text", "text": "loaded response"},
                                     ],

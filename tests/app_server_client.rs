@@ -309,7 +309,13 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
             |_approval| async { Ok(AppServerApprovalDecision::Cancel) },
         )
         .await?;
-    assert_eq!(skill_deltas, vec!["skill response"]);
+    assert_eq!(
+        skill_deltas
+            .iter()
+            .map(|delta| delta.delta.as_str())
+            .collect::<Vec<_>>(),
+        vec!["skill response"]
+    );
 
     let read = client.thread_read("thread-1".to_string()).await?;
     assert_eq!(read.thread.id, "thread-1");
@@ -356,7 +362,7 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
             |event| {
                 match event {
                     AppServerPromptEvent::AgentMessageDelta(delta) => {
-                        events.push(format!("message:{delta}"));
+                        events.push(format!("message:{}", delta.delta));
                     }
                     AppServerPromptEvent::AgentThoughtDelta(delta) => {
                         events.push(format!("thought:{delta}"));
@@ -500,7 +506,7 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
             None,
             |event| {
                 if let AppServerPromptEvent::AgentMessageDelta(delta) = event {
-                    approval_summaries.push(format!("message:{delta}"));
+                    approval_summaries.push(format!("message:{}", delta.delta));
                 }
                 Ok(())
             },
@@ -536,7 +542,7 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
             None,
             |event| {
                 if let AppServerPromptEvent::AgentMessageDelta(delta) = event {
-                    file_approval_summaries.push(format!("message:{delta}"));
+                    file_approval_summaries.push(format!("message:{}", delta.delta));
                 }
                 Ok(())
             },
@@ -571,7 +577,7 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
             None,
             |event| {
                 if let AppServerPromptEvent::AgentMessageDelta(delta) = event {
-                    permissions_approval_summaries.push(format!("message:{delta}"));
+                    permissions_approval_summaries.push(format!("message:{}", delta.delta));
                 }
                 Ok(())
             },
@@ -628,7 +634,7 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
             None,
             |event| {
                 if let AppServerPromptEvent::AgentMessageDelta(delta) = event {
-                    permissions_decline_summaries.push(format!("message:{delta}"));
+                    permissions_decline_summaries.push(format!("message:{}", delta.delta));
                 }
                 Ok(())
             },
@@ -654,7 +660,7 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
             None,
             |event| {
                 if let AppServerPromptEvent::AgentMessageDelta(delta) = event {
-                    permissions_cancel_summaries.push(format!("message:{delta}"));
+                    permissions_cancel_summaries.push(format!("message:{}", delta.delta));
                 }
                 Ok(())
             },
@@ -907,7 +913,7 @@ async fn run_text_turn_and_collect_messages(
     client
         .turn_start_text_until_complete("thread-1".to_string(), text.to_owned(), None, |event| {
             if let AppServerPromptEvent::AgentMessageDelta(delta) = event {
-                summaries.push(format!("message:{delta}"));
+                summaries.push(format!("message:{}", delta.delta));
             }
             Ok(())
         })
@@ -931,7 +937,7 @@ fn history_events_for_thread_turns(turns: &[AppServerTurnHistory]) -> Vec<String
 
 fn summarize_prompt_event(event: AppServerPromptEvent) -> String {
     match event {
-        AppServerPromptEvent::AgentMessageDelta(delta) => format!("message:{delta}"),
+        AppServerPromptEvent::AgentMessageDelta(delta) => format!("message:{}", delta.delta),
         AppServerPromptEvent::AgentThoughtDelta(delta) => format!("thought:{delta}"),
         AppServerPromptEvent::ToolCallStarted(call) => {
             format!("tool-started:{}:{}", call.id, call.title)
