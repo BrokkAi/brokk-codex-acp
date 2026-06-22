@@ -410,6 +410,23 @@ impl AppServerClient {
             .await
     }
 
+    pub async fn account_login_start(&mut self, mode: AccountLoginMode) -> anyhow::Result<Value> {
+        self.request("account/login/start", AccountLoginStartParams::from(mode))
+            .await
+    }
+
+    pub async fn account_login_cancel(&mut self, login_id: String) -> anyhow::Result<Value> {
+        self.request(
+            "account/login/cancel",
+            AccountLoginCancelParams { login_id },
+        )
+        .await
+    }
+
+    pub async fn account_logout(&mut self) -> anyhow::Result<Value> {
+        self.request("account/logout", EmptyParams {}).await
+    }
+
     pub async fn account_rate_limits_read(&mut self) -> anyhow::Result<Value> {
         self.request("account/rateLimits/read", EmptyParams {})
             .await
@@ -1940,6 +1957,41 @@ struct ConfigReadParams {
 #[serde(rename_all = "camelCase")]
 struct AccountReadParams {
     refresh_token: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccountLoginMode {
+    Chatgpt,
+    ChatgptDeviceCode,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "type")]
+enum AccountLoginStartParams {
+    #[serde(rename = "chatgpt", rename_all = "camelCase")]
+    Chatgpt {
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        codex_streamlined_login: bool,
+    },
+    #[serde(rename = "chatgptDeviceCode")]
+    ChatgptDeviceCode,
+}
+
+impl From<AccountLoginMode> for AccountLoginStartParams {
+    fn from(mode: AccountLoginMode) -> Self {
+        match mode {
+            AccountLoginMode::Chatgpt => Self::Chatgpt {
+                codex_streamlined_login: false,
+            },
+            AccountLoginMode::ChatgptDeviceCode => Self::ChatgptDeviceCode,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AccountLoginCancelParams {
+    login_id: String,
 }
 
 #[derive(Debug, Serialize)]

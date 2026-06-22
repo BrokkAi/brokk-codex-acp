@@ -823,6 +823,28 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
                 "- Plan type: \"pro\"",
             ][..],
         ),
+        (
+            "/login",
+            &[
+                "Account login: ChatGPT browser",
+                "- Login id: \"login-browser\"",
+                "- Auth URL: \"https://example.test/auth\"",
+            ],
+        ),
+        (
+            "/login device",
+            &[
+                "Account login: ChatGPT device code",
+                "- Login id: \"login-device\"",
+                "- Verification URL: \"https://example.test/device\"",
+                "- User code: \"ABCD-1234\"",
+            ],
+        ),
+        (
+            "/login-cancel login-device",
+            &["Canceled Codex login `login-device`: Canceled."],
+        ),
+        ("/logout", &["Signed out of Codex."]),
         ("/apps", &["Apps: 1 entries", "- GitHub"][..]),
         (
             "/config /repo",
@@ -1607,6 +1629,43 @@ for line in sys.stdin:
                 },
                 "requiresOpenaiAuth": True,
             },
+        })
+    elif method == "account/login/start":
+        if params == {
+            "type": "chatgpt",
+        }:
+            response(message_id, {
+                "result": {
+                    "type": "chatgpt",
+                    "loginId": "login-browser",
+                    "authUrl": "https://example.test/auth",
+                },
+            })
+        else:
+            assert params == {
+                "type": "chatgptDeviceCode",
+            }
+            response(message_id, {
+                "result": {
+                    "type": "chatgptDeviceCode",
+                    "loginId": "login-device",
+                    "verificationUrl": "https://example.test/device",
+                    "userCode": "ABCD-1234",
+                },
+            })
+    elif method == "account/login/cancel":
+        assert params == {
+            "loginId": "login-device",
+        }
+        response(message_id, {
+            "result": {
+                "status": "canceled",
+            },
+        })
+    elif method == "account/logout":
+        assert params == {}
+        response(message_id, {
+            "result": {},
         })
     elif method == "account/rateLimits/read":
         assert params == {}

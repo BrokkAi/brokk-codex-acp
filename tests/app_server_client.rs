@@ -830,6 +830,28 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     let plugin_uninstall = client.plugin_uninstall("github@openai".to_string()).await?;
     assert_eq!(plugin_uninstall, serde_json::json!({}));
 
+    let login = client
+        .account_login_start(brokk_codex_acp::app_server::AccountLoginMode::Chatgpt)
+        .await?;
+    assert_eq!(login["type"], "chatgpt");
+    assert_eq!(login["loginId"], "login-browser");
+    assert_eq!(login["authUrl"], "https://example.test/auth");
+
+    let device_login = client
+        .account_login_start(brokk_codex_acp::app_server::AccountLoginMode::ChatgptDeviceCode)
+        .await?;
+    assert_eq!(device_login["type"], "chatgptDeviceCode");
+    assert_eq!(device_login["loginId"], "login-device");
+    assert_eq!(device_login["userCode"], "ABCD-1234");
+
+    let login_cancel = client
+        .account_login_cancel("login-device".to_string())
+        .await?;
+    assert_eq!(login_cancel["status"], "canceled");
+
+    let logout = client.account_logout().await?;
+    assert_eq!(logout, serde_json::json!({}));
+
     let marketplace_add = client
         .marketplace_add(
             "owner/repo".to_string(),
@@ -1832,6 +1854,35 @@ for line in sys.stdin:
         assert params == {
             "pluginId": "github@openai",
         }
+        response(message_id, {})
+    elif method == "account/login/start":
+        if params == {
+            "type": "chatgpt",
+        }:
+            response(message_id, {
+                "type": "chatgpt",
+                "loginId": "login-browser",
+                "authUrl": "https://example.test/auth",
+            })
+        else:
+            assert params == {
+                "type": "chatgptDeviceCode",
+            }
+            response(message_id, {
+                "type": "chatgptDeviceCode",
+                "loginId": "login-device",
+                "verificationUrl": "https://example.test/device",
+                "userCode": "ABCD-1234",
+            })
+    elif method == "account/login/cancel":
+        assert params == {
+            "loginId": "login-device",
+        }
+        response(message_id, {
+            "status": "canceled",
+        })
+    elif method == "account/logout":
+        assert params == {}
         response(message_id, {})
     elif method == "marketplace/add":
         assert params == {

@@ -37,28 +37,29 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{debug, trace, warn};
 
 use crate::app_server::{
-    AppServerAccountLoginCompletedUpdate, AppServerAccountRateLimitsUpdatedUpdate,
-    AppServerAccountUpdatedUpdate, AppServerActivePermissionProfile, AppServerAdditionalContext,
-    AppServerAdditionalContextEntry, AppServerAdditionalContextKind, AppServerAgentMessageDelta,
-    AppServerAppListUpdate, AppServerApprovalChoice, AppServerApprovalDecision,
-    AppServerApprovalOption, AppServerApprovalRequest, AppServerApprovalResponseKind,
-    AppServerClient, AppServerCollaborationMode, AppServerCollaborationModeMask,
-    AppServerCollaborationModeSettings, AppServerConfigWarningUpdate,
-    AppServerDynamicToolCallRequest, AppServerErrorUpdate, AppServerFuzzyFileSearchUpdate,
-    AppServerGuardianApprovalReviewLifecycle, AppServerGuardianApprovalReviewUpdate,
-    AppServerHistoryEvent, AppServerInteractiveRequest, AppServerMcpElicitationRequest,
-    AppServerMcpServerOAuthLoginCompletedUpdate, AppServerMcpServerStartupStatusUpdate,
-    AppServerMessage, AppServerModel, AppServerModelReroutedUpdate,
-    AppServerModelSafetyBufferingUpdate, AppServerModelVerificationUpdate,
-    AppServerPermissionProfile, AppServerPlanStatus, AppServerPromptCompletion,
-    AppServerPromptEvent, AppServerRealtimeAudioDelta, AppServerRealtimeUpdate,
-    AppServerRemoteControlStatusUpdate, AppServerServerRequestResolvedUpdate, AppServerSkill,
-    AppServerThread, AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus,
-    AppServerTurnInput, AppServerTurnModerationMetadataUpdate, AppServerTurnStartInput,
-    AppServerUserInputQuestion, AppServerUserInputRequest, AppServerWarningUpdate,
-    AppServerWindowsSandboxSetupUpdate, ThreadMemoryMode, ThreadSettingsUpdateParams,
-    decode_account_login_completed, decode_account_rate_limits_updated, decode_account_updated,
-    decode_app_list_updated, decode_config_warning, decode_error, decode_fuzzy_file_search_update,
+    AccountLoginMode, AppServerAccountLoginCompletedUpdate,
+    AppServerAccountRateLimitsUpdatedUpdate, AppServerAccountUpdatedUpdate,
+    AppServerActivePermissionProfile, AppServerAdditionalContext, AppServerAdditionalContextEntry,
+    AppServerAdditionalContextKind, AppServerAgentMessageDelta, AppServerAppListUpdate,
+    AppServerApprovalChoice, AppServerApprovalDecision, AppServerApprovalOption,
+    AppServerApprovalRequest, AppServerApprovalResponseKind, AppServerClient,
+    AppServerCollaborationMode, AppServerCollaborationModeMask, AppServerCollaborationModeSettings,
+    AppServerConfigWarningUpdate, AppServerDynamicToolCallRequest, AppServerErrorUpdate,
+    AppServerFuzzyFileSearchUpdate, AppServerGuardianApprovalReviewLifecycle,
+    AppServerGuardianApprovalReviewUpdate, AppServerHistoryEvent, AppServerInteractiveRequest,
+    AppServerMcpElicitationRequest, AppServerMcpServerOAuthLoginCompletedUpdate,
+    AppServerMcpServerStartupStatusUpdate, AppServerMessage, AppServerModel,
+    AppServerModelReroutedUpdate, AppServerModelSafetyBufferingUpdate,
+    AppServerModelVerificationUpdate, AppServerPermissionProfile, AppServerPlanStatus,
+    AppServerPromptCompletion, AppServerPromptEvent, AppServerRealtimeAudioDelta,
+    AppServerRealtimeUpdate, AppServerRemoteControlStatusUpdate,
+    AppServerServerRequestResolvedUpdate, AppServerSkill, AppServerThread,
+    AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
+    AppServerTurnModerationMetadataUpdate, AppServerTurnStartInput, AppServerUserInputQuestion,
+    AppServerUserInputRequest, AppServerWarningUpdate, AppServerWindowsSandboxSetupUpdate,
+    ThreadMemoryMode, ThreadSettingsUpdateParams, decode_account_login_completed,
+    decode_account_rate_limits_updated, decode_account_updated, decode_app_list_updated,
+    decode_config_warning, decode_error, decode_fuzzy_file_search_update,
     decode_guardian_approval_review_update, decode_mcp_server_oauth_login_completed,
     decode_mcp_server_startup_status_updated, decode_model_rerouted,
     decode_model_safety_buffering_updated, decode_model_verification, decode_realtime_update,
@@ -96,6 +97,9 @@ const GOAL_COMMAND: &str = "goal";
 const HOOKS_COMMAND: &str = "hooks";
 const INIT_COMMAND: &str = "init";
 const KILL_COMMAND: &str = "kill";
+const LOGIN_COMMAND: &str = "login";
+const LOGIN_CANCEL_COMMAND: &str = "login-cancel";
+const LOGOUT_COMMAND: &str = "logout";
 const MARKETPLACE_ADD_COMMAND: &str = "marketplace-add";
 const MARKETPLACE_REMOVE_COMMAND: &str = "marketplace-remove";
 const MEMORY_COMMAND: &str = "memory";
@@ -1276,6 +1280,40 @@ impl CodexAcpAgent {
                     .await
                     .map_err(acp_internal_error)?;
                 publish_catalog_message(session_id, "Account", account_summary(&response), cx)
+            }
+            BuiltinCommand::Login { mode } => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .account_login_start(mode)
+                    .await
+                    .map_err(|error| acp_app_server_method_error("account/login/start", error))?;
+                publish_catalog_message(session_id, "Login", account_login_summary(&response), cx)
+            }
+            BuiltinCommand::LoginCancel { login_id } => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .account_login_cancel(login_id.clone())
+                    .await
+                    .map_err(|error| acp_app_server_method_error("account/login/cancel", error))?;
+                publish_catalog_message(
+                    session_id,
+                    "Login cancel",
+                    account_login_cancel_summary(&login_id, &response),
+                    cx,
+                )
+            }
+            BuiltinCommand::Logout => {
+                self.app_server
+                    .lock()
+                    .await
+                    .account_logout()
+                    .await
+                    .map_err(|error| acp_app_server_method_error("account/logout", error))?;
+                publish_catalog_message(session_id, "Logout", "Signed out of Codex.".to_owned(), cx)
             }
             BuiltinCommand::Archive => {
                 self.app_server
@@ -3125,6 +3163,13 @@ enum BuiltinCommand {
     Kill {
         process_id: String,
     },
+    Login {
+        mode: AccountLoginMode,
+    },
+    LoginCancel {
+        login_id: String,
+    },
+    Logout,
     MarketplaceAdd {
         source: String,
         ref_name: Option<String>,
@@ -3221,6 +3266,9 @@ enum CommandHandler {
     Goal,
     Hooks,
     Kill,
+    Login,
+    LoginCancel,
+    Logout,
     MarketplaceAdd,
     MarketplaceRemove,
     Memory,
@@ -3366,6 +3414,30 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: Some("background terminal process id"),
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::Kill,
+    },
+    BuiltinCommandSpec {
+        name: LOGIN_COMMAND,
+        aliases: &[],
+        description: "Start Codex ChatGPT login",
+        input_hint: Some("chatgpt or device"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Login,
+    },
+    BuiltinCommandSpec {
+        name: LOGIN_CANCEL_COMMAND,
+        aliases: &[],
+        description: "Cancel a pending Codex ChatGPT login",
+        input_hint: Some("login id"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::LoginCancel,
+    },
+    BuiltinCommandSpec {
+        name: LOGOUT_COMMAND,
+        aliases: &[],
+        description: "Sign out of Codex",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Logout,
     },
     BuiltinCommandSpec {
         name: MARKETPLACE_ADD_COMMAND,
@@ -3679,6 +3751,22 @@ fn parse_command_from_spec(
                 process_id: process_id.to_owned(),
             }))
         }
+        CommandHandler::Login => parse_login_command(rest),
+        CommandHandler::LoginCancel => {
+            let login_id = rest.trim();
+            if login_id.is_empty() {
+                return Err(Error::invalid_params().data("/login-cancel requires a login id"));
+            }
+            if login_id.split_whitespace().count() != 1 {
+                return Err(Error::invalid_params().data("/login-cancel accepts one login id"));
+            }
+            Ok(Some(BuiltinCommand::LoginCancel {
+                login_id: login_id.to_owned(),
+            }))
+        }
+        CommandHandler::Logout => {
+            parse_no_argument_command(rest, spec.name, BuiltinCommand::Logout)
+        }
         CommandHandler::MarketplaceAdd => parse_marketplace_add_command(rest),
         CommandHandler::MarketplaceRemove => parse_marketplace_remove_command(rest),
         CommandHandler::Memory => parse_memory_command(rest),
@@ -3784,6 +3872,30 @@ fn parse_memory_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
         }
     };
     Ok(Some(BuiltinCommand::Memory { action }))
+}
+
+fn parse_login_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
+    let mut parts = rest.split_whitespace();
+    let mode = match parts.next() {
+        None | Some("chatgpt") => AccountLoginMode::Chatgpt,
+        Some("device") | Some("chatgpt-device-code") | Some("chatgptDeviceCode") => {
+            AccountLoginMode::ChatgptDeviceCode
+        }
+        Some("api-key") | Some("apiKey") => {
+            return Err(Error::invalid_params().data(
+                "/login does not accept API keys because slash commands are visible in ACP history",
+            ));
+        }
+        Some(_) => {
+            return Err(Error::invalid_params().data("/login accepts only `chatgpt` or `device`"));
+        }
+    };
+
+    if parts.next().is_some() {
+        return Err(Error::invalid_params().data("/login accepts at most one mode"));
+    }
+
+    Ok(Some(BuiltinCommand::Login { mode }))
 }
 
 fn parse_feature_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
@@ -6048,6 +6160,44 @@ fn account_summary(value: &serde_json::Value) -> String {
     lines.join("\n")
 }
 
+fn account_login_summary(value: &serde_json::Value) -> String {
+    let login_type = value.get("type").and_then(serde_json::Value::as_str);
+    let mut lines = match login_type {
+        Some("chatgpt") => vec!["Account login: ChatGPT browser".to_owned()],
+        Some("chatgptDeviceCode") => vec!["Account login: ChatGPT device code".to_owned()],
+        Some(other) => vec![format!("Account login: {}", humanize_identifier(other))],
+        None => vec!["Account login: started".to_owned()],
+    };
+
+    for (label, key) in [
+        ("Login id", "loginId"),
+        ("Auth URL", "authUrl"),
+        ("Verification URL", "verificationUrl"),
+        ("User code", "userCode"),
+    ] {
+        if let Some(field) = value.get(key)
+            && !field.is_null()
+        {
+            lines.push(format!("- {label}: {}", compact_json(field)));
+        }
+    }
+
+    if lines.len() == 1 && !value.is_null() {
+        lines.push(format!("- Response: {}", compact_json(value)));
+    }
+
+    lines.join("\n")
+}
+
+fn account_login_cancel_summary(login_id: &str, value: &serde_json::Value) -> String {
+    let status = value
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .map(humanize_identifier)
+        .unwrap_or_else(|| compact_json(value));
+    format!("Canceled Codex login `{login_id}`: {status}.")
+}
+
 fn rate_limits_summary(value: &serde_json::Value) -> String {
     let rate_limits = value.get("rateLimits").unwrap_or(value);
     let mut lines = vec!["Rate limits: current account".to_owned()];
@@ -6917,6 +7067,10 @@ mod tests {
             "/fork",
             "/hooks",
             "/init",
+            "/login",
+            "/login device",
+            "/login-cancel login-1",
+            "/logout",
             "/marketplace-add owner/repo main plugins,skills",
             "/marketplace-remove debug",
             "/mcp",
@@ -6965,6 +7119,23 @@ mod tests {
                 "/fork" => assert!(matches!(command, BuiltinCommand::Fork)),
                 "/hooks" => assert!(matches!(command, BuiltinCommand::Hooks)),
                 "/init" => assert!(matches!(command, BuiltinCommand::Init)),
+                "/login" => assert!(matches!(
+                    command,
+                    BuiltinCommand::Login {
+                        mode: AccountLoginMode::Chatgpt
+                    }
+                )),
+                "/login device" => assert!(matches!(
+                    command,
+                    BuiltinCommand::Login {
+                        mode: AccountLoginMode::ChatgptDeviceCode
+                    }
+                )),
+                "/login-cancel login-1" => assert!(matches!(
+                    command,
+                    BuiltinCommand::LoginCancel { login_id } if login_id == "login-1"
+                )),
+                "/logout" => assert!(matches!(command, BuiltinCommand::Logout)),
                 "/marketplace-add owner/repo main plugins,skills" => assert!(matches!(
                     command,
                     BuiltinCommand::MarketplaceAdd {
@@ -7320,6 +7491,7 @@ mod tests {
             ("/fork now", "/fork does not accept arguments"),
             ("/hooks now", "/hooks does not accept arguments"),
             ("/init now", "/init does not accept arguments"),
+            ("/logout now", "/logout does not accept arguments"),
             ("/mcp now", "/mcp does not accept arguments"),
             ("/model now", "/model does not accept arguments"),
             ("/new now", "/new does not accept arguments"),
@@ -7337,6 +7509,35 @@ mod tests {
                 Some(expected)
             );
         }
+    }
+
+    #[test]
+    fn parse_builtin_command_rejects_invalid_login_arguments() {
+        let error = parse_builtin_command("/login api-key sk-secret").unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some(
+                "/login does not accept API keys because slash commands are visible in ACP history"
+            )
+        );
+
+        let error = parse_builtin_command("/login web").unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("/login accepts only `chatgpt` or `device`")
+        );
+
+        let error = parse_builtin_command("/login-cancel").unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("/login-cancel requires a login id")
+        );
+
+        let error = parse_builtin_command("/login-cancel login-1 login-2").unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("/login-cancel accepts one login id")
+        );
     }
 
     #[test]
@@ -7488,6 +7689,9 @@ mod tests {
                 "goal",
                 "hooks",
                 "kill",
+                "login",
+                "login-cancel",
+                "logout",
                 "marketplace-add",
                 "marketplace-remove",
                 "memory",
@@ -7560,6 +7764,32 @@ mod tests {
             summary,
             "Account: current status\n- Requires OpenAI auth: true\n- Auth mode: Chatgpt\n- Email: \"user@example.com\"\n- Plan type: \"pro\""
         );
+    }
+
+    #[test]
+    fn account_login_summary_lists_browser_flow() {
+        let summary = account_login_summary(&serde_json::json!({
+            "type": "chatgpt",
+            "loginId": "login-browser",
+            "authUrl": "https://example.test/auth"
+        }));
+
+        assert_eq!(
+            summary,
+            "Account login: ChatGPT browser\n- Login id: \"login-browser\"\n- Auth URL: \"https://example.test/auth\""
+        );
+    }
+
+    #[test]
+    fn account_login_cancel_summary_lists_status() {
+        let summary = account_login_cancel_summary(
+            "login-device",
+            &serde_json::json!({
+                "status": "canceled"
+            }),
+        );
+
+        assert_eq!(summary, "Canceled Codex login `login-device`: Canceled.");
     }
 
     #[test]

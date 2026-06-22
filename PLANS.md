@@ -244,11 +244,12 @@ The current repository has the first working ACP/app-server bridge in place:
 - Slash commands:
   - built-in `account`, `archive`, `apps`, `compact`, `config`,
     `config-requirements`, `delete`, `feature`, `features`, `fork`, `goal`,
-    `hooks`, `init`, `kill`, `marketplace-add`, `marketplace-remove`,
-    `memory`, `mcp`, `mcp-reload`, `model`, `model-provider`, `new`,
-    `permissions`, `plan`, `plugins`, `ps`, `rate-limits`, `rename`, `resume`,
-    `review`, `rollback`, `skill-roots`, `status`, `stop`, `unarchive`, `usage`, and
-    `workspace-messages` commands are published through ACP
+    `hooks`, `init`, `kill`, `login`, `login-cancel`, `logout`,
+    `marketplace-add`, `marketplace-remove`, `memory`, `mcp`, `mcp-reload`,
+    `model`, `model-provider`, `new`, `permissions`, `plan`, `plugins`, `ps`,
+    `rate-limits`, `rename`, `resume`, `review`, `rollback`, `skill-roots`,
+    `status`, `stop`, `unarchive`, `usage`, and `workspace-messages` commands
+    are published through ACP
     `available_commands_update` alongside enabled skills.
   - `/archive` is intercepted by the adapter, mapped to `thread/archive`, and
     reflected to ACP clients through `session_info_update._meta`.
@@ -275,6 +276,11 @@ The current repository has the first working ACP/app-server bridge in place:
     ACP agent-message summary.
   - `/account` is intercepted by the adapter, mapped to `account/read`, and
     reflected as a short ACP agent-message summary.
+  - `/login [chatgpt|device]`, `/login-cancel <loginId>`, and `/logout` are
+    intercepted by the adapter, mapped to `account/login/start`,
+    `account/login/cancel`, and `account/logout`, and reflected as short ACP
+    agent-message summaries. API-key login is intentionally not accepted as a
+    slash command because ACP prompt text can be retained in visible history.
   - `/rate-limits` is intercepted by the adapter, mapped to
     `account/rateLimits/read`, and reflected as a short ACP agent-message
     summary.
@@ -519,9 +525,10 @@ Tasks:
 - [x] Add an initial parser for leading slash commands, currently `/account`,
   `/archive`, `/apps`, `/compact`, `/config`, `/config-requirements`,
   `/delete`, `/feature`, `/features`, `/fork`, `/goal`, `/hooks`, `/init`,
-  `/kill`, `/marketplace-add`, `/marketplace-remove`, `/memory`, `/mcp`,
-  `/mcp-reload`, `/model`, `/model-provider`, `/new`, `/permissions`, `/plan`,
-  `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
+  `/kill`, `/login`, `/login-cancel`, `/logout`, `/marketplace-add`,
+  `/marketplace-remove`, `/memory`, `/mcp`, `/mcp-reload`, `/model`,
+  `/model-provider`, `/new`, `/permissions`, `/plan`, `/plugins`, `/ps`,
+  `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
   `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
   `/workspace-messages`.
 - [x] Build the full command registry with aliases, availability, required
@@ -532,9 +539,10 @@ Tasks:
   `/plugins`, `/hooks`, and `/status`. Implemented so far: `/account`,
   `/archive`, `/apps`, `/compact`, `/config`, `/config-requirements`,
   `/delete`, `/feature`, `/features`, `/fork`, `/goal`, `/hooks`, `/init`,
-  `/kill`, `/marketplace-add`, `/marketplace-remove`, `/memory`, `/mcp`,
-  `/mcp-reload`, `/model`, `/model-provider`, `/new`, `/permissions`, `/plan`,
-  `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
+  `/kill`, `/login`, `/login-cancel`, `/logout`, `/marketplace-add`,
+  `/marketplace-remove`, `/memory`, `/mcp`, `/mcp-reload`, `/model`,
+  `/model-provider`, `/new`, `/permissions`, `/plan`, `/plugins`, `/ps`,
+  `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
   `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
   `/workspace-messages`. `/fork` is implemented only as an extension command
   backed by Codex `thread/fork`, not as required ACP v1 behavior.
@@ -1043,6 +1051,9 @@ These map cleanly to app-server APIs and should be supported early:
 | `/config [cwd]` | `config/read` `[implemented as summary]` |
 | `/config-requirements` | `configRequirements/read` `[implemented as summary]` |
 | `/account` | `account/read` `[implemented as summary]` |
+| `/login [chatgpt\|device]` | `account/login/start` `[implemented as summary; API-key login intentionally not accepted in prompt text]` |
+| `/login-cancel <loginId>` | `account/login/cancel` `[implemented as summary]` |
+| `/logout` | `account/logout` `[implemented as summary]` |
 | `/model` | `model/list` plus ACP config-option refresh `[implemented]` |
 | `/model-provider` | `modelProvider/capabilities/read` `[implemented as summary]` |
 | `/permissions` | `permissionProfile/list` plus ACP config-option refresh `[implemented]` |
@@ -1285,6 +1296,11 @@ model prompts:
 - [x] `/config-requirements` calls `configRequirements/read` and returns an ACP
   agent-message summary.
 - [x] `/account` calls `account/read` and returns an ACP agent-message summary.
+- [x] `/login [chatgpt|device]` calls `account/login/start` and returns an ACP
+  agent-message summary.
+- [x] `/login-cancel <loginId>` calls `account/login/cancel` and returns an ACP
+  agent-message summary.
+- [x] `/logout` calls `account/logout` and returns an ACP agent-message summary.
 - [x] `/plugins` calls `plugin/list` and `plugin/installed` and returns an ACP
   agent-message summary.
 - [x] `/plugin <pluginName@marketplacePath>` calls `plugin/read` and returns an
@@ -1577,6 +1593,9 @@ Manual flows:
 - [x] Implement `/ps`.
 - [x] Implement `/stop`.
 - [x] Implement `/account`.
+- [x] Implement `/login`.
+- [x] Implement `/login-cancel`.
+- [x] Implement `/logout`.
 - [x] Implement `/rate-limits`.
 - [x] Implement `/usage`.
 - [x] Implement `/workspace-messages`.
@@ -1629,6 +1648,7 @@ Manual flows:
 - [x] Add config requirements display.
 - [x] Add marketplace add/remove commands.
 - [x] Add account status display.
+- [x] Add account login/logout commands.
 - [x] Add experimental feature flag display.
 - [x] Add experimental feature enable/disable command.
 - [x] Add initial hooks display.
