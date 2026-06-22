@@ -1259,8 +1259,6 @@ Remaining approval work:
 
 - Add rich MCP elicitation and dynamic tool request handling once the adapter
   has an ACP-compatible elicitation surface.
-- Preserve partial-grant choices for `item/permissions/requestApproval` instead
-  of only granting the full requested profile or `{}`.
 
 Do not invent approval policies in the adapter. Policies should come from
 Codex config, app-server thread settings, or explicit ACP session options.
@@ -1504,20 +1502,3 @@ Keep PRs small enough to review against fake app-server tests.
      client
    - keep the current cancel/empty/failure fallback for clients that cannot
      render the request
-
-2. Serialized ACP integration tests:
-   - exercise `session/update` output with a fake ACP client transport
-   - prove `session/load` replay notifications arrive before the response
-   - prove background `skills/changed` and `thread/settings/updated`
-     notifications publish ACP updates
-
-3. Slash command parser and `/fork`:
-   - add parser and registry
-   - route `/fork` through existing fork extension logic
-   - publish `/fork` as an ACP available command
-
-5. Config options:
-   - add approval policy and collaboration mode selectors
-   - add skill enable/disable selectors backed by `skills/config/write`
-   - add serialized ACP tests for `session/set_config_option` responses and
-     `config_option_update` notifications
