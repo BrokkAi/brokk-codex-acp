@@ -970,6 +970,7 @@ impl AppServerClient {
                 "item/started"
                 | "item/completed"
                 | "item/commandExecution/outputDelta"
+                | "item/fileChange/patchUpdated"
                 | "item/reasoning/summaryTextDelta"
                 | "item/reasoning/summaryPartAdded"
                 | "item/reasoning/textDelta"
@@ -3072,6 +3073,22 @@ fn decode_prompt_event(
                     output_delta: Some(delta),
                     diffs: Vec::new(),
                     raw: None,
+                },
+            )))
+        }
+        "item/fileChange/patchUpdated" => {
+            let Some(item_id) = string_field(params, "itemId") else {
+                return Ok(None);
+            };
+            Ok(Some(AppServerPromptEvent::ToolCallUpdated(
+                AppServerToolCallUpdate {
+                    id: item_id,
+                    title: None,
+                    kind: Some(AppServerToolKind::Edit),
+                    status: None,
+                    output_delta: None,
+                    diffs: file_change_diffs(params),
+                    raw: Some(params.clone()),
                 },
             )))
         }

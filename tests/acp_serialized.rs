@@ -220,6 +220,16 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
         session_updates.iter().any(|update| {
             update["sessionUpdate"] == "tool_call_update"
                 && update["toolCallId"] == "file-1"
+                && update["content"][0]["type"] == "diff"
+                && update["content"][0]["path"] == "src/lib.rs"
+                && update["content"][0]["newText"] == "@@ live @@"
+        }),
+        "session updates: {session_updates:#?}"
+    );
+    assert!(
+        session_updates.iter().any(|update| {
+            update["sessionUpdate"] == "tool_call_update"
+                && update["toolCallId"] == "file-1"
                 && update["status"] == "completed"
                 && update["content"][0]["type"] == "diff"
                 && update["content"][0]["path"] == "src/lib.rs"
@@ -1884,6 +1894,21 @@ for line in sys.stdin:
                         "tool": "read_file",
                         "status": "inProgress",
                     },
+                },
+            })
+            send({
+                "method": "item/fileChange/patchUpdated",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "itemId": "file-1",
+                    "changes": [
+                        {
+                            "path": "src/lib.rs",
+                            "kind": "update",
+                            "diff": "@@ live @@",
+                        },
+                    ],
                 },
             })
             send({

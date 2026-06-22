@@ -312,8 +312,9 @@ unstable session fork and elicitation extensions. Session config options are
 populated from app-server models, collaboration modes, permission profiles, and
 thread settings. Dynamic tool callbacks route through a custom ACP extension
 request with app-server fallback semantics, and file-change items emit
-structured ACP diff content when app-server provides per-file paths. Native
-realtime audio playback, audio prompt blocks, and the remaining history
+structured ACP diff content when app-server provides per-file paths, including
+live file-change patch updates. Native realtime audio playback, audio prompt
+blocks, and the remaining history
 fidelity edges remain planned work. ACP terminal content is projected through
 app-server command events today; true `terminal/create` embedding should only
 be added if app-server exposes a client-terminal handoff for commands it does
@@ -924,6 +925,7 @@ app-server item id -> ACP tool call id / message stream id
 | `item/started` | `tool_call` or internal item state | Depends on item subtype. |
 | `item/completed` | `tool_call_update` | Mark final status and attach final content. File-change items attach ACP `diff` content for each `{path, diff}` entry. |
 | `item/commandExecution/outputDelta` | `tool_call_update` content | Preserve stdout/stderr boundaries if present. |
+| `item/fileChange/patchUpdated` | `tool_call_update` with `diff` content | Stream live per-file patch updates as structured ACP diff content. |
 | `turn/diff/updated` | `tool_call_update` with text diff content | Useful for file edit previews. This remains text because the app-server event carries a turn-level unified diff without per-file old/new text. |
 | `turn/plan/updated` | `plan` | Send the full plan every time. |
 | `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` | `session/request_permission` | Implemented for simple decisions; rich command `availableDecisions` such as exec-policy and network-policy amendments keep their original app-server payload under ACP option metadata and are returned unchanged when selected. App-server remains blocked until the ACP client answers. |

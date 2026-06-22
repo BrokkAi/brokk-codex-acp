@@ -467,6 +467,9 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
             "tool-started:cmd-1:cargo test",
             "tool-updated:cmd-1",
             "tool-updated:cmd-1",
+            "tool-started:file-1:File changes",
+            "tool-updated:file-1",
+            "tool-updated:file-1",
             "diff:diff --git a/src/lib.rs b/src/lib.rs",
             "usage:42/100",
             "skills-changed",
@@ -2030,6 +2033,53 @@ for line in sys.stdin:
                         "command": "cargo test",
                         "status": "completed",
                         "aggregatedOutput": "ok",
+                    },
+                },
+            })
+            send({
+                "method": "item/started",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "item": {
+                        "type": "fileChange",
+                        "id": "file-1",
+                        "status": "inProgress",
+                        "changes": [],
+                    },
+                },
+            })
+            send({
+                "method": "item/fileChange/patchUpdated",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "file-1",
+                    "changes": [
+                        {
+                            "path": "src/lib.rs",
+                            "kind": "update",
+                            "diff": "@@ live @@",
+                        },
+                    ],
+                },
+            })
+            send({
+                "method": "item/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "item": {
+                        "type": "fileChange",
+                        "id": "file-1",
+                        "status": "completed",
+                        "changes": [
+                            {
+                                "path": "src/lib.rs",
+                                "kind": "update",
+                                "diff": "@@ final @@",
+                            },
+                        ],
                     },
                 },
             })
