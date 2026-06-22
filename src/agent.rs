@@ -85,6 +85,7 @@ const MODEL_COMMAND: &str = "model";
 const NEW_COMMAND: &str = "new";
 const PERMISSIONS_COMMAND: &str = "permissions";
 const PLAN_COMMAND: &str = "plan";
+const PLUGIN_COMMAND: &str = "plugin";
 const PLUGINS_COMMAND: &str = "plugins";
 const PS_COMMAND: &str = "ps";
 const RENAME_COMMAND: &str = "rename";
@@ -1344,6 +1345,19 @@ impl CodexAcpAgent {
                     cx,
                 )
             }
+            BuiltinCommand::Plugin {
+                marketplace_path,
+                plugin_name,
+            } => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .plugin_read(marketplace_path, plugin_name)
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(session_id, "Plugin", plugin_detail_summary(&response), cx)
+            }
             BuiltinCommand::Plugins => {
                 let (plugins, installed) = {
                     let mut app_server = self.app_server.lock().await;
@@ -2553,24 +2567,40 @@ enum BuiltinCommand {
     Apps,
     Compact,
     Fork,
-    GoalSet { objective: String },
+    GoalSet {
+        objective: String,
+    },
     GoalGet,
     GoalClear,
     Hooks,
-    Kill { process_id: String },
+    Kill {
+        process_id: String,
+    },
     Init,
     Mcp,
     Model,
     New,
     Permissions,
     Plan,
+    Plugin {
+        marketplace_path: String,
+        plugin_name: String,
+    },
     Plugins,
     Ps,
-    Rename { title: String },
-    Resume { target: String },
+    Rename {
+        title: String,
+    },
+    Resume {
+        target: String,
+    },
     Review,
-    Rollback { num_turns: u32 },
-    SkillRoots { roots: Vec<String> },
+    Rollback {
+        num_turns: u32,
+    },
+    SkillRoots {
+        roots: Vec<String>,
+    },
     Status,
     Stop,
     Unarchive,
@@ -2603,6 +2633,7 @@ enum CommandHandler {
     New,
     Permissions,
     Plan,
+    Plugin,
     Plugins,
     Ps,
     Rename,
@@ -2729,6 +2760,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: None,
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::Plan,
+    },
+    BuiltinCommandSpec {
+        name: PLUGIN_COMMAND,
+        aliases: &[],
+        description: "Read Codex plugin details",
+        input_hint: Some("pluginName@marketplacePath"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Plugin,
     },
     BuiltinCommandSpec {
         name: PLUGINS_COMMAND,
@@ -2884,6 +2923,7 @@ fn parse_command_from_spec(
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Permissions)
         }
         CommandHandler::Plan => parse_no_argument_command(rest, spec.name, BuiltinCommand::Plan),
+        CommandHandler::Plugin => parse_plugin_command(rest),
         CommandHandler::Plugins => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Plugins)
         }
@@ -2950,6 +2990,30 @@ fn parse_goal_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
     }
     Ok(Some(BuiltinCommand::GoalSet {
         objective: rest.to_owned(),
+    }))
+}
+
+fn parse_plugin_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
+    const MESSAGE: &str =
+        "/plugin requires a plugin name and marketplace path as name@marketplacePath";
+
+    let rest = rest.trim();
+    if rest.is_empty() || rest.split_whitespace().count() != 1 {
+        return Err(Error::invalid_params().data(MESSAGE));
+    }
+
+    let Some((plugin_name, marketplace_path)) = rest.split_once('@') else {
+        return Err(Error::invalid_params().data(MESSAGE));
+    };
+    let plugin_name = plugin_name.trim();
+    let marketplace_path = marketplace_path.trim();
+    if plugin_name.is_empty() || marketplace_path.is_empty() {
+        return Err(Error::invalid_params().data(MESSAGE));
+    }
+
+    Ok(Some(BuiltinCommand::Plugin {
+        marketplace_path: marketplace_path.to_owned(),
+        plugin_name: plugin_name.to_owned(),
     }))
 }
 
@@ -4725,6 +4789,76 @@ fn catalog_summary(title: &str, value: &serde_json::Value) -> String {
     lines.join("\n")
 }
 
+fn plugin_detail_summary(value: &serde_json::Value) -> String {
+    let plugin_name = first_string_at_paths(
+        value,
+        &[
+            &["displayName"][..],
+            &["name"],
+            &["manifest", "displayName"],
+            &["manifest", "name"],
+        ],
+    )
+    .unwrap_or("Plugin details");
+    let mut lines = vec![format!("Plugin: {plugin_name}")];
+
+    if let Some(marketplace) =
+        first_string_at_paths(value, &[&["marketplacePath"][..], &["marketplaceName"]])
+    {
+        lines.push(format!("Marketplace: {marketplace}"));
+    }
+    if let Some(description) = first_string_at_paths(
+        value,
+        &[
+            &["description"][..],
+            &["manifest", "description"],
+            &["interface", "description"],
+            &["interface", "shortDescription"],
+        ],
+    ) {
+        lines.push(format!("Description: {description}"));
+    }
+
+    append_plugin_entries(&mut lines, "Summary", value.get("summary"));
+    append_plugin_entries(&mut lines, "Apps", value.get("apps"));
+    append_plugin_entries(&mut lines, "Skills", value.get("skills"));
+    append_plugin_entries(&mut lines, "Hooks", value.get("hooks"));
+    append_plugin_entries(&mut lines, "MCP servers", value.get("mcpServers"));
+
+    lines.join("\n")
+}
+
+fn first_string_at_paths<'a>(value: &'a serde_json::Value, paths: &[&[&str]]) -> Option<&'a str> {
+    paths
+        .iter()
+        .find_map(|path| value_at_path(value, path).and_then(serde_json::Value::as_str))
+}
+
+fn value_at_path<'a>(value: &'a serde_json::Value, path: &[&str]) -> Option<&'a serde_json::Value> {
+    path.iter()
+        .try_fold(value, |current, key| current.get(*key))
+}
+
+fn append_plugin_entries(lines: &mut Vec<String>, title: &str, value: Option<&serde_json::Value>) {
+    let Some(entries) = value.and_then(serde_json::Value::as_array) else {
+        return;
+    };
+    if entries.is_empty() {
+        return;
+    }
+
+    lines.push(format!("{title}: {} entries", entries.len()));
+    lines.extend(
+        entries
+            .iter()
+            .take(10)
+            .map(|entry| format!("- {}", catalog_entry_label(entry))),
+    );
+    if entries.len() > 10 {
+        lines.push(format!("- ... {} more", entries.len() - 10));
+    }
+}
+
 fn catalog_entries(value: &serde_json::Value) -> Vec<&serde_json::Value> {
     value
         .get("data")
@@ -5110,6 +5244,7 @@ mod tests {
             "/new",
             "/permissions",
             "/plan",
+            "/plugin github@openai",
             "/plugins",
             "/ps",
             "/rollback 2",
@@ -5129,6 +5264,13 @@ mod tests {
                 "/new" => assert!(matches!(command, BuiltinCommand::New)),
                 "/permissions" => assert!(matches!(command, BuiltinCommand::Permissions)),
                 "/plan" => assert!(matches!(command, BuiltinCommand::Plan)),
+                "/plugin github@openai" => assert!(matches!(
+                    command,
+                    BuiltinCommand::Plugin {
+                        plugin_name,
+                        marketplace_path
+                    } if plugin_name == "github" && marketplace_path == "openai"
+                )),
                 "/plugins" => assert!(matches!(command, BuiltinCommand::Plugins)),
                 "/ps" => assert!(matches!(command, BuiltinCommand::Ps)),
                 "/rollback 2" => assert!(matches!(
@@ -5363,6 +5505,22 @@ mod tests {
     }
 
     #[test]
+    fn parse_builtin_command_rejects_invalid_plugin_reference() {
+        for text in [
+            "/plugin",
+            "/plugin github",
+            "/plugin @openai",
+            "/plugin github@",
+        ] {
+            let error = parse_builtin_command(text).unwrap_err();
+            assert_eq!(
+                error.data.as_ref().and_then(serde_json::Value::as_str),
+                Some("/plugin requires a plugin name and marketplace path as name@marketplacePath")
+            );
+        }
+    }
+
+    #[test]
     fn parse_builtin_command_rejects_empty_skill_roots() {
         let error = parse_builtin_command("/skill-roots").unwrap_err();
 
@@ -5431,6 +5589,7 @@ mod tests {
                 "new",
                 "permissions",
                 "plan",
+                "plugin",
                 "plugins",
                 "ps",
                 "rename",
@@ -5467,6 +5626,28 @@ mod tests {
         );
 
         assert_eq!(summary, "Apps: 2 entries\n- Linear\n- GitHub");
+    }
+
+    #[test]
+    fn plugin_detail_summary_lists_plugin_components() {
+        let summary = plugin_detail_summary(&serde_json::json!({
+            "name": "github",
+            "marketplacePath": "openai",
+            "manifest": {
+                "description": "GitHub integration"
+            },
+            "skills": [
+                {"name": "triage"}
+            ],
+            "mcpServers": [
+                {"serverName": "github"}
+            ]
+        }));
+
+        assert_eq!(
+            summary,
+            "Plugin: github\nMarketplace: openai\nDescription: GitHub integration\nSkills: 1 entries\n- triage\nMCP servers: 1 entries\n- github"
+        );
     }
 
     #[test]

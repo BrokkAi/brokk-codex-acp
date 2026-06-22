@@ -1177,6 +1177,8 @@ model prompts:
 - [x] `/apps` calls `app/list` and returns an ACP agent-message summary.
 - [x] `/plugins` calls `plugin/list` and `plugin/installed` and returns an ACP
   agent-message summary.
+- [x] `/plugin <pluginName@marketplacePath>` calls `plugin/read` and returns an
+  ACP agent-message summary.
 - [x] `/mcp` calls `mcpServerStatus/list` and returns an ACP agent-message
   summary.
 - [x] `/hooks` calls `hooks/list` and returns an ACP agent-message summary.

@@ -377,6 +377,21 @@ impl AppServerClient {
         self.request("plugin/installed", EmptyParams {}).await
     }
 
+    pub async fn plugin_read(
+        &mut self,
+        marketplace_path: String,
+        plugin_name: String,
+    ) -> anyhow::Result<Value> {
+        self.request(
+            "plugin/read",
+            PluginReadParams {
+                marketplace_path,
+                plugin_name,
+            },
+        )
+        .await
+    }
+
     pub async fn hooks_list(&mut self, cwd: String) -> anyhow::Result<Value> {
         self.request("hooks/list", HooksListParams { cwds: vec![cwd] })
             .await
@@ -1667,6 +1682,13 @@ pub struct SkillsExtraRootsSetResponse {}
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct EmptyParams {}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginReadParams {
+    marketplace_path: String,
+    plugin_name: String,
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

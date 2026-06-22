@@ -554,6 +554,15 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             "/plugins",
             &["Plugins: 1 entries", "Installed plugins: 1 entries"],
         ),
+        (
+            "/plugin github@openai",
+            &[
+                "Plugin: github",
+                "Marketplace: openai",
+                "Skills: 1 entries",
+                "- triage",
+            ],
+        ),
         ("/mcp", &["MCP: 1 entries", "- filesystem"]),
         ("/hooks", &["Hooks: 1 entries", "- /repo"]),
         ("/ps", &["Background terminals: 1 entries", "terminal-1"]),
@@ -1103,6 +1112,26 @@ for line in sys.stdin:
                     {
                         "pluginId": "github@openai",
                         "name": "github",
+                    },
+                ],
+            },
+        })
+    elif method == "plugin/read":
+        assert params == {
+            "marketplacePath": "openai",
+            "pluginName": "github",
+        }
+        response(message_id, {
+            "result": {
+                "name": "github",
+                "marketplacePath": "openai",
+                "manifest": {
+                    "name": "github",
+                    "description": "GitHub integration",
+                },
+                "skills": [
+                    {
+                        "name": "triage",
                     },
                 ],
             },

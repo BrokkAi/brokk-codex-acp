@@ -720,6 +720,11 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     let installed_plugins = client.plugin_installed().await?;
     assert_eq!(installed_plugins["data"][0]["pluginId"], "github@openai");
 
+    let plugin = client
+        .plugin_read("openai".to_string(), "github".to_string())
+        .await?;
+    assert_eq!(plugin["manifest"]["name"], "github");
+
     let mcp_servers = client
         .mcp_server_status_list("thread-1".to_string())
         .await?;
@@ -1455,6 +1460,24 @@ for line in sys.stdin:
                 {
                     "pluginId": "github@openai",
                     "name": "github",
+                },
+            ],
+        })
+    elif method == "plugin/read":
+        assert params == {
+            "marketplacePath": "openai",
+            "pluginName": "github",
+        }
+        response(message_id, {
+            "name": "github",
+            "marketplacePath": "openai",
+            "manifest": {
+                "name": "github",
+                "description": "GitHub integration",
+            },
+            "skills": [
+                {
+                    "name": "triage",
                 },
             ],
         })
