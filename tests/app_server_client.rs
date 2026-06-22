@@ -613,6 +613,58 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         vec!["message:approved permissions"]
     );
 
+    let mut permissions_decline_summaries = Vec::new();
+    client
+        .turn_start_until_complete(
+            "thread-1".to_string(),
+            vec![AppServerTurnInput::Text {
+                text: "permissions decline callback".to_string(),
+            }],
+            None,
+            |event| {
+                if let AppServerPromptEvent::AgentMessageDelta(delta) = event {
+                    permissions_decline_summaries.push(format!("message:{delta}"));
+                }
+                Ok(())
+            },
+            |approval| async move {
+                assert_eq!(approval.item_id, "permissions-decline");
+                assert_eq!(approval.title, "Need write access");
+                Ok(AppServerApprovalDecision::Decline)
+            },
+        )
+        .await?;
+    assert_eq!(
+        permissions_decline_summaries,
+        vec!["message:declined permissions"]
+    );
+
+    let mut permissions_cancel_summaries = Vec::new();
+    client
+        .turn_start_until_complete(
+            "thread-1".to_string(),
+            vec![AppServerTurnInput::Text {
+                text: "permissions cancel callback".to_string(),
+            }],
+            None,
+            |event| {
+                if let AppServerPromptEvent::AgentMessageDelta(delta) = event {
+                    permissions_cancel_summaries.push(format!("message:{delta}"));
+                }
+                Ok(())
+            },
+            |approval| async move {
+                assert_eq!(approval.item_id, "permissions-cancel");
+                assert_eq!(approval.title, "Need network access");
+                Ok(AppServerApprovalDecision::Cancel)
+            },
+        )
+        .await?;
+    assert_eq!(
+        permissions_cancel_summaries,
+        vec!["message:cancelled permissions"]
+    );
+
     let mcp_elicitation_summaries =
         run_text_turn_and_collect_messages(&mut client, "mcp elicitation callback").await?;
     assert_eq!(
@@ -2123,6 +2175,92 @@ for line in sys.stdin:
                 "params": {
                     "threadId": "thread-1",
                     "turn": {"id": "turn-permissions-approval", "status": "completed"},
+                },
+            })
+        elif params["input"] == [{"type": "text", "text": "permissions decline callback"}]:
+            response(message_id, {"turn": {"id": "turn-permissions-decline", "status": "running"}})
+            send({
+                "id": "permissions-decline-request-1",
+                "method": "item/permissions/requestApproval",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-permissions-decline",
+                    "itemId": "permissions-decline",
+                    "environmentId": "local",
+                    "startedAtMs": 123,
+                    "cwd": "/repo",
+                    "reason": "Need write access",
+                    "permissions": {
+                        "fileSystem": {
+                            "write": ["/repo/src"],
+                        },
+                    },
+                },
+            })
+            decline_response = json.loads(sys.stdin.readline())
+            assert decline_response == {
+                "id": "permissions-decline-request-1",
+                "result": {
+                    "permissions": {},
+                    "scope": "turn",
+                },
+            }
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-permissions-decline",
+                    "itemId": "item-permissions-decline",
+                    "delta": "declined permissions",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {"id": "turn-permissions-decline", "status": "completed"},
+                },
+            })
+        elif params["input"] == [{"type": "text", "text": "permissions cancel callback"}]:
+            response(message_id, {"turn": {"id": "turn-permissions-cancel", "status": "running"}})
+            send({
+                "id": "permissions-cancel-request-1",
+                "method": "item/permissions/requestApproval",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-permissions-cancel",
+                    "itemId": "permissions-cancel",
+                    "environmentId": "local",
+                    "startedAtMs": 123,
+                    "cwd": "/repo",
+                    "reason": "Need network access",
+                    "permissions": {
+                        "network": {"enabled": True},
+                    },
+                },
+            })
+            cancel_response = json.loads(sys.stdin.readline())
+            assert cancel_response == {
+                "id": "permissions-cancel-request-1",
+                "result": {
+                    "permissions": {},
+                    "scope": "turn",
+                },
+            }
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-permissions-cancel",
+                    "itemId": "item-permissions-cancel",
+                    "delta": "cancelled permissions",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {"id": "turn-permissions-cancel", "status": "completed"},
                 },
             })
         elif params["input"] == [{"type": "text", "text": "mcp elicitation callback"}]:

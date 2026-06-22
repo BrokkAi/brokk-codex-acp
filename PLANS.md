@@ -1505,16 +1505,13 @@ Keep PRs small enough to review against fake app-server tests.
    - keep the current cancel/empty/failure fallback for clients that cannot
      render the request
 
-2. Permission-profile approval refinements:
-   - add fake app-server tests for cancel/reject edge cases
-
-3. Serialized ACP integration tests:
+2. Serialized ACP integration tests:
    - exercise `session/update` output with a fake ACP client transport
    - prove `session/load` replay notifications arrive before the response
    - prove background `skills/changed` and `thread/settings/updated`
      notifications publish ACP updates
 
-4. Slash command parser and `/fork`:
+3. Slash command parser and `/fork`:
    - add parser and registry
    - route `/fork` through existing fork extension logic
    - publish `/fork` as an ACP available command
