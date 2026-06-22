@@ -194,6 +194,10 @@ BROKK_CODEX_ACP_SMOKE_CODEX_BIN=/path/to/codex \
   cargo test --test real_app_server_smoke -- --ignored
 ```
 
+The ignored smoke suite checks initialization, basic app-server catalogs, and
+thread lifecycle primitives against the configured Codex binary. It may create
+and delete a temporary Codex thread.
+
 ## Release Strategy
 
 Releases are cut from `v*.*.*` tags. The GitHub release workflow verifies that

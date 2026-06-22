@@ -399,9 +399,9 @@ rather than adding ACP-incompatible product UI surfaces.
   and generated schema as app-server APIs evolve.
 - Add first-class ACP projections for newly observed persisted history item
   variants instead of relying on generic raw diagnostics.
-- Expand real-app-server smoke coverage beyond initialization and basic
-  catalogs, especially for session lifecycle, a simple text turn, and history
-  load.
+- Keep expanding real-app-server smoke coverage. Initialization, basic
+  catalogs, and thread lifecycle primitives are covered; the next high-value
+  additions are a simple text turn and history load.
 - Add release/install verification for the packaged binary artifacts and
   crates.io dry-run path.
 - Revisit deferred surfaces only when ACP or the hosting product has a clear
