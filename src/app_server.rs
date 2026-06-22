@@ -785,8 +785,11 @@ impl AppServerClient {
                 | "turn/moderationMetadata"
                 | "mcpServer/startupStatus/updated"
                 | "thread/realtime/started"
+                | "thread/realtime/sdp"
+                | "thread/realtime/itemAdded"
                 | "thread/realtime/transcript/delta"
                 | "thread/realtime/transcript/done"
+                | "thread/realtime/outputAudio/delta"
                 | "thread/realtime/error"
                 | "thread/realtime/closed" => {
                     if let Some(event) = decode_prompt_event(
@@ -2242,6 +2245,14 @@ pub enum AppServerRealtimeUpdate {
         thread_id: String,
         realtime_session_id: Option<String>,
     },
+    Sdp {
+        thread_id: String,
+        sdp: String,
+    },
+    ItemAdded {
+        thread_id: String,
+        item: Value,
+    },
     TranscriptDelta {
         thread_id: String,
         role: String,
@@ -2251,6 +2262,10 @@ pub enum AppServerRealtimeUpdate {
         thread_id: String,
         role: String,
         text: String,
+    },
+    OutputAudioDelta {
+        thread_id: String,
+        audio: AppServerRealtimeAudioDelta,
     },
     Error {
         thread_id: String,
@@ -2266,12 +2281,23 @@ impl AppServerRealtimeUpdate {
     pub fn thread_id(&self) -> &str {
         match self {
             Self::Started { thread_id, .. }
+            | Self::Sdp { thread_id, .. }
+            | Self::ItemAdded { thread_id, .. }
             | Self::TranscriptDelta { thread_id, .. }
             | Self::TranscriptDone { thread_id, .. }
+            | Self::OutputAudioDelta { thread_id, .. }
             | Self::Error { thread_id, .. }
             | Self::Closed { thread_id, .. } => thread_id,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct AppServerRealtimeAudioDelta {
+    pub data: Option<String>,
+    pub sample_rate: Option<u64>,
+    pub num_channels: Option<u64>,
+    pub samples_per_channel: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2390,6 +2416,20 @@ struct RealtimeStartedNotification {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct RealtimeSdpNotification {
+    thread_id: String,
+    sdp: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RealtimeItemAddedNotification {
+    thread_id: String,
+    item: Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RealtimeTranscriptDeltaNotification {
     thread_id: String,
     role: String,
@@ -2402,6 +2442,26 @@ struct RealtimeTranscriptDoneNotification {
     thread_id: String,
     role: String,
     text: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RealtimeOutputAudioDeltaNotification {
+    thread_id: String,
+    audio: RealtimeAudioDeltaNotification,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RealtimeAudioDeltaNotification {
+    #[serde(default)]
+    data: Option<String>,
+    #[serde(default)]
+    sample_rate: Option<u64>,
+    #[serde(default)]
+    num_channels: Option<u64>,
+    #[serde(default)]
+    samples_per_channel: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2580,8 +2640,11 @@ fn decode_prompt_event(
             Ok(Some(AppServerPromptEvent::McpServerStartupStatus(update)))
         }
         "thread/realtime/started"
+        | "thread/realtime/sdp"
+        | "thread/realtime/itemAdded"
         | "thread/realtime/transcript/delta"
         | "thread/realtime/transcript/done"
+        | "thread/realtime/outputAudio/delta"
         | "thread/realtime/error"
         | "thread/realtime/closed" => {
             let update = decode_realtime_update(method, params)?;
@@ -2829,6 +2892,21 @@ pub fn decode_realtime_update(
                 realtime_session_id: notification.realtime_session_id,
             })
         }
+        "thread/realtime/sdp" => {
+            let notification: RealtimeSdpNotification = serde_json::from_value(params.clone())?;
+            Ok(AppServerRealtimeUpdate::Sdp {
+                thread_id: notification.thread_id,
+                sdp: notification.sdp,
+            })
+        }
+        "thread/realtime/itemAdded" => {
+            let notification: RealtimeItemAddedNotification =
+                serde_json::from_value(params.clone())?;
+            Ok(AppServerRealtimeUpdate::ItemAdded {
+                thread_id: notification.thread_id,
+                item: notification.item,
+            })
+        }
         "thread/realtime/transcript/delta" => {
             let notification: RealtimeTranscriptDeltaNotification =
                 serde_json::from_value(params.clone())?;
@@ -2845,6 +2923,19 @@ pub fn decode_realtime_update(
                 thread_id: notification.thread_id,
                 role: notification.role,
                 text: notification.text,
+            })
+        }
+        "thread/realtime/outputAudio/delta" => {
+            let notification: RealtimeOutputAudioDeltaNotification =
+                serde_json::from_value(params.clone())?;
+            Ok(AppServerRealtimeUpdate::OutputAudioDelta {
+                thread_id: notification.thread_id,
+                audio: AppServerRealtimeAudioDelta {
+                    data: notification.audio.data,
+                    sample_rate: notification.audio.sample_rate,
+                    num_channels: notification.audio.num_channels,
+                    samples_per_channel: notification.audio.samples_per_channel,
+                },
             })
         }
         "thread/realtime/error" => {

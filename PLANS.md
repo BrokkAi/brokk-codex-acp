@@ -180,10 +180,12 @@ The current repository has the first working ACP/app-server bridge in place:
     moderation metadata intended for client-side presentation.
   - `mcpServer/startupStatus/updated` -> ACP agent-message diagnostics for
     thread-scoped MCP startup state and failures.
-  - `thread/realtime/started`, `thread/realtime/transcript/delta`,
-    `thread/realtime/transcript/done`, `thread/realtime/error`, and
-    `thread/realtime/closed` -> ACP agent-message diagnostics for realtime
-    session lifecycle and text transcript events.
+  - `thread/realtime/started`, `thread/realtime/sdp`,
+    `thread/realtime/itemAdded`, `thread/realtime/transcript/delta`,
+    `thread/realtime/transcript/done`, `thread/realtime/outputAudio/delta`,
+    `thread/realtime/error`, and `thread/realtime/closed` -> ACP
+    agent-message diagnostics for realtime session lifecycle, SDP, raw item,
+    transcript text, audio metadata, and transport events.
 - Server-initiated request handling:
   - `currentTime/read` -> JSON-RPC response with the adapter host's current
     Unix timestamp in seconds.
@@ -882,7 +884,7 @@ app-server item id -> ACP tool call id / message stream id
 | `model/verification` | `agent_message_chunk` | Implemented as a user-visible diagnostic chunk summarizing additional verification requirements. |
 | `turn/moderationMetadata` | `agent_message_chunk` | Implemented as a user-visible diagnostic chunk preserving the metadata payload as compact JSON. |
 | `mcpServer/startupStatus/updated` | `agent_message_chunk` | Implemented for thread-scoped MCP startup diagnostics; app-scoped updates have no stable ACP session target and are ignored. |
-| `thread/realtime/started` / `thread/realtime/transcript/delta` / `thread/realtime/transcript/done` / `thread/realtime/error` / `thread/realtime/closed` | `agent_message_chunk` | Implemented as user-visible diagnostics for realtime lifecycle and text transcript events. Audio chunks and raw realtime items remain intentionally unmapped until ACP has a suitable client surface. |
+| `thread/realtime/started` / `thread/realtime/sdp` / `thread/realtime/itemAdded` / `thread/realtime/transcript/delta` / `thread/realtime/transcript/done` / `thread/realtime/outputAudio/delta` / `thread/realtime/error` / `thread/realtime/closed` | `agent_message_chunk` | Implemented as user-visible diagnostics for realtime lifecycle, SDP, raw item, text transcript, audio metadata, and transport events. Native audio playback remains pending because ACP v1 has no realtime audio stream. |
 | `warning` / `error` | `agent_message_chunk` | Implemented with retry/details/error-code text when app-server provides it. |
 
 ## Slash Commands

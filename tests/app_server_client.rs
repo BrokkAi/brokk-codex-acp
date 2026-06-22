@@ -425,8 +425,11 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
             "skills-changed",
             "settings:thread-1:gpt-5-codex:high:priority",
             "realtime-started:session-1",
+            "realtime-sdp:10",
+            "realtime-item:{\"kind\":\"handoff_request\",\"target\":\"browser\"}",
             "realtime-delta:assistant:live",
             "realtime-done:assistant:live final",
+            "realtime-audio:8:24000:1:320",
             "realtime-error:network interrupted",
             "realtime-closed:client stopped",
             "message:fake response",
@@ -817,11 +820,26 @@ fn realtime_summary(update: &AppServerRealtimeUpdate) -> String {
             "realtime-started:{}",
             realtime_session_id.as_deref().unwrap_or_default()
         ),
+        AppServerRealtimeUpdate::Sdp { sdp, .. } => {
+            format!("realtime-sdp:{}", sdp.len())
+        }
+        AppServerRealtimeUpdate::ItemAdded { item, .. } => {
+            format!("realtime-item:{item}")
+        }
         AppServerRealtimeUpdate::TranscriptDelta { role, delta, .. } => {
             format!("realtime-delta:{role}:{delta}")
         }
         AppServerRealtimeUpdate::TranscriptDone { role, text, .. } => {
             format!("realtime-done:{role}:{text}")
+        }
+        AppServerRealtimeUpdate::OutputAudioDelta { audio, .. } => {
+            format!(
+                "realtime-audio:{}:{}:{}:{}",
+                audio.data.as_deref().unwrap_or_default().len(),
+                audio.sample_rate.unwrap_or_default(),
+                audio.num_channels.unwrap_or_default(),
+                audio.samples_per_channel.unwrap_or_default()
+            )
         }
         AppServerRealtimeUpdate::Error { message, .. } => {
             format!("realtime-error:{message}")
@@ -1758,6 +1776,23 @@ for line in sys.stdin:
                 },
             })
             send({
+                "method": "thread/realtime/sdp",
+                "params": {
+                    "threadId": "thread-1",
+                    "sdp": "answer-sdp",
+                },
+            })
+            send({
+                "method": "thread/realtime/itemAdded",
+                "params": {
+                    "threadId": "thread-1",
+                    "item": {
+                        "kind": "handoff_request",
+                        "target": "browser",
+                    },
+                },
+            })
+            send({
                 "method": "thread/realtime/transcript/delta",
                 "params": {
                     "threadId": "thread-1",
@@ -1771,6 +1806,18 @@ for line in sys.stdin:
                     "threadId": "thread-1",
                     "role": "assistant",
                     "text": "live final",
+                },
+            })
+            send({
+                "method": "thread/realtime/outputAudio/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "audio": {
+                        "data": "YWJjZA==",
+                        "sampleRate": 24000,
+                        "numChannels": 1,
+                        "samplesPerChannel": 320,
+                    },
                 },
             })
             send({

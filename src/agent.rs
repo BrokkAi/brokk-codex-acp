@@ -36,16 +36,16 @@ use crate::app_server::{
     AppServerCollaborationModeMask, AppServerCollaborationModeSettings, AppServerErrorUpdate,
     AppServerHistoryEvent, AppServerMcpServerStartupStatusUpdate, AppServerMessage, AppServerModel,
     AppServerModelReroutedUpdate, AppServerModelVerificationUpdate, AppServerPermissionProfile,
-    AppServerPlanStatus, AppServerPromptCompletion, AppServerPromptEvent, AppServerRealtimeUpdate,
-    AppServerSkill, AppServerThread, AppServerThreadSettingsUpdate, AppServerToolKind,
-    AppServerToolStatus, AppServerTurnInput, AppServerTurnModerationMetadataUpdate,
-    AppServerWarningUpdate, ThreadSettingsUpdateParams, decode_error,
-    decode_mcp_server_startup_status_updated, decode_model_rerouted, decode_model_verification,
-    decode_realtime_update, decode_thread_archived, decode_thread_closed, decode_thread_deleted,
-    decode_thread_goal_cleared, decode_thread_goal_updated, decode_thread_name_updated,
-    decode_thread_settings_updated, decode_thread_status_changed, decode_thread_unarchived,
-    decode_turn_moderation_metadata, decode_warning, history_events_for_turns,
-    is_app_server_method_unavailable,
+    AppServerPlanStatus, AppServerPromptCompletion, AppServerPromptEvent,
+    AppServerRealtimeAudioDelta, AppServerRealtimeUpdate, AppServerSkill, AppServerThread,
+    AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
+    AppServerTurnModerationMetadataUpdate, AppServerWarningUpdate, ThreadSettingsUpdateParams,
+    decode_error, decode_mcp_server_startup_status_updated, decode_model_rerouted,
+    decode_model_verification, decode_realtime_update, decode_thread_archived,
+    decode_thread_closed, decode_thread_deleted, decode_thread_goal_cleared,
+    decode_thread_goal_updated, decode_thread_name_updated, decode_thread_settings_updated,
+    decode_thread_status_changed, decode_thread_unarchived, decode_turn_moderation_metadata,
+    decode_warning, history_events_for_turns, is_app_server_method_unavailable,
 };
 
 const MODEL_CONFIG_ID: &str = "model";
@@ -587,8 +587,11 @@ impl CodexAcpAgent {
                     .map_err(acp_internal_error)?;
             }
             "thread/realtime/started"
+            | "thread/realtime/sdp"
+            | "thread/realtime/itemAdded"
             | "thread/realtime/transcript/delta"
             | "thread/realtime/transcript/done"
+            | "thread/realtime/outputAudio/delta"
             | "thread/realtime/error"
             | "thread/realtime/closed" => {
                 let update = decode_realtime_update(method, &params).map_err(acp_internal_error)?;
@@ -3963,11 +3966,23 @@ fn realtime_message(update: &AppServerRealtimeUpdate) -> String {
                 "Codex realtime session started.".to_owned()
             }
         }
+        AppServerRealtimeUpdate::Sdp { sdp, .. } => {
+            format!("Codex realtime SDP answer received ({} bytes).", sdp.len())
+        }
+        AppServerRealtimeUpdate::ItemAdded { item, .. } => {
+            format!("Codex realtime item added: {}.", json_value_label(item))
+        }
         AppServerRealtimeUpdate::TranscriptDelta { role, delta, .. } => {
             format!("Codex realtime transcript delta ({role}): {delta}")
         }
         AppServerRealtimeUpdate::TranscriptDone { role, text, .. } => {
             format!("Codex realtime transcript complete ({role}): {text}")
+        }
+        AppServerRealtimeUpdate::OutputAudioDelta { audio, .. } => {
+            format!(
+                "Codex realtime output audio delta: {}.",
+                realtime_audio_summary(audio)
+            )
         }
         AppServerRealtimeUpdate::Error { message, .. } => {
             format!("Codex realtime error: {message}")
@@ -3976,6 +3991,23 @@ fn realtime_message(update: &AppServerRealtimeUpdate) -> String {
             format!("Codex realtime session closed: {reason}.")
         }
     }
+}
+
+fn realtime_audio_summary(audio: &AppServerRealtimeAudioDelta) -> String {
+    let mut parts = Vec::new();
+    if let Some(data) = audio.data.as_deref() {
+        parts.push(format!("{} encoded characters", data.len()));
+    }
+    if let Some(sample_rate) = audio.sample_rate {
+        parts.push(format!("{sample_rate} Hz"));
+    }
+    if let Some(num_channels) = audio.num_channels {
+        parts.push(format!("{num_channels} channels"));
+    }
+    if let Some(samples_per_channel) = audio.samples_per_channel {
+        parts.push(format!("{samples_per_channel} samples per channel"));
+    }
+    readable_label_list(parts).unwrap_or_else(|| "unknown audio payload".to_owned())
 }
 
 fn json_value_label(value: &serde_json::Value) -> String {

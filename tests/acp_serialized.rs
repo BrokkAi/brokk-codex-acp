@@ -213,8 +213,11 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
         "Codex requires additional verification: Trusted Access For Cyber.",
         "Codex moderation metadata: {\"category\":\"cyber\",\"severity\":\"medium\"}.",
         "Codex realtime session started: `realtime-serialized`.",
+        "Codex realtime SDP answer received (10 bytes).",
+        "Codex realtime item added: {\"kind\":\"handoff_request\",\"target\":\"browser\"}.",
         "Codex realtime transcript delta (assistant): live",
         "Codex realtime transcript complete (assistant): live final",
+        "Codex realtime output audio delta: 8 encoded characters, 24000 Hz, 1 channels, and 320 samples per channel.",
         "Codex realtime error: backend unavailable",
         "Codex realtime session closed: complete.",
         "Codex error (retrying): transient failure",
@@ -1256,6 +1259,23 @@ for line in sys.stdin:
                 },
             })
             send({
+                "method": "thread/realtime/sdp",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "sdp": "answer-sdp",
+                },
+            })
+            send({
+                "method": "thread/realtime/itemAdded",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "item": {
+                        "kind": "handoff_request",
+                        "target": "browser",
+                    },
+                },
+            })
+            send({
                 "method": "thread/realtime/transcript/delta",
                 "params": {
                     "threadId": "thread-serialized",
@@ -1269,6 +1289,18 @@ for line in sys.stdin:
                     "threadId": "thread-serialized",
                     "role": "assistant",
                     "text": "live final",
+                },
+            })
+            send({
+                "method": "thread/realtime/outputAudio/delta",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "audio": {
+                        "data": "YWJjZA==",
+                        "sampleRate": 24000,
+                        "numChannels": 1,
+                        "samplesPerChannel": 320,
+                    },
                 },
             })
             send({
