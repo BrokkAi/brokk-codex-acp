@@ -808,6 +808,11 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     assert_eq!(workspace_messages["featureEnabled"], true);
     assert_eq!(workspace_messages["messages"][0]["messageId"], "msg_123");
 
+    let remote_control = client.remote_control_status_read().await?;
+    assert_eq!(remote_control.status, "connected");
+    assert_eq!(remote_control.server_name, "Codex Remote");
+    assert_eq!(remote_control.environment_id.as_deref(), Some("env-123"));
+
     let plugins = client.plugin_list().await?;
     assert_eq!(plugins["data"][0]["name"], "github");
 
@@ -1378,7 +1383,7 @@ def goal_payload():
 for line in sys.stdin:
     message = json.loads(line)
     method = message.get("method")
-    params = message.get("params") or {}
+    params = message.get("params", {})
     message_id = message.get("id")
 
     if method == "initialize":
@@ -1813,6 +1818,14 @@ for line in sys.stdin:
                     "archivedAt": None,
                 },
             ],
+        })
+    elif method == "remoteControl/status/read":
+        assert params is None
+        response(message_id, {
+            "status": "connected",
+            "serverName": "Codex Remote",
+            "installationId": "install-123",
+            "environmentId": "env-123",
         })
     elif method == "plugin/list":
         assert params == {}

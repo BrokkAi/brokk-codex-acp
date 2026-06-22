@@ -247,9 +247,9 @@ The current repository has the first working ACP/app-server bridge in place:
     `hooks`, `init`, `kill`, `login`, `login-cancel`, `logout`,
     `marketplace-add`, `marketplace-remove`, `marketplace-upgrade`, `memory`,
     `mcp`, `mcp-reload`, `model`, `model-provider`, `new`, `permissions`,
-    `plan`, `plugin-skill`, `plugins`, `ps`, `rate-limits`, `rename`, `resume`,
-    `review`, `rollback`, `skill-roots`, `status`, `stop`, `unarchive`, `usage`, and
-    `workspace-messages` commands are published through ACP
+    `plan`, `plugin-skill`, `plugins`, `ps`, `rate-limits`, `remote-control`,
+    `rename`, `resume`, `review`, `rollback`, `skill-roots`, `status`, `stop`,
+    `unarchive`, `usage`, and `workspace-messages` commands are published through ACP
     `available_commands_update` alongside enabled skills.
   - `/archive` is intercepted by the adapter, mapped to `thread/archive`, and
     reflected to ACP clients through `session_info_update._meta`.
@@ -532,8 +532,8 @@ Tasks:
   `/kill`, `/login`, `/login-cancel`, `/logout`, `/marketplace-add`,
   `/marketplace-remove`, `/marketplace-upgrade`, `/memory`, `/mcp`,
   `/mcp-reload`, `/model`, `/model-provider`, `/new`, `/permissions`, `/plan`,
-  `/plugin-skill`, `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
-  `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
+  `/plugin-skill`, `/plugins`, `/ps`, `/rate-limits`, `/remote-control`,
+  `/rename`, `/resume`, `/review`, `/rollback`, `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
   `/workspace-messages`.
 - [x] Build the full command registry with aliases, availability, required
   active turn state, and handler metadata.
@@ -546,8 +546,8 @@ Tasks:
   `/kill`, `/login`, `/login-cancel`, `/logout`, `/marketplace-add`,
   `/marketplace-remove`, `/marketplace-upgrade`, `/memory`, `/mcp`,
   `/mcp-reload`, `/model`, `/model-provider`, `/new`, `/permissions`, `/plan`,
-  `/plugin-skill`, `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
-  `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
+  `/plugin-skill`, `/plugins`, `/ps`, `/rate-limits`, `/remote-control`,
+  `/rename`, `/resume`, `/review`, `/rollback`, `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
   `/workspace-messages`. `/fork` is implemented only as an extension command
   backed by Codex `thread/fork`, not as required ACP v1 behavior.
 - [x] Return explicit unsupported-command responses for slash commands that are
@@ -1065,6 +1065,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/features` | `experimentalFeature/list` `[implemented as summary]` |
 | `/feature <name> enable|disable` | `experimentalFeature/enablement/set` `[implemented as summary]` |
 | `/rate-limits` | `account/rateLimits/read` `[implemented as summary]` |
+| `/remote-control` | `remoteControl/status/read` `[implemented as summary]` |
 | `/usage` | `account/usage/read` `[implemented as summary]` |
 | `/workspace-messages` | `account/workspaceMessages/read` `[implemented as summary]` |
 | `/mcp` | `mcpServerStatus/list` `[implemented as summary]` |
@@ -1324,6 +1325,8 @@ model prompts:
 - [x] `/marketplace-upgrade [name]` calls `marketplace/upgrade` and returns an
   ACP agent-message summary.
 - [x] `/rate-limits` calls `account/rateLimits/read` and returns an ACP
+  agent-message summary.
+- [x] `/remote-control` calls `remoteControl/status/read` and returns an ACP
   agent-message summary.
 - [x] `/usage` calls `account/usage/read` and returns an ACP agent-message
   summary.
@@ -1668,6 +1671,7 @@ Manual flows:
 - [x] Add account login/logout commands.
 - [x] Add experimental feature flag display.
 - [x] Add experimental feature enable/disable command.
+- [x] Add remote-control status display.
 - [x] Add initial hooks display.
 - [x] Add background terminal list/clean.
 - [x] Add account rate limit display.

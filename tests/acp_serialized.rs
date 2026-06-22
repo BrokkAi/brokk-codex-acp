@@ -918,6 +918,13 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             ],
         ),
         (
+            "/remote-control",
+            &[
+                "Codex remote control status: connected on `Codex Remote`.",
+                "Environment: `env-123`.",
+            ],
+        ),
+        (
             "/features",
             &[
                 "Features: 2 entries",
@@ -1767,6 +1774,16 @@ for line in sys.stdin:
                         "archivedAt": None,
                     },
                 ],
+            },
+        })
+    elif method == "remoteControl/status/read":
+        assert params is None
+        response(message_id, {
+            "result": {
+                "status": "connected",
+                "serverName": "Codex Remote",
+                "installationId": "install-123",
+                "environmentId": "env-123",
             },
         })
     elif method == "plugin/list":

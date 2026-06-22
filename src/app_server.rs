@@ -441,6 +441,19 @@ impl AppServerClient {
             .await
     }
 
+    pub async fn remote_control_status_read(
+        &mut self,
+    ) -> anyhow::Result<AppServerRemoteControlStatusUpdate> {
+        let response: RemoteControlStatusReadResponse = self
+            .request("remoteControl/status/read", Option::<EmptyParams>::None)
+            .await?;
+        Ok(AppServerRemoteControlStatusUpdate {
+            status: response.status,
+            server_name: response.server_name,
+            environment_id: response.environment_id,
+        })
+    }
+
     pub async fn experimental_feature_list(
         &mut self,
         thread_id: String,
@@ -2020,6 +2033,15 @@ impl From<AccountLoginMode> for AccountLoginStartParams {
 #[serde(rename_all = "camelCase")]
 struct AccountLoginCancelParams {
     login_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoteControlStatusReadResponse {
+    status: String,
+    server_name: String,
+    #[serde(default)]
+    environment_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

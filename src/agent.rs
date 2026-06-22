@@ -121,6 +121,7 @@ const PLUGINS_COMMAND: &str = "plugins";
 const PS_COMMAND: &str = "ps";
 const RATE_LIMITS_COMMAND: &str = "rate-limits";
 const RENAME_COMMAND: &str = "rename";
+const REMOTE_CONTROL_COMMAND: &str = "remote-control";
 const RESUME_COMMAND: &str = "resume";
 const REVIEW_COMMAND: &str = "review";
 const ROLLBACK_COMMAND: &str = "rollback";
@@ -1912,6 +1913,23 @@ impl CodexAcpAgent {
                     cx,
                 )
             }
+            BuiltinCommand::RemoteControl => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .remote_control_status_read()
+                    .await
+                    .map_err(|error| {
+                        acp_app_server_method_error("remoteControl/status/read", error)
+                    })?;
+                publish_catalog_message(
+                    session_id,
+                    "Remote control",
+                    remote_control_status_message(&response),
+                    cx,
+                )
+            }
             BuiltinCommand::SkillRoots { roots } => {
                 let cwd = self
                     .session_cwd(session_id)
@@ -3461,6 +3479,7 @@ enum BuiltinCommand {
     Plugins,
     Ps,
     RateLimits,
+    RemoteControl,
     Rename {
         title: String,
     },
@@ -3539,6 +3558,7 @@ enum CommandHandler {
     Plugins,
     Ps,
     RateLimits,
+    RemoteControl,
     Rename,
     Resume,
     Review,
@@ -3859,6 +3879,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         handler: CommandHandler::RateLimits,
     },
     BuiltinCommandSpec {
+        name: REMOTE_CONTROL_COMMAND,
+        aliases: &[],
+        description: "Show Codex remote-control status",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::RemoteControl,
+    },
+    BuiltinCommandSpec {
         name: RENAME_COMMAND,
         aliases: &[],
         description: "Rename this Codex thread",
@@ -4064,6 +4092,9 @@ fn parse_command_from_spec(
         CommandHandler::Ps => parse_no_argument_command(rest, spec.name, BuiltinCommand::Ps),
         CommandHandler::RateLimits => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::RateLimits)
+        }
+        CommandHandler::RemoteControl => {
+            parse_no_argument_command(rest, spec.name, BuiltinCommand::RemoteControl)
         }
         CommandHandler::Rename => {
             let title = rest.trim();
@@ -7532,6 +7563,7 @@ mod tests {
             "/plugins",
             "/ps",
             "/rate-limits",
+            "/remote-control",
             "/rollback 2",
             "/skill-roots /repo/.codex/skills,/shared/skills",
             "/status",
@@ -7660,6 +7692,7 @@ mod tests {
                 "/plugins" => assert!(matches!(command, BuiltinCommand::Plugins)),
                 "/ps" => assert!(matches!(command, BuiltinCommand::Ps)),
                 "/rate-limits" => assert!(matches!(command, BuiltinCommand::RateLimits)),
+                "/remote-control" => assert!(matches!(command, BuiltinCommand::RemoteControl)),
                 "/rollback 2" => assert!(matches!(
                     command,
                     BuiltinCommand::Rollback { num_turns } if num_turns == 2
@@ -7963,6 +7996,10 @@ mod tests {
             ("/plan now", "/plan does not accept arguments"),
             ("/plugins now", "/plugins does not accept arguments"),
             ("/ps now", "/ps does not accept arguments"),
+            (
+                "/remote-control now",
+                "/remote-control does not accept arguments",
+            ),
             ("/status now", "/status does not accept arguments"),
             ("/stop now", "/stop does not accept arguments"),
             ("/unarchive now", "/unarchive does not accept arguments"),
@@ -8198,6 +8235,7 @@ mod tests {
                 "plugins",
                 "ps",
                 "rate-limits",
+                "remote-control",
                 "rename",
                 "resume",
                 "review",
