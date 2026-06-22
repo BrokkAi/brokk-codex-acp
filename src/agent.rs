@@ -120,6 +120,7 @@ const STATUS_COMMAND: &str = "status";
 const STOP_COMMAND: &str = "stop";
 const UNARCHIVE_COMMAND: &str = "unarchive";
 const USAGE_COMMAND: &str = "usage";
+const WORKSPACE_MESSAGES_COMMAND: &str = "workspace-messages";
 type CancelSignals = Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>;
 const HISTORY_REPLAY_PAGE_SIZE: u32 = 50;
 const APPROVAL_POLICY_OPTIONS: [(&str, &str, &str); 4] = [
@@ -1802,6 +1803,21 @@ impl CodexAcpAgent {
                     .map_err(acp_internal_error)?;
                 publish_catalog_message(session_id, "Usage", account_usage_summary(&response), cx)
             }
+            BuiltinCommand::WorkspaceMessages => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .account_workspace_messages_read()
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(
+                    session_id,
+                    "Workspace messages",
+                    workspace_messages_summary(&response),
+                    cx,
+                )
+            }
             BuiltinCommand::Resume { target } => {
                 let cwd = self
                     .session_cwd(session_id)
@@ -3106,6 +3122,7 @@ enum BuiltinCommand {
     Stop,
     Unarchive,
     Usage,
+    WorkspaceMessages,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -3166,6 +3183,7 @@ enum CommandHandler {
     Stop,
     Unarchive,
     Usage,
+    WorkspaceMessages,
 }
 
 #[derive(Debug)]
@@ -3475,6 +3493,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::Usage,
     },
+    BuiltinCommandSpec {
+        name: WORKSPACE_MESSAGES_COMMAND,
+        aliases: &[],
+        description: "Show active Codex workspace messages",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::WorkspaceMessages,
+    },
 ];
 
 fn parse_builtin_command(text: &str) -> Result<Option<BuiltinCommand>, Error> {
@@ -3606,6 +3632,9 @@ fn parse_command_from_spec(
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Unarchive)
         }
         CommandHandler::Usage => parse_no_argument_command(rest, spec.name, BuiltinCommand::Usage),
+        CommandHandler::WorkspaceMessages => {
+            parse_no_argument_command(rest, spec.name, BuiltinCommand::WorkspaceMessages)
+        }
     }
 }
 
@@ -5896,6 +5925,43 @@ fn account_usage_summary(value: &serde_json::Value) -> String {
     lines.join("\n")
 }
 
+fn workspace_messages_summary(value: &serde_json::Value) -> String {
+    let mut lines = vec!["Workspace messages: active messages".to_owned()];
+
+    if let Some(enabled) = value
+        .get("featureEnabled")
+        .and_then(serde_json::Value::as_bool)
+    {
+        lines.push(format!("- Feature enabled: {enabled}"));
+    }
+
+    let Some(messages) = value.get("messages").and_then(serde_json::Value::as_array) else {
+        if !value.is_null() {
+            lines.push(format!("- Response: {}", compact_json(value)));
+        }
+        return lines.join("\n");
+    };
+
+    lines.push(format!("- Messages: {} entries", messages.len()));
+    for message in messages.iter().take(5) {
+        let message_type = message
+            .get("messageType")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("message");
+        let body = message
+            .get("messageBody")
+            .and_then(serde_json::Value::as_str)
+            .map(|body| truncate_for_summary(body, 160))
+            .unwrap_or_else(|| compact_json(message));
+        lines.push(format!("- {}: {}", humanize_identifier(message_type), body));
+    }
+    if messages.len() > 5 {
+        lines.push(format!("- ... {} more", messages.len() - 5));
+    }
+
+    lines.join("\n")
+}
+
 fn experimental_features_summary(
     response: &crate::app_server::ExperimentalFeatureListResponse,
 ) -> String {
@@ -6647,6 +6713,7 @@ mod tests {
             "/stop",
             "/unarchive",
             "/usage",
+            "/workspace-messages",
         ] {
             let command = parse_builtin_command(text).unwrap().unwrap();
             match text {
@@ -6743,6 +6810,9 @@ mod tests {
                 "/stop" => assert!(matches!(command, BuiltinCommand::Stop)),
                 "/unarchive" => assert!(matches!(command, BuiltinCommand::Unarchive)),
                 "/usage" => assert!(matches!(command, BuiltinCommand::Usage)),
+                "/workspace-messages" => {
+                    assert!(matches!(command, BuiltinCommand::WorkspaceMessages))
+                }
                 _ => unreachable!(),
             }
         }
@@ -7208,6 +7278,7 @@ mod tests {
                 "stop",
                 "unarchive",
                 "usage",
+                "workspace-messages",
                 "skill:skill-creator"
             ]
         );
@@ -7281,6 +7352,34 @@ mod tests {
         assert_eq!(
             summary,
             "Usage: account token activity\n- Lifetime tokens: 12345\n- Peak daily tokens: 900\n- Longest running turn seconds: 360\n- Current streak days: 3\n- Longest streak days: 7\n- Daily buckets: 2 entries\n- 2026-06-21: 700 tokens\n- 2026-06-22: 900 tokens"
+        );
+    }
+
+    #[test]
+    fn workspace_messages_summary_lists_active_messages() {
+        let summary = workspace_messages_summary(&serde_json::json!({
+            "featureEnabled": true,
+            "messages": [
+                {
+                    "messageId": "msg_123",
+                    "messageType": "headline",
+                    "messageBody": "Workspace maintenance starts at 5pm.",
+                    "createdAt": 1781395200,
+                    "archivedAt": null
+                },
+                {
+                    "messageId": "msg_456",
+                    "messageType": "announcement",
+                    "messageBody": "New Codex limits are available.",
+                    "createdAt": 1781395300,
+                    "archivedAt": null
+                }
+            ]
+        }));
+
+        assert_eq!(
+            summary,
+            "Workspace messages: active messages\n- Feature enabled: true\n- Messages: 2 entries\n- Headline: Workspace maintenance starts at 5pm.\n- Announcement: New Codex limits are available."
         );
     }
 

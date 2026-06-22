@@ -409,6 +409,11 @@ impl AppServerClient {
         self.request("account/usage/read", EmptyParams {}).await
     }
 
+    pub async fn account_workspace_messages_read(&mut self) -> anyhow::Result<Value> {
+        self.request("account/workspaceMessages/read", EmptyParams {})
+            .await
+    }
+
     pub async fn experimental_feature_list(
         &mut self,
         thread_id: String,

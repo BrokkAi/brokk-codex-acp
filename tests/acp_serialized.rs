@@ -834,6 +834,16 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             ],
         ),
         (
+            "/workspace-messages",
+            &[
+                "Workspace messages: active messages",
+                "- Feature enabled: true",
+                "- Messages: 2 entries",
+                "- Headline: Workspace maintenance starts at 5pm.",
+                "- Announcement: New Codex limits are available.",
+            ],
+        ),
+        (
             "/features",
             &[
                 "Features: 2 entries",
@@ -1549,6 +1559,29 @@ for line in sys.stdin:
                     {
                         "startDate": "2026-06-22",
                         "tokens": 900,
+                    },
+                ],
+            },
+        })
+    elif method == "account/workspaceMessages/read":
+        assert params == {}
+        response(message_id, {
+            "result": {
+                "featureEnabled": True,
+                "messages": [
+                    {
+                        "messageId": "msg_123",
+                        "messageType": "headline",
+                        "messageBody": "Workspace maintenance starts at 5pm.",
+                        "createdAt": 1781395200,
+                        "archivedAt": None,
+                    },
+                    {
+                        "messageId": "msg_456",
+                        "messageType": "announcement",
+                        "messageBody": "New Codex limits are available.",
+                        "createdAt": 1781395300,
+                        "archivedAt": None,
                     },
                 ],
             },

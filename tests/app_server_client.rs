@@ -789,6 +789,10 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     assert_eq!(usage["summary"]["lifetimeTokens"], 12345);
     assert_eq!(usage["dailyUsageBuckets"][0]["tokens"], 700);
 
+    let workspace_messages = client.account_workspace_messages_read().await?;
+    assert_eq!(workspace_messages["featureEnabled"], true);
+    assert_eq!(workspace_messages["messages"][0]["messageId"], "msg_123");
+
     let plugins = client.plugin_list().await?;
     assert_eq!(plugins["data"][0]["name"], "github");
 
@@ -1690,6 +1694,27 @@ for line in sys.stdin:
                 {
                     "startDate": "2026-06-22",
                     "tokens": 900,
+                },
+            ],
+        })
+    elif method == "account/workspaceMessages/read":
+        assert params == {}
+        response(message_id, {
+            "featureEnabled": True,
+            "messages": [
+                {
+                    "messageId": "msg_123",
+                    "messageType": "headline",
+                    "messageBody": "Workspace maintenance starts at 5pm.",
+                    "createdAt": 1781395200,
+                    "archivedAt": None,
+                },
+                {
+                    "messageId": "msg_456",
+                    "messageType": "announcement",
+                    "messageBody": "New Codex limits are available.",
+                    "createdAt": 1781395300,
+                    "archivedAt": None,
                 },
             ],
         })

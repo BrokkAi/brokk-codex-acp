@@ -244,9 +244,9 @@ The current repository has the first working ACP/app-server bridge in place:
     `features`, `fork`, `goal`, `hooks`, `init`, `kill`, `marketplace-add`,
     `marketplace-remove`, `memory`, `mcp`, `model`, `new`, `permissions`,
     `plan`, `plugins`, `ps`, `rate-limits`, `rename`, `resume`, `review`,
-    `rollback`, `skill-roots`, `status`, `stop`, `unarchive`, and `usage`
-    commands are published through ACP `available_commands_update` alongside
-    enabled skills.
+    `rollback`, `skill-roots`, `status`, `stop`, `unarchive`, `usage`, and
+    `workspace-messages` commands are published through ACP
+    `available_commands_update` alongside enabled skills.
   - `/archive` is intercepted by the adapter, mapped to `thread/archive`, and
     reflected to ACP clients through `session_info_update._meta`.
   - `/unarchive` is intercepted by the adapter, mapped to `thread/unarchive`,
@@ -272,6 +272,9 @@ The current repository has the first working ACP/app-server bridge in place:
     summary.
   - `/usage` is intercepted by the adapter, mapped to `account/usage/read`, and
     reflected as a short ACP agent-message summary.
+  - `/workspace-messages` is intercepted by the adapter, mapped to
+    `account/workspaceMessages/read`, and reflected as a short ACP
+    agent-message summary.
   - `/feature <name> enable|disable` is intercepted by the adapter, mapped to
     `experimentalFeature/enablement/set`, and reflected as a short ACP
     agent-message summary.
@@ -503,7 +506,8 @@ Tasks:
   `/goal`, `/hooks`, `/init`, `/kill`, `/marketplace-add`,
   `/marketplace-remove`, `/memory`, `/mcp`, `/model`, `/new`, `/permissions`,
   `/plan`, `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`,
-  `/rollback`, `/skill-roots`, `/status`, `/stop`, `/unarchive`, and `/usage`.
+  `/rollback`, `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
+  `/workspace-messages`.
 - [x] Build the full command registry with aliases, availability, required
   active turn state, and handler metadata.
 - [x] Publish adapter-owned ACP available commands plus skills.
@@ -514,9 +518,9 @@ Tasks:
   `/goal`, `/hooks`, `/init`, `/kill`, `/marketplace-add`,
   `/marketplace-remove`, `/memory`, `/mcp`, `/model`, `/new`, `/permissions`,
   `/plan`, `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`,
-  `/rollback`, `/skill-roots`, `/status`, `/stop`, `/unarchive`, and `/usage`.
-  `/fork` is implemented only as an extension command backed by Codex
-  `thread/fork`, not as required ACP v1 behavior.
+  `/rollback`, `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
+  `/workspace-messages`. `/fork` is implemented only as an extension command
+  backed by Codex `thread/fork`, not as required ACP v1 behavior.
 - [x] Return explicit unsupported-command responses for slash commands that are
   not currently handled by the adapter. `/skill ...` remains a supported
   non-builtin fallback.
@@ -1024,6 +1028,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/feature <name> enable|disable` | `experimentalFeature/enablement/set` `[implemented as summary]` |
 | `/rate-limits` | `account/rateLimits/read` `[implemented as summary]` |
 | `/usage` | `account/usage/read` `[implemented as summary]` |
+| `/workspace-messages` | `account/workspaceMessages/read` `[implemented as summary]` |
 | `/mcp` | `mcpServerStatus/list` `[implemented as summary]` |
 | `/mcp-resource <server> <uri>` | `mcpServer/resource/read` `[implemented as summary]` |
 | `/mcp-tool <server> <tool> [json-arguments]` | `mcpServer/tool/call` `[implemented as summary]` |
@@ -1269,6 +1274,8 @@ model prompts:
   agent-message summary.
 - [x] `/usage` calls `account/usage/read` and returns an ACP agent-message
   summary.
+- [x] `/workspace-messages` calls `account/workspaceMessages/read` and returns
+  an ACP agent-message summary.
 - [x] `/mcp` calls `mcpServerStatus/list` and returns an ACP agent-message
   summary.
 - [x] `/mcp-resource <server> <uri>` calls `mcpServer/resource/read` for the
@@ -1538,6 +1545,7 @@ Manual flows:
 - [x] Implement `/stop`.
 - [x] Implement `/rate-limits`.
 - [x] Implement `/usage`.
+- [x] Implement `/workspace-messages`.
 
 ### Phase 4: Skills
 
@@ -1589,6 +1597,7 @@ Manual flows:
 - [x] Add background terminal list/clean.
 - [x] Add account rate limit display.
 - [x] Add account usage display.
+- [x] Add workspace messages display.
 
 ### Phase 7: Hardening
 
