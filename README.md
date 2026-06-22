@@ -140,9 +140,10 @@ The project currently includes:
 
 The adapter is not complete yet. Native realtime audio playback and remaining
 full-fidelity history edge cases are still planned work. Terminal content is
-currently projected through Codex app-server command events; ACP terminal
-embedding can be added when app-server exposes a client-terminal handoff
-instead of owning command execution itself.
+currently projected through Codex app-server command output and terminal
+interaction events; ACP `terminal/create` embedding should only be added if
+app-server exposes a client-terminal handoff instead of owning command
+execution itself.
 
 ## Usage
 

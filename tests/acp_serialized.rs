@@ -201,6 +201,16 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
     );
     assert!(
         session_updates.iter().any(|update| {
+            update["sessionUpdate"] == "tool_call_update"
+                && update["toolCallId"] == "cmd-1"
+                && update
+                    .to_string()
+                    .contains("[terminal input to process `proc-1`]\\nq")
+        }),
+        "session updates: {session_updates:#?}"
+    );
+    assert!(
+        session_updates.iter().any(|update| {
             update["sessionUpdate"] == "tool_call"
                 && update["toolCallId"] == "mcp-1"
                 && update["title"] == "filesystem.read_file"
@@ -2233,6 +2243,16 @@ for line in sys.stdin:
                     "turnId": "turn-serialized-notifications",
                     "itemId": "cmd-1",
                     "delta": "ok",
+                },
+            })
+            send({
+                "method": "item/commandExecution/terminalInteraction",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "itemId": "cmd-1",
+                    "processId": "proc-1",
+                    "stdin": "q",
                 },
             })
             send({

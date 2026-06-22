@@ -171,7 +171,9 @@ The current repository has the first working ACP/app-server bridge in place:
   - `item/started` and `item/completed` for command, file-change, MCP,
     collaboration, web-search, review, sleep, and compaction items -> ACP tool
     call lifecycle updates
-  - `item/commandExecution/outputDelta` -> incremental ACP tool call content
+  - `item/commandExecution/outputDelta` and
+    `item/commandExecution/terminalInteraction` -> incremental ACP tool call
+    content
   - `turn/diff/updated` -> ACP edit tool call content containing the current
     unified diff snapshot
   - `turn/plan/updated` -> ACP plan updates
@@ -358,9 +360,9 @@ structured ACP diff content when app-server provides per-file paths, including
 live file-change patch updates. Native realtime audio playback, audio prompt
 blocks, and the remaining history
 fidelity edges remain planned work. ACP terminal content is projected through
-app-server command events today; true `terminal/create` embedding should only
-be added if app-server exposes a client-terminal handoff for commands it does
-not execute itself.
+app-server command output and terminal interaction events today; true
+`terminal/create` embedding should only be added if app-server exposes a
+client-terminal handoff for commands it does not execute itself.
 
 ## Immediate Roadmap
 
@@ -444,8 +446,9 @@ Tasks:
 - [x] Add rich ACP UI bridging for request-user-input requests.
 - [x] Add rich ACP UI bridging for dynamic tool requests through a custom ACP
   extension request with fallback.
-- [ ] Add ACP terminal embedding if app-server exposes client-terminal handoff
-  events instead of owning command execution itself.
+- [x] Keep ACP terminal embedding gated on a future app-server client-terminal
+  handoff; project the current app-server-owned command output and terminal
+  interaction events through ACP tool updates.
 
 Acceptance criteria:
 
@@ -471,8 +474,8 @@ Acceptance criteria:
 - [x] Dynamic tool requests route through a rich ACP request surface when one
   is available.
 - [x] Terminal work is documented as waiting on app-server handoff events;
-  current command execution continues to stream through app-server-owned tool
-  events.
+  current command execution and terminal interactions continue to stream
+  through app-server-owned tool events.
 
 ### Milestone B: Skills Catalog and Invocation
 
@@ -930,6 +933,7 @@ Primary notification families:
 - `item/reasoning/summaryTextDelta`
 - `item/reasoning/textDelta`
 - `item/commandExecution/outputDelta`
+- `item/commandExecution/terminalInteraction`
 - `item/commandExecution/requestApproval`
 - `item/fileChange/requestApproval`
 - `item/permissions/requestApproval`
@@ -947,8 +951,9 @@ Mapping rules:
 - Plan item text deltas -> `session/update` with `agent_thought_chunk`.
 - Command execution begin/end -> `session/update` with `tool_call` and
   `tool_call_update`, using `ToolKind::execute` where appropriate.
-- Command output deltas -> `tool_call_update` content. Use ACP terminal methods
-  only when Codex delegates execution to the client terminal capability.
+- Command output deltas and terminal interaction notifications ->
+  `tool_call_update` content. Use ACP terminal methods only when Codex
+  delegates execution to the client terminal capability.
 - File edits -> `tool_call`/`tool_call_update` with diff content and locations.
 - Plan changes -> `session/update` with `plan`; each update must include the
   complete plan entry list because ACP clients replace the plan wholesale.
@@ -979,6 +984,7 @@ app-server item id -> ACP tool call id / message stream id
 | `item/started` | `tool_call` or internal item state | Depends on item subtype. |
 | `item/completed` | `tool_call_update` | Mark final status and attach final content. File-change items attach ACP `diff` content for each `{path, diff}` entry. |
 | `item/commandExecution/outputDelta` | `tool_call_update` content | Preserve stdout/stderr boundaries if present. |
+| `item/commandExecution/terminalInteraction` | `tool_call_update` content | Implemented as an input marker on the existing command tool call; this does not call ACP `terminal/create` because app-server still owns execution. |
 | `item/fileChange/patchUpdated` | `tool_call_update` with `diff` content | Stream live per-file patch updates as structured ACP diff content. |
 | `turn/diff/updated` | `tool_call_update` with text diff content | Useful for file edit previews. This remains text because the app-server event carries a turn-level unified diff without per-file old/new text. |
 | `turn/plan/updated` | `plan` | Send the full plan every time. |

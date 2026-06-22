@@ -1093,6 +1093,7 @@ impl AppServerClient {
                 | "item/completed"
                 | "item/autoApprovalReview/started"
                 | "item/autoApprovalReview/completed"
+                | "item/commandExecution/terminalInteraction"
                 | "item/commandExecution/outputDelta"
                 | "item/fileChange/patchUpdated"
                 | "item/plan/delta"
@@ -3393,6 +3394,28 @@ fn decode_prompt_event(
         }
         "serverRequest/resolved" => decode_server_request_resolved(params)
             .map(|update| Some(AppServerPromptEvent::ServerRequestResolved(update))),
+        "item/commandExecution/terminalInteraction" => {
+            let Some(item_id) = string_field(params, "itemId") else {
+                return Ok(None);
+            };
+            let Some(process_id) = string_field(params, "processId") else {
+                return Ok(None);
+            };
+            let Some(stdin) = string_field(params, "stdin") else {
+                return Ok(None);
+            };
+            Ok(Some(AppServerPromptEvent::ToolCallUpdated(
+                AppServerToolCallUpdate {
+                    id: item_id,
+                    title: None,
+                    kind: None,
+                    status: None,
+                    output_delta: Some(terminal_interaction_output(&process_id, &stdin)),
+                    diffs: Vec::new(),
+                    raw: None,
+                },
+            )))
+        }
         "item/commandExecution/outputDelta" => {
             let Some(item_id) = string_field(params, "itemId") else {
                 return Ok(None);
@@ -4904,6 +4927,10 @@ fn final_item_output(item: &Value) -> Option<String> {
         })
 }
 
+fn terminal_interaction_output(process_id: &str, stdin: &str) -> String {
+    format!("\n[terminal input to process `{process_id}`]\n{stdin}")
+}
+
 fn compact_json_without_internal_fields(item: &Value) -> String {
     let Some(object) = item.as_object() else {
         return String::new();
@@ -4925,6 +4952,35 @@ fn compact_json_without_internal_fields(item: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decode_terminal_interaction_as_tool_output_update() {
+        let event = decode_prompt_event(
+            "item/commandExecution/terminalInteraction",
+            &json!({
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "itemId": "cmd-1",
+                "processId": "proc-1",
+                "stdin": "q",
+            }),
+            "thread-1",
+            Some("turn-1"),
+        )
+        .expect("terminal interaction should decode")
+        .expect("terminal interaction should produce an event");
+
+        let AppServerPromptEvent::ToolCallUpdated(update) = event else {
+            panic!("terminal interaction should update the command tool call");
+        };
+
+        assert_eq!(update.id, "cmd-1");
+        assert_eq!(
+            update.output_delta.as_deref(),
+            Some("\n[terminal input to process `proc-1`]\nq")
+        );
+        assert!(update.raw.is_none());
+    }
 
     fn permissions_approval() -> AppServerApprovalRequest {
         let requested_permissions = json!({
