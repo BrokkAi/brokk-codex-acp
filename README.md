@@ -103,17 +103,21 @@ The project currently includes:
   `permission_profile`, populated from app-server `model/list`,
   `collaborationMode/list`, and `permissionProfile/list`, with writes routed
   through `thread/settings/update`.
+- Dynamic tool callbacks are routed through a custom ACP extension request
+  (`_brokk_codex_acp/dynamic_tool_call`) when the client can answer, with the
+  existing explicit failure response kept as the fallback for clients that do
+  not implement the extension.
 - Background app-server response/notification dispatch, including refresh of
   skill commands, session titles, and session config options when
   `skills/changed`, `thread/name/updated`, `thread/archived`,
   `thread/status/changed`, `thread/goal/updated`, `thread/goal/cleared`, or
   `thread/settings/updated` notifications are observed.
 
-The adapter is not complete yet. Rich ACP UI for dynamic tool callbacks,
-native realtime audio playback, and remaining full-fidelity history edge cases
-are still planned work. Terminal content is currently projected through Codex
-app-server command events; ACP terminal embedding can be added when app-server
-exposes a client-terminal handoff instead of owning command execution itself.
+The adapter is not complete yet. Native realtime audio playback and remaining
+full-fidelity history edge cases are still planned work. Terminal content is
+currently projected through Codex app-server command events; ACP terminal
+embedding can be added when app-server exposes a client-terminal handoff
+instead of owning command execution itself.
 
 ## Usage
 

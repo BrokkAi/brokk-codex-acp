@@ -207,8 +207,9 @@ The current repository has the first working ACP/app-server bridge in place:
   - `tool/requestUserInput` and `item/tool/requestUserInput` -> ACP
     `elicitation/create` form requests, with explicit empty-answer fallback
     responses when the ACP client cannot answer.
-  - `item/tool/call` -> explicit failure fallback response when no
-    ACP-compatible dynamic tool execution surface is available.
+  - `item/tool/call` -> custom ACP extension request
+    `_brokk_codex_acp/dynamic_tool_call`, with explicit failure fallback
+    response when the ACP client cannot answer.
   - `attestation/generate` -> explicit JSON-RPC failure when app-server asks
     unexpectedly; the adapter does not advertise or provide attestation tokens.
   - Unsupported server-initiated app-server requests receive a JSON-RPC
@@ -305,12 +306,12 @@ as input, and advertises stable ACP v1 `sessionCapabilities.list`, `.resume`,
 `.close`, and `.delete`. It also advertises the Rust crate's unstable session
 fork and elicitation extensions. Session config options are populated from
 app-server models, collaboration modes, permission profiles, and thread
-settings. Rich ACP UI for dynamic tool callbacks, native realtime audio
-playback, exact per-tool diff objects, and the remaining history fidelity edges
-remain planned work. ACP terminal content is projected through app-server
-command events today; true `terminal/create` embedding should only be added if
-app-server exposes a client-terminal handoff for commands it does not execute
-itself.
+settings. Dynamic tool callbacks route through a custom ACP extension request
+with app-server fallback semantics. Native realtime audio playback, exact
+per-tool diff objects, and the remaining history fidelity edges remain planned
+work. ACP terminal content is projected through app-server command events
+today; true `terminal/create` embedding should only be added if app-server
+exposes a client-terminal handoff for commands it does not execute itself.
 
 ## Immediate Roadmap
 
@@ -392,7 +393,8 @@ Tasks:
   app-server requests.
 - [x] Add rich ACP UI bridging for MCP elicitation.
 - [x] Add rich ACP UI bridging for request-user-input requests.
-- [ ] Add rich ACP UI bridging for dynamic tool requests.
+- [x] Add rich ACP UI bridging for dynamic tool requests through a custom ACP
+  extension request with fallback.
 - [ ] Add ACP terminal embedding if app-server exposes client-terminal handoff
   events instead of owning command execution itself.
 
@@ -417,7 +419,7 @@ Acceptance criteria:
   can answer it.
 - [x] Request-user-input requests route through ACP `elicitation/create` when
   the client can answer them.
-- [ ] Dynamic tool requests route through a rich ACP request surface when one
+- [x] Dynamic tool requests route through a rich ACP request surface when one
   is available.
 - [x] Terminal work is documented as waiting on app-server handoff events;
   current command execution continues to stream through app-server-owned tool
@@ -921,7 +923,7 @@ app-server item id -> ACP tool call id / message stream id
 | `item/permissions/requestApproval` | `session/request_permission` | Implemented for full requested-profile grants, rejection, generated partial-grant options for individual requested network/filesystem units scoped to turn/session, and readable request content. |
 | `mcpServer/elicitation/request` | `elicitation/create` with cancel fallback | Implemented for form, `openai/form`, and URL elicitations; falls back to app-server cancel semantics when the ACP client cannot answer. |
 | `tool/requestUserInput`, `item/tool/requestUserInput` | `elicitation/create` with empty-answer fallback | Implemented as form elicitations from app-server questions; falls back to empty answers when the ACP client cannot answer. |
-| `item/tool/call` | fallback response now; future ACP extension request | Implemented as an explicit failure response so app-server does not block. Rich ACP UI is still pending. |
+| `item/tool/call` | custom ACP extension request with fallback response | Implemented through `_brokk_codex_acp/dynamic_tool_call`; valid client responses are forwarded to app-server, and explicit failure fallback keeps app-server from blocking when clients cannot answer. |
 | `attestation/generate` | JSON-RPC error | Implemented as an explicit request failure because the adapter does not advertise or provide native attestation tokens. |
 | `skills/changed` | `available_commands_update` | Implemented through the background app-server notification dispatcher; re-runs app-server `skills/list` with `forceReload`. |
 | `thread/settings/updated` | `config_option_update` | Implemented through the background app-server notification dispatcher; refreshes model, collaboration-mode, and permission catalogs before publishing current options. |
@@ -1298,10 +1300,10 @@ When app-server emits a command or file-change approval request, the adapter now
   original app-server decision payload under `_meta.brokk_codex_acp`, then
   returning that original payload if selected
 
-Remaining approval work:
+Remaining approval notes:
 
-- Add rich dynamic tool request handling once the adapter has an ACP-compatible
-  request surface.
+- Dynamic tool calls now use `_brokk_codex_acp/dynamic_tool_call` with the
+  existing explicit failure fallback when the ACP client cannot answer.
 - Do not route app-server-owned command execution through ACP `terminal/create`
   without an app-server handoff event; the adapter would otherwise duplicate
   execution outside Codex's approval and policy owner.
@@ -1541,14 +1543,7 @@ Manual flows:
 
 Keep PRs small enough to review against fake app-server tests.
 
-1. Rich dynamic tool request UI:
-   - map `item/tool/call` to an ACP-compatible request surface
-   - preserve app-server blocking request semantics while waiting for the ACP
-     client
-   - keep the current cancel/empty/failure fallback for clients that cannot
-     render the request
-
-2. ACP terminal handoff, only after app-server exposes a command event that asks
+1. ACP terminal handoff, only after app-server exposes a command event that asks
    the adapter/client to own execution:
    - call `terminal/create` when the ACP client advertises terminal support
    - embed the returned terminal id in the related tool call before releasing it

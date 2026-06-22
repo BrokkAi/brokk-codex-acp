@@ -6,12 +6,12 @@ use std::{
 };
 
 use agent_client_protocol::schema::{
-    AgentCapabilities, AvailableCommand, AvailableCommandInput, AvailableCommandsUpdate,
-    CancelNotification, CloseSessionRequest, CloseSessionResponse, ConfigOptionUpdate,
-    ContentBlock, ContentChunk, CreateElicitationRequest, DeleteSessionRequest,
+    AgentCapabilities, AgentRequest, AvailableCommand, AvailableCommandInput,
+    AvailableCommandsUpdate, CancelNotification, CloseSessionRequest, CloseSessionResponse,
+    ConfigOptionUpdate, ContentBlock, ContentChunk, CreateElicitationRequest, DeleteSessionRequest,
     DeleteSessionResponse, ElicitationAction, ElicitationContentValue, ElicitationFormMode,
     ElicitationMode, ElicitationSchema, ElicitationSessionScope, ElicitationUrlMode, EnumOption,
-    ForkSessionRequest, ForkSessionResponse, InitializeRequest, InitializeResponse,
+    ExtRequest, ForkSessionRequest, ForkSessionResponse, InitializeRequest, InitializeResponse,
     ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
     NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionId,
     PermissionOptionKind, Plan, PlanEntry, PlanEntryPriority, PlanEntryStatus, PromptCapabilities,
@@ -30,6 +30,7 @@ use agent_client_protocol::{
     on_receive_request,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tokio::sync::{Mutex, broadcast, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{debug, trace, warn};
@@ -40,14 +41,14 @@ use crate::app_server::{
     AppServerApprovalDecision, AppServerApprovalOption, AppServerApprovalRequest,
     AppServerApprovalResponseKind, AppServerClient, AppServerCollaborationMode,
     AppServerCollaborationModeMask, AppServerCollaborationModeSettings,
-    AppServerConfigWarningUpdate, AppServerErrorUpdate, AppServerFuzzyFileSearchUpdate,
-    AppServerHistoryEvent, AppServerInteractiveRequest, AppServerMcpElicitationRequest,
-    AppServerMcpServerOAuthLoginCompletedUpdate, AppServerMcpServerStartupStatusUpdate,
-    AppServerMessage, AppServerModel, AppServerModelReroutedUpdate,
-    AppServerModelVerificationUpdate, AppServerPermissionProfile, AppServerPlanStatus,
-    AppServerPromptCompletion, AppServerPromptEvent, AppServerRealtimeAudioDelta,
-    AppServerRealtimeUpdate, AppServerSkill, AppServerThread, AppServerThreadSettingsUpdate,
-    AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
+    AppServerConfigWarningUpdate, AppServerDynamicToolCallRequest, AppServerErrorUpdate,
+    AppServerFuzzyFileSearchUpdate, AppServerHistoryEvent, AppServerInteractiveRequest,
+    AppServerMcpElicitationRequest, AppServerMcpServerOAuthLoginCompletedUpdate,
+    AppServerMcpServerStartupStatusUpdate, AppServerMessage, AppServerModel,
+    AppServerModelReroutedUpdate, AppServerModelVerificationUpdate, AppServerPermissionProfile,
+    AppServerPlanStatus, AppServerPromptCompletion, AppServerPromptEvent,
+    AppServerRealtimeAudioDelta, AppServerRealtimeUpdate, AppServerSkill, AppServerThread,
+    AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
     AppServerTurnModerationMetadataUpdate, AppServerUserInputQuestion, AppServerUserInputRequest,
     AppServerWarningUpdate, AppServerWindowsSandboxSetupUpdate, ThreadSettingsUpdateParams,
     decode_account_login_completed, decode_account_rate_limits_updated, decode_account_updated,
@@ -72,6 +73,7 @@ const DEFAULT_SERVICE_TIER_VALUE: &str = "__codex_default_service_tier";
 const DEFAULT_APPROVAL_POLICY: &str = "on-request";
 const SKILL_ENABLED_VALUE: &str = "enabled";
 const SKILL_DISABLED_VALUE: &str = "disabled";
+const DYNAMIC_TOOL_CALL_METHOD: &str = "_brokk_codex_acp/dynamic_tool_call";
 const ARCHIVE_COMMAND: &str = "archive";
 const APPS_COMMAND: &str = "apps";
 const COMPACT_COMMAND: &str = "compact";
@@ -4312,6 +4314,9 @@ async fn request_interactive(
         AppServerInteractiveRequest::UserInput(request) => {
             request_user_input(cx, session_id, request).await
         }
+        AppServerInteractiveRequest::DynamicToolCall(request) => {
+            request_dynamic_tool_call(cx, session_id, request).await
+        }
     }
 }
 
@@ -4475,6 +4480,62 @@ fn app_server_user_input_response(action: ElicitationAction) -> serde_json::Valu
             "answers": {},
         }),
     }
+}
+
+async fn request_dynamic_tool_call(
+    cx: &ConnectionTo<Client>,
+    session_id: SessionId,
+    request: AppServerDynamicToolCallRequest,
+) -> anyhow::Result<Option<serde_json::Value>> {
+    let params = json!({
+        "sessionId": session_id,
+        "threadId": request.thread_id,
+        "turnId": request.turn_id,
+        "callId": request.call_id,
+        "namespace": request.namespace,
+        "tool": request.tool,
+        "arguments": request.arguments,
+        "appServerRequest": request.raw,
+    });
+    let raw_params = serde_json::value::to_raw_value(&params)
+        .map(Into::into)
+        .map_err(|error| anyhow::anyhow!("failed to encode dynamic tool request: {error}"))?;
+    let request =
+        AgentRequest::ExtMethodRequest(ExtRequest::new(DYNAMIC_TOOL_CALL_METHOD, raw_params));
+
+    match cx.send_request(request).block_task().await {
+        Ok(response) => {
+            if is_dynamic_tool_call_response(&response) {
+                Ok(Some(response))
+            } else {
+                debug!(
+                    method = DYNAMIC_TOOL_CALL_METHOD,
+                    ?response,
+                    "ACP client returned invalid dynamic tool response; using app-server fallback"
+                );
+                Ok(None)
+            }
+        }
+        Err(error) => {
+            debug!(
+                method = DYNAMIC_TOOL_CALL_METHOD,
+                %error,
+                "ACP client did not complete dynamic tool request; using app-server fallback"
+            );
+            Ok(None)
+        }
+    }
+}
+
+fn is_dynamic_tool_call_response(response: &serde_json::Value) -> bool {
+    response
+        .get("contentItems")
+        .and_then(serde_json::Value::as_array)
+        .is_some()
+        && response
+            .get("success")
+            .and_then(serde_json::Value::as_bool)
+            .is_some()
 }
 
 fn elicitation_content_map_to_json(

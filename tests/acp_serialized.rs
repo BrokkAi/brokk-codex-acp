@@ -517,6 +517,132 @@ async fn serialized_request_user_input_uses_acp_elicitation_create() -> anyhow::
 }
 
 #[tokio::test]
+async fn serialized_dynamic_tool_call_uses_acp_extension_request() -> anyhow::Result<()> {
+    let fake_codex = fake_codex_app_server(SERIALIZED_RENAME_CODEX_APP_SERVER)?;
+    let mut app_server =
+        AppServerClient::spawn(AppServerCommand::new(fake_codex.path().to_owned())).await?;
+    app_server
+        .initialize(
+            "brokk_codex_acp_test",
+            "Brokk Codex ACP Test",
+            env!("CARGO_PKG_VERSION"),
+        )
+        .await?;
+
+    let (agent_side, client_side) = tokio::io::duplex(64 * 1024);
+    let (agent_read, agent_write) = split(agent_side);
+    let agent_transport = ByteStreams::new(agent_write.compat_write(), agent_read.compat());
+    let agent_task = tokio::spawn(CodexAcpAgent::new(app_server).serve(agent_transport));
+
+    let (client_read, mut client_write) = split(client_side);
+    let mut client_read = BufReader::new(client_read);
+    let mut notifications = Vec::new();
+
+    write_json(
+        &mut client_write,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": 1,
+                "clientCapabilities": {},
+            },
+        }),
+    )
+    .await?;
+    let initialize = read_response(&mut client_read, 1, &mut notifications).await?;
+    assert_eq!(initialize["result"]["protocolVersion"], 1);
+
+    let cwd = tempfile::tempdir()?;
+    write_json(
+        &mut client_write,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "session/new",
+            "params": {
+                "cwd": cwd.path(),
+                "mcpServers": [],
+            },
+        }),
+    )
+    .await?;
+    let session = read_response(&mut client_read, 2, &mut notifications).await?;
+    let session_id = session["result"]["sessionId"]
+        .as_str()
+        .expect("session/new should return a session id")
+        .to_owned();
+
+    write_json(
+        &mut client_write,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "session/prompt",
+            "params": {
+                "sessionId": session_id,
+                "prompt": [
+                    {
+                        "type": "text",
+                        "text": "serialized dynamic tool",
+                    },
+                ],
+            },
+        }),
+    )
+    .await?;
+
+    let dynamic_tool = read_json(&mut client_read).await?;
+    assert_eq!(dynamic_tool["method"], "_brokk_codex_acp/dynamic_tool_call");
+    assert_eq!(dynamic_tool["params"]["threadId"], "thread-serialized");
+    assert_eq!(
+        dynamic_tool["params"]["turnId"],
+        "turn-serialized-dynamic-tool"
+    );
+    assert_eq!(dynamic_tool["params"]["callId"], "serialized-dynamic-tool");
+    assert_eq!(dynamic_tool["params"]["namespace"], "tickets");
+    assert_eq!(dynamic_tool["params"]["tool"], "lookup_ticket");
+    assert_eq!(dynamic_tool["params"]["arguments"]["id"], "ABC-123");
+    assert_eq!(
+        dynamic_tool["params"]["appServerRequest"]["tool"],
+        "lookup_ticket"
+    );
+    write_json(
+        &mut client_write,
+        json!({
+            "jsonrpc": "2.0",
+            "id": dynamic_tool["id"].clone(),
+            "result": {
+                "contentItems": [
+                    {
+                        "type": "inputText",
+                        "text": "Ticket ABC-123 is open.",
+                    },
+                ],
+                "success": true,
+            },
+        }),
+    )
+    .await?;
+
+    let prompt = read_response(&mut client_read, 3, &mut notifications).await?;
+    assert_eq!(prompt["result"]["stopReason"], "end_turn");
+    assert!(
+        notifications.iter().any(|notification| {
+            notification["method"] == "session/update"
+                && notification["params"]["update"]["sessionUpdate"] == "agent_message_chunk"
+                && notification["params"]["update"]["content"]["text"] == "dynamic tool accepted"
+        }),
+        "notifications: {notifications:#?}"
+    );
+
+    drop(client_write);
+    agent_task.abort();
+    Ok(())
+}
+
+#[tokio::test]
 async fn serialized_bang_prompt_runs_shell_command_without_starting_turn() -> anyhow::Result<()> {
     let (prompt, notifications) = run_serialized_prompt("!echo hi").await?;
 
@@ -1971,6 +2097,55 @@ for line in sys.stdin:
                 "params": {
                     "threadId": "thread-serialized",
                     "turn": {"id": "turn-serialized-user-input", "status": "completed"},
+                },
+            })
+        elif params["input"] == [{"type": "text", "text": "serialized dynamic tool"}]:
+            response(message_id, {
+                "result": {
+                    "turn": {"id": "turn-serialized-dynamic-tool", "status": "running"},
+                },
+            })
+            send({
+                "id": "dynamic-tool-rich-request-1",
+                "method": "item/tool/call",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-dynamic-tool",
+                    "callId": "serialized-dynamic-tool",
+                    "namespace": "tickets",
+                    "tool": "lookup_ticket",
+                    "arguments": {
+                        "id": "ABC-123",
+                    },
+                },
+            })
+            dynamic_tool_response = json.loads(sys.stdin.readline())
+            assert dynamic_tool_response == {
+                "id": "dynamic-tool-rich-request-1",
+                "result": {
+                    "contentItems": [
+                        {
+                            "type": "inputText",
+                            "text": "Ticket ABC-123 is open.",
+                        },
+                    ],
+                    "success": True,
+                },
+            }
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-dynamic-tool",
+                    "itemId": "item-serialized-dynamic-tool",
+                    "delta": "dynamic tool accepted",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turn": {"id": "turn-serialized-dynamic-tool", "status": "completed"},
                 },
             })
         elif params["input"] == [{"type": "text", "text": "close me"}]:

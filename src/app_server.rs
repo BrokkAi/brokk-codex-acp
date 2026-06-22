@@ -2255,6 +2255,7 @@ pub struct AppServerApprovalRequest {
 pub enum AppServerInteractiveRequest {
     McpElicitation(AppServerMcpElicitationRequest),
     UserInput(AppServerUserInputRequest),
+    DynamicToolCall(AppServerDynamicToolCallRequest),
 }
 
 #[derive(Debug, Clone)]
@@ -2278,6 +2279,17 @@ pub struct AppServerUserInputRequest {
     pub turn_id: Option<String>,
     pub item_id: Option<String>,
     pub questions: Vec<AppServerUserInputQuestion>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppServerDynamicToolCallRequest {
+    pub raw: Value,
+    pub thread_id: String,
+    pub turn_id: Option<String>,
+    pub call_id: String,
+    pub namespace: Option<String>,
+    pub tool: String,
+    pub arguments: Option<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -3228,6 +3240,23 @@ fn decode_interactive_request(
                     turn_id: optional_string(params, "turnId"),
                     item_id: optional_string(params, "itemId"),
                     questions: decode_user_input_questions(params)?,
+                },
+            )))
+        }
+        "item/tool/call" => {
+            let thread_id = required_string(params, "threadId")?;
+            if thread_id != active_thread_id {
+                return Ok(None);
+            }
+            Ok(Some(AppServerInteractiveRequest::DynamicToolCall(
+                AppServerDynamicToolCallRequest {
+                    raw: params.clone(),
+                    thread_id,
+                    turn_id: optional_string(params, "turnId"),
+                    call_id: required_string(params, "callId")?,
+                    namespace: optional_string(params, "namespace"),
+                    tool: required_string(params, "tool")?,
+                    arguments: params.get("arguments").cloned(),
                 },
             )))
         }
