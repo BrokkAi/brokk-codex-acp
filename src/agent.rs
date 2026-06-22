@@ -44,7 +44,8 @@ use crate::app_server::{
     AppServerApprovalRequest, AppServerApprovalResponseKind, AppServerClient,
     AppServerCollaborationMode, AppServerCollaborationModeMask, AppServerCollaborationModeSettings,
     AppServerConfigWarningUpdate, AppServerDynamicToolCallRequest, AppServerErrorUpdate,
-    AppServerFuzzyFileSearchUpdate, AppServerHistoryEvent, AppServerInteractiveRequest,
+    AppServerFuzzyFileSearchUpdate, AppServerGuardianApprovalReviewLifecycle,
+    AppServerGuardianApprovalReviewUpdate, AppServerHistoryEvent, AppServerInteractiveRequest,
     AppServerMcpElicitationRequest, AppServerMcpServerOAuthLoginCompletedUpdate,
     AppServerMcpServerStartupStatusUpdate, AppServerMessage, AppServerModel,
     AppServerModelReroutedUpdate, AppServerModelSafetyBufferingUpdate,
@@ -56,9 +57,10 @@ use crate::app_server::{
     AppServerUserInputRequest, AppServerWarningUpdate, AppServerWindowsSandboxSetupUpdate,
     ThreadSettingsUpdateParams, decode_account_login_completed, decode_account_rate_limits_updated,
     decode_account_updated, decode_config_warning, decode_error, decode_fuzzy_file_search_update,
-    decode_mcp_server_oauth_login_completed, decode_mcp_server_startup_status_updated,
-    decode_model_rerouted, decode_model_safety_buffering_updated, decode_model_verification,
-    decode_realtime_update, decode_thread_archived, decode_thread_closed, decode_thread_deleted,
+    decode_guardian_approval_review_update, decode_mcp_server_oauth_login_completed,
+    decode_mcp_server_startup_status_updated, decode_model_rerouted,
+    decode_model_safety_buffering_updated, decode_model_verification, decode_realtime_update,
+    decode_thread_archived, decode_thread_closed, decode_thread_deleted,
     decode_thread_goal_cleared, decode_thread_goal_updated, decode_thread_name_updated,
     decode_thread_settings_updated, decode_thread_status_changed, decode_thread_unarchived,
     decode_turn_moderation_metadata, decode_warning, decode_windows_sandbox_setup_completed,
@@ -622,6 +624,21 @@ impl CodexAcpAgent {
                 }
                 let session_id = SessionId::new(update.thread_id.clone());
                 publish_agent_message(&session_id, error_message(&update), cx)
+                    .map_err(acp_internal_error)?;
+            }
+            "item/autoApprovalReview/started" | "item/autoApprovalReview/completed" => {
+                let update = decode_guardian_approval_review_update(method, &params)
+                    .map_err(acp_internal_error)?;
+                if self
+                    .active_prompts
+                    .lock()
+                    .await
+                    .contains_key(&update.thread_id)
+                {
+                    return Ok(());
+                }
+                let session_id = SessionId::new(update.thread_id.clone());
+                publish_agent_message(&session_id, guardian_approval_review_message(&update), cx)
                     .map_err(acp_internal_error)?;
             }
             "model/rerouted" => {
@@ -4241,6 +4258,11 @@ fn send_prompt_event(
                 SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(update.id, fields)),
             )
         }
+        AppServerPromptEvent::GuardianApprovalReview(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(guardian_approval_review_message(&update))),
+        ),
         AppServerPromptEvent::PlanUpdated(entries) => {
             let entries = entries
                 .into_iter()
@@ -5062,6 +5084,59 @@ fn error_message(update: &AppServerErrorUpdate) -> String {
         message.push_str(&json_value_label(info));
     }
     message
+}
+
+fn guardian_approval_review_message(update: &AppServerGuardianApprovalReviewUpdate) -> String {
+    let lifecycle = match update.lifecycle {
+        AppServerGuardianApprovalReviewLifecycle::Started => "started",
+        AppServerGuardianApprovalReviewLifecycle::Completed => "completed",
+    };
+    let mut parts = vec![format!(
+        "Codex auto-approval review `{}` {lifecycle}.",
+        update.review_id
+    )];
+    if let Some(target_item_id) = update.target_item_id.as_deref() {
+        parts.push(format!("Target item: `{target_item_id}`."));
+    }
+    if let Some(action_type) = update
+        .action
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+    {
+        parts.push(format!("Action: {action_type}."));
+    }
+    if let Some(status) = update
+        .review
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+    {
+        parts.push(format!("Status: {status}."));
+    }
+    if let Some(risk_level) = update
+        .review
+        .get("riskLevel")
+        .and_then(serde_json::Value::as_str)
+    {
+        parts.push(format!("Risk: {risk_level}."));
+    }
+    if let Some(rationale) = update
+        .review
+        .get("rationale")
+        .and_then(serde_json::Value::as_str)
+        .filter(|rationale| !rationale.trim().is_empty())
+    {
+        parts.push(format!("Rationale: {rationale}."));
+    }
+    if let Some(decision_source) = update.decision_source.as_deref() {
+        parts.push(format!("Decision source: {decision_source}."));
+    }
+    if let (Some(started_at_ms), Some(completed_at_ms)) =
+        (update.started_at_ms, update.completed_at_ms)
+        && completed_at_ms >= started_at_ms
+    {
+        parts.push(format!("Duration: {} ms.", completed_at_ms - started_at_ms));
+    }
+    parts.join(" ")
 }
 
 fn model_rerouted_message(update: &AppServerModelReroutedUpdate) -> String {

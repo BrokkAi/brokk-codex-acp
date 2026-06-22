@@ -969,6 +969,8 @@ impl AppServerClient {
                 }
                 "item/started"
                 | "item/completed"
+                | "item/autoApprovalReview/started"
+                | "item/autoApprovalReview/completed"
                 | "item/commandExecution/outputDelta"
                 | "item/fileChange/patchUpdated"
                 | "item/reasoning/summaryTextDelta"
@@ -2215,6 +2217,7 @@ pub enum AppServerPromptEvent {
     AgentThoughtDelta(String),
     ToolCallStarted(AppServerToolCall),
     ToolCallUpdated(AppServerToolCallUpdate),
+    GuardianApprovalReview(AppServerGuardianApprovalReviewUpdate),
     PlanUpdated(Vec<AppServerPlanEntry>),
     TurnDiffUpdated { turn_id: String, diff: String },
     UsageUpdated(AppServerUsage),
@@ -2539,6 +2542,26 @@ pub struct AppServerFileDiff {
     pub diff: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct AppServerGuardianApprovalReviewUpdate {
+    pub lifecycle: AppServerGuardianApprovalReviewLifecycle,
+    pub thread_id: String,
+    pub turn_id: String,
+    pub review_id: String,
+    pub target_item_id: Option<String>,
+    pub review: Value,
+    pub action: Value,
+    pub started_at_ms: Option<u64>,
+    pub completed_at_ms: Option<u64>,
+    pub decision_source: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppServerGuardianApprovalReviewLifecycle {
+    Started,
+    Completed,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum AppServerToolKind {
     Read,
@@ -2807,6 +2830,34 @@ struct ErrorNotification {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct GuardianApprovalReviewStartedNotification {
+    thread_id: String,
+    turn_id: String,
+    started_at_ms: u64,
+    review_id: String,
+    #[serde(default)]
+    target_item_id: Option<String>,
+    review: Value,
+    action: Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GuardianApprovalReviewCompletedNotification {
+    thread_id: String,
+    turn_id: String,
+    started_at_ms: u64,
+    completed_at_ms: u64,
+    review_id: String,
+    #[serde(default)]
+    target_item_id: Option<String>,
+    decision_source: String,
+    review: Value,
+    action: Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct TurnErrorNotification {
     message: String,
     #[serde(default)]
@@ -3055,6 +3106,10 @@ fn decode_prompt_event(
             .get("item")
             .and_then(decode_completed_item)
             .map(AppServerPromptEvent::ToolCallUpdated)),
+        "item/autoApprovalReview/started" | "item/autoApprovalReview/completed" => {
+            decode_guardian_approval_review_update(method, params)
+                .map(|update| Some(AppServerPromptEvent::GuardianApprovalReview(update)))
+        }
         "item/commandExecution/outputDelta" => {
             let Some(item_id) = string_field(params, "itemId") else {
                 return Ok(None);
@@ -3614,6 +3669,47 @@ pub fn decode_error(params: &Value) -> anyhow::Result<AppServerErrorUpdate> {
         codex_error_info: notification.error.codex_error_info,
         additional_details: notification.error.additional_details,
     })
+}
+
+pub fn decode_guardian_approval_review_update(
+    method: &str,
+    params: &Value,
+) -> anyhow::Result<AppServerGuardianApprovalReviewUpdate> {
+    match method {
+        "item/autoApprovalReview/started" => {
+            let notification: GuardianApprovalReviewStartedNotification =
+                serde_json::from_value(params.clone())?;
+            Ok(AppServerGuardianApprovalReviewUpdate {
+                lifecycle: AppServerGuardianApprovalReviewLifecycle::Started,
+                thread_id: notification.thread_id,
+                turn_id: notification.turn_id,
+                review_id: notification.review_id,
+                target_item_id: notification.target_item_id,
+                review: notification.review,
+                action: notification.action,
+                started_at_ms: Some(notification.started_at_ms),
+                completed_at_ms: None,
+                decision_source: None,
+            })
+        }
+        "item/autoApprovalReview/completed" => {
+            let notification: GuardianApprovalReviewCompletedNotification =
+                serde_json::from_value(params.clone())?;
+            Ok(AppServerGuardianApprovalReviewUpdate {
+                lifecycle: AppServerGuardianApprovalReviewLifecycle::Completed,
+                thread_id: notification.thread_id,
+                turn_id: notification.turn_id,
+                review_id: notification.review_id,
+                target_item_id: notification.target_item_id,
+                review: notification.review,
+                action: notification.action,
+                started_at_ms: Some(notification.started_at_ms),
+                completed_at_ms: Some(notification.completed_at_ms),
+                decision_source: Some(notification.decision_source),
+            })
+        }
+        _ => anyhow::bail!("unsupported Guardian approval review notification `{method}`"),
+    }
 }
 
 pub fn decode_model_rerouted(params: &Value) -> anyhow::Result<AppServerModelReroutedUpdate> {

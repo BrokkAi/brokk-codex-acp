@@ -283,6 +283,8 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
         "MCP server `filesystem` startup status: Failed.",
         "spawn ENOENT",
         "MCP server `global-cache` startup status: Ready.",
+        "Codex auto-approval review `review-serialized` started. Target item: `file-1`. Action: applyPatch. Status: inProgress. Risk: medium. Rationale: checking patch.",
+        "Codex auto-approval review `review-serialized` completed. Target item: `file-1`. Action: applyPatch. Status: approved. Risk: medium. Rationale: patch is safe. Decision source: agent. Duration: 250 ms.",
         "Codex rerouted the model from `gpt-5-codex` to `gpt-5` (High Risk Cyber Activity) for this turn.",
         "Codex safety buffering is active for model `gpt-5-codex`. Use cases: cyber. Reasons: high risk.",
         "Codex requires additional verification: Trusted Access For Cyber.",
@@ -1897,21 +1899,6 @@ for line in sys.stdin:
                 },
             })
             send({
-                "method": "item/fileChange/patchUpdated",
-                "params": {
-                    "threadId": "thread-serialized",
-                    "turnId": "turn-serialized-notifications",
-                    "itemId": "file-1",
-                    "changes": [
-                        {
-                            "path": "src/lib.rs",
-                            "kind": "update",
-                            "diff": "@@ live @@",
-                        },
-                    ],
-                },
-            })
-            send({
                 "method": "item/completed",
                 "params": {
                     "threadId": "thread-serialized",
@@ -1942,6 +1929,65 @@ for line in sys.stdin:
                                 "diff": "@@ -1 +1 @@",
                             },
                         ],
+                    },
+                },
+            })
+            send({
+                "method": "item/fileChange/patchUpdated",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "itemId": "file-1",
+                    "changes": [
+                        {
+                            "path": "src/lib.rs",
+                            "kind": "update",
+                            "diff": "@@ live @@",
+                        },
+                    ],
+                },
+            })
+            send({
+                "method": "item/autoApprovalReview/started",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "startedAtMs": 1000,
+                    "reviewId": "review-serialized",
+                    "targetItemId": "file-1",
+                    "review": {
+                        "status": "inProgress",
+                        "riskLevel": "medium",
+                        "userAuthorization": "low",
+                        "rationale": "checking patch",
+                    },
+                    "action": {
+                        "type": "applyPatch",
+                        "cwd": "/repo",
+                        "files": ["/repo/src/lib.rs"],
+                    },
+                },
+            })
+            send({
+                "method": "item/autoApprovalReview/completed",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "startedAtMs": 1000,
+                    "completedAtMs": 1250,
+                    "reviewId": "review-serialized",
+                    "targetItemId": "file-1",
+                    "decisionSource": "agent",
+                    "review": {
+                        "status": "approved",
+                        "riskLevel": "medium",
+                        "userAuthorization": "low",
+                        "rationale": "patch is safe",
+                    },
+                    "action": {
+                        "type": "applyPatch",
+                        "cwd": "/repo",
+                        "files": ["/repo/src/lib.rs"],
                     },
                 },
             })

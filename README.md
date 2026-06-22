@@ -74,6 +74,8 @@ The project currently includes:
   app-server request expects. Rich command approval decisions such as
   exec-policy and network-policy amendments keep their original app-server
   payload and are returned unchanged when selected.
+- App-server automatic approval review lifecycle notifications are projected as
+  user-visible ACP diagnostics without changing approval decision flow.
 - Server-initiated `currentTime/read` requests are answered with the adapter
   host's current Unix timestamp so external-clock reminders do not block turns.
 - Server-initiated `mcpServer/elicitation/request` form and URL requests are

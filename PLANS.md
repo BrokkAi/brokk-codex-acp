@@ -231,6 +231,9 @@ The current repository has the first working ACP/app-server bridge in place:
     supplied an exact `availableDecisions` list. The ACP tool-call content
     includes a human-readable summary of the requested reason, environment,
     working directory, and network/filesystem access.
+  - `item/autoApprovalReview/started` and
+    `item/autoApprovalReview/completed` -> ACP agent-message diagnostics for
+    app-server automatic approval review progress and outcomes.
   - The adapter maps `accept`, `acceptForSession`, `decline`, and `cancel` to
     ACP permission options and preserves app-server's blocking request
     semantics while awaiting the ACP client.
@@ -929,6 +932,7 @@ app-server item id -> ACP tool call id / message stream id
 | `turn/diff/updated` | `tool_call_update` with text diff content | Useful for file edit previews. This remains text because the app-server event carries a turn-level unified diff without per-file old/new text. |
 | `turn/plan/updated` | `plan` | Send the full plan every time. |
 | `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` | `session/request_permission` | Implemented for simple decisions; rich command `availableDecisions` such as exec-policy and network-policy amendments keep their original app-server payload under ACP option metadata and are returned unchanged when selected. App-server remains blocked until the ACP client answers. |
+| `item/autoApprovalReview/started` / `item/autoApprovalReview/completed` | `agent_message_chunk` | Implemented as user-visible diagnostics summarizing automatic approval review lifecycle, target item, action type, risk, rationale, decision source, and duration. |
 | `item/permissions/requestApproval` | `session/request_permission` | Implemented for full requested-profile grants, rejection, generated partial-grant options for individual requested network/filesystem units scoped to turn/session, and readable request content. |
 | `mcpServer/elicitation/request` | `elicitation/create` with cancel fallback | Implemented for form, `openai/form`, and URL elicitations; falls back to app-server cancel semantics when the ACP client cannot answer. |
 | `tool/requestUserInput`, `item/tool/requestUserInput` | `elicitation/create` with empty-answer fallback | Implemented as form elicitations from app-server questions; falls back to empty answers when the ACP client cannot answer. |

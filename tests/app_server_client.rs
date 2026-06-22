@@ -373,6 +373,14 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
                     AppServerPromptEvent::ToolCallUpdated(update) => {
                         events.push(format!("tool-updated:{}", update.id));
                     }
+                    AppServerPromptEvent::GuardianApprovalReview(update) => {
+                        events.push(format!(
+                            "guardian:{}:{:?}:{}",
+                            update.review_id,
+                            update.lifecycle,
+                            update.target_item_id.as_deref().unwrap_or_default()
+                        ));
+                    }
                     AppServerPromptEvent::PlanUpdated(entries) => {
                         events.push(format!("plan:{}", entries.len()));
                     }
@@ -469,6 +477,8 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
             "tool-updated:cmd-1",
             "tool-started:file-1:File changes",
             "tool-updated:file-1",
+            "guardian:review-1:Started:file-1",
+            "guardian:review-1:Completed:file-1",
             "tool-updated:file-1",
             "diff:diff --git a/src/lib.rs b/src/lib.rs",
             "usage:42/100",
@@ -956,6 +966,12 @@ fn summarize_prompt_event(event: AppServerPromptEvent) -> String {
             format!("tool-started:{}:{}", call.id, call.title)
         }
         AppServerPromptEvent::ToolCallUpdated(update) => format!("tool-updated:{}", update.id),
+        AppServerPromptEvent::GuardianApprovalReview(update) => format!(
+            "guardian:{}:{:?}:{}",
+            update.review_id,
+            update.lifecycle,
+            update.target_item_id.as_deref().unwrap_or_default()
+        ),
         AppServerPromptEvent::PlanUpdated(entries) => format!("plan:{}", entries.len()),
         AppServerPromptEvent::TurnDiffUpdated { diff, .. } => format!("diff:{diff}"),
         AppServerPromptEvent::UsageUpdated(usage) => format!("usage:{}/{}", usage.used, usage.size),
@@ -2062,6 +2078,50 @@ for line in sys.stdin:
                             "diff": "@@ live @@",
                         },
                     ],
+                },
+            })
+            send({
+                "method": "item/autoApprovalReview/started",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "startedAtMs": 1000,
+                    "reviewId": "review-1",
+                    "targetItemId": "file-1",
+                    "review": {
+                        "status": "inProgress",
+                        "riskLevel": "medium",
+                        "userAuthorization": "low",
+                        "rationale": "checking patch",
+                    },
+                    "action": {
+                        "type": "applyPatch",
+                        "cwd": "/repo",
+                        "files": ["/repo/src/lib.rs"],
+                    },
+                },
+            })
+            send({
+                "method": "item/autoApprovalReview/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "startedAtMs": 1000,
+                    "completedAtMs": 1250,
+                    "reviewId": "review-1",
+                    "targetItemId": "file-1",
+                    "decisionSource": "agent",
+                    "review": {
+                        "status": "approved",
+                        "riskLevel": "medium",
+                        "userAuthorization": "low",
+                        "rationale": "patch is safe",
+                    },
+                    "action": {
+                        "type": "applyPatch",
+                        "cwd": "/repo",
+                        "files": ["/repo/src/lib.rs"],
+                    },
                 },
             })
             send({
