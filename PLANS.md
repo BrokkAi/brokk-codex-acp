@@ -180,6 +180,8 @@ The current repository has the first working ACP/app-server bridge in place:
     moderation metadata intended for client-side presentation.
   - `mcpServer/startupStatus/updated` -> ACP agent-message diagnostics for
     thread-scoped MCP startup state and failures.
+  - `configWarning` -> ACP agent-message diagnostics for global app-server
+    configuration warnings, published to every known session.
   - `thread/realtime/started`, `thread/realtime/sdp`,
     `thread/realtime/itemAdded`, `thread/realtime/transcript/delta`,
     `thread/realtime/transcript/done`, `thread/realtime/outputAudio/delta`,
@@ -884,6 +886,7 @@ app-server item id -> ACP tool call id / message stream id
 | `model/verification` | `agent_message_chunk` | Implemented as a user-visible diagnostic chunk summarizing additional verification requirements. |
 | `turn/moderationMetadata` | `agent_message_chunk` | Implemented as a user-visible diagnostic chunk preserving the metadata payload as compact JSON. |
 | `mcpServer/startupStatus/updated` | `agent_message_chunk` | Implemented for thread-scoped MCP startup diagnostics; app-scoped updates have no stable ACP session target and are ignored. |
+| `configWarning` | `agent_message_chunk` | Implemented for known sessions because app-server emits this warning without a thread id. |
 | `thread/realtime/started` / `thread/realtime/sdp` / `thread/realtime/itemAdded` / `thread/realtime/transcript/delta` / `thread/realtime/transcript/done` / `thread/realtime/outputAudio/delta` / `thread/realtime/error` / `thread/realtime/closed` | `agent_message_chunk` | Implemented as user-visible diagnostics for realtime lifecycle, SDP, raw item, text transcript, audio metadata, and transport events. Native audio playback remains pending because ACP v1 has no realtime audio stream. |
 | `warning` / `error` | `agent_message_chunk` | Implemented with retry/details/error-code text when app-server provides it. |
 

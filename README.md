@@ -69,6 +69,8 @@ The project currently includes:
   method-not-found errors instead of being silently ignored.
 - Thread-scoped MCP server startup status notifications are projected as
   user-visible ACP diagnostic messages.
+- Global app-server configuration warnings are projected as user-visible ACP
+  diagnostic messages for every known session.
 - Model verification notifications are projected as user-visible ACP
   diagnostic messages.
 - Turn moderation metadata notifications are projected as user-visible ACP

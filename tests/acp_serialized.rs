@@ -206,6 +206,10 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
         .collect::<Vec<_>>()
         .join("\n");
     for expected in [
+        "Codex config warning: invalid config entry",
+        "ignored unknown field",
+        "Path: /tmp/fake-codex-home/config.toml",
+        "Range: {\"start\":{\"line\":3,\"column\":1},\"end\":{\"line\":3,\"column\":8}}",
         "Codex warning: limited skills loaded",
         "MCP server `filesystem` startup status: Failed.",
         "spawn ENOENT",
@@ -1065,6 +1069,18 @@ for line in sys.stdin:
             response(message_id, {
                 "result": {
                     "turn": {"id": "turn-serialized-notifications", "status": "running"},
+                },
+            })
+            send({
+                "method": "configWarning",
+                "params": {
+                    "summary": "invalid config entry",
+                    "details": "ignored unknown field",
+                    "path": "/tmp/fake-codex-home/config.toml",
+                    "range": {
+                        "start": {"line": 3, "column": 1},
+                        "end": {"line": 3, "column": 8},
+                    },
                 },
             })
             send({

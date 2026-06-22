@@ -1954,6 +1954,14 @@ pub enum AppServerHistoryEvent {
     PromptEvent(Box<AppServerPromptEvent>),
 }
 
+#[derive(Debug, Clone)]
+pub struct AppServerConfigWarningUpdate {
+    pub summary: String,
+    pub details: Option<String>,
+    pub path: Option<String>,
+    pub range: Option<Value>,
+}
+
 pub enum AppServerPromptCompletion {
     EndTurn,
     Cancelled,
@@ -2512,6 +2520,18 @@ struct ThreadSettingsNotificationState {
     active_permission_profile: Option<AppServerActivePermissionProfile>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConfigWarningNotification {
+    summary: String,
+    #[serde(default)]
+    details: Option<String>,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    range: Option<Value>,
+}
+
 fn decode_prompt_event(
     method: &str,
     params: &Value,
@@ -2819,6 +2839,16 @@ pub fn decode_warning(params: &Value) -> anyhow::Result<AppServerWarningUpdate> 
     Ok(AppServerWarningUpdate {
         thread_id: notification.thread_id,
         message: notification.message,
+    })
+}
+
+pub fn decode_config_warning(params: &Value) -> anyhow::Result<AppServerConfigWarningUpdate> {
+    let notification: ConfigWarningNotification = serde_json::from_value(params.clone())?;
+    Ok(AppServerConfigWarningUpdate {
+        summary: notification.summary,
+        details: notification.details,
+        path: notification.path,
+        range: notification.range,
     })
 }
 

@@ -33,19 +33,21 @@ use tracing::{debug, trace};
 use crate::app_server::{
     AppServerActivePermissionProfile, AppServerApprovalChoice, AppServerApprovalDecision,
     AppServerApprovalOption, AppServerApprovalRequest, AppServerClient, AppServerCollaborationMode,
-    AppServerCollaborationModeMask, AppServerCollaborationModeSettings, AppServerErrorUpdate,
-    AppServerHistoryEvent, AppServerMcpServerStartupStatusUpdate, AppServerMessage, AppServerModel,
+    AppServerCollaborationModeMask, AppServerCollaborationModeSettings,
+    AppServerConfigWarningUpdate, AppServerErrorUpdate, AppServerHistoryEvent,
+    AppServerMcpServerStartupStatusUpdate, AppServerMessage, AppServerModel,
     AppServerModelReroutedUpdate, AppServerModelVerificationUpdate, AppServerPermissionProfile,
     AppServerPlanStatus, AppServerPromptCompletion, AppServerPromptEvent,
     AppServerRealtimeAudioDelta, AppServerRealtimeUpdate, AppServerSkill, AppServerThread,
     AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
     AppServerTurnModerationMetadataUpdate, AppServerWarningUpdate, ThreadSettingsUpdateParams,
-    decode_error, decode_mcp_server_startup_status_updated, decode_model_rerouted,
-    decode_model_verification, decode_realtime_update, decode_thread_archived,
-    decode_thread_closed, decode_thread_deleted, decode_thread_goal_cleared,
-    decode_thread_goal_updated, decode_thread_name_updated, decode_thread_settings_updated,
-    decode_thread_status_changed, decode_thread_unarchived, decode_turn_moderation_metadata,
-    decode_warning, history_events_for_turns, is_app_server_method_unavailable,
+    decode_config_warning, decode_error, decode_mcp_server_startup_status_updated,
+    decode_model_rerouted, decode_model_verification, decode_realtime_update,
+    decode_thread_archived, decode_thread_closed, decode_thread_deleted,
+    decode_thread_goal_cleared, decode_thread_goal_updated, decode_thread_name_updated,
+    decode_thread_settings_updated, decode_thread_status_changed, decode_thread_unarchived,
+    decode_turn_moderation_metadata, decode_warning, history_events_for_turns,
+    is_app_server_method_unavailable,
 };
 
 const MODEL_CONFIG_ID: &str = "model";
@@ -503,6 +505,21 @@ impl CodexAcpAgent {
                 let session_id = SessionId::new(update.thread_id);
                 publish_session_goal_update(&session_id, update.goal, cx)
                     .map_err(acp_internal_error)?;
+            }
+            "configWarning" => {
+                let update = decode_config_warning(&params).map_err(acp_internal_error)?;
+                let session_ids = self
+                    .session_cwds
+                    .lock()
+                    .await
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                for thread_id in session_ids {
+                    let session_id = SessionId::new(thread_id);
+                    publish_agent_message(&session_id, config_warning_message(&update), cx)
+                        .map_err(acp_internal_error)?;
+                }
             }
             "warning" => {
                 let update = decode_warning(&params).map_err(acp_internal_error)?;
@@ -3874,6 +3891,27 @@ fn publish_agent_message(
 
 fn warning_message(update: &AppServerWarningUpdate) -> String {
     format!("Codex warning: {}", update.message)
+}
+
+fn config_warning_message(update: &AppServerConfigWarningUpdate) -> String {
+    let mut message = format!("Codex config warning: {}", update.summary);
+    if let Some(details) = update.details.as_deref()
+        && !details.trim().is_empty()
+    {
+        message.push_str("\n\n");
+        message.push_str(details);
+    }
+    if let Some(path) = update.path.as_deref()
+        && !path.trim().is_empty()
+    {
+        message.push_str("\n\nPath: ");
+        message.push_str(path);
+    }
+    if let Some(range) = update.range.as_ref() {
+        message.push_str("\n\nRange: ");
+        message.push_str(&json_value_label(range));
+    }
+    message
 }
 
 fn error_message(update: &AppServerErrorUpdate) -> String {
