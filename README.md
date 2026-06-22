@@ -98,6 +98,8 @@ The project currently includes:
   user-visible ACP diagnostic messages for every known session.
 - Global account, rate-limit, and MCP OAuth login notifications are projected
   as user-visible ACP diagnostic messages for every known session.
+- App list update notifications are projected as user-visible ACP diagnostic
+  messages for every known session.
 - Global remote-control status notifications are projected as user-visible ACP
   diagnostic messages for every known session.
 - Fuzzy file search session progress and completion notifications are

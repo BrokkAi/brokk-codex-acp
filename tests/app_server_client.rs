@@ -461,6 +461,12 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
                     AppServerPromptEvent::McpServerOAuthLoginCompleted(update) => {
                         events.push(format!("mcp-oauth:{}:{}", update.name, update.success));
                     }
+                    AppServerPromptEvent::AppListUpdated(update) => {
+                        events.push(format!(
+                            "apps-updated:{}",
+                            update.data.as_array().map_or(0, Vec::len)
+                        ));
+                    }
                     AppServerPromptEvent::RemoteControlStatus(update) => {
                         events.push(format!("remote-control:{}", update.status));
                     }
@@ -501,6 +507,7 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
             "realtime-audio:8:24000:1:320",
             "realtime-error:network interrupted",
             "realtime-closed:client stopped",
+            "apps-updated:1",
             "remote-control:connected",
             "message:fake response",
         ]
@@ -1032,6 +1039,12 @@ fn summarize_prompt_event(event: AppServerPromptEvent) -> String {
         }
         AppServerPromptEvent::McpServerOAuthLoginCompleted(update) => {
             format!("mcp-oauth:{}:{}", update.name, update.success)
+        }
+        AppServerPromptEvent::AppListUpdated(update) => {
+            format!(
+                "apps-updated:{}",
+                update.data.as_array().map_or(0, Vec::len)
+            )
         }
         AppServerPromptEvent::RemoteControlStatus(update) => {
             format!("remote-control:{}", update.status)
@@ -2291,6 +2304,20 @@ for line in sys.stdin:
                 "params": {
                     "threadId": "thread-1",
                     "reason": "client stopped",
+                },
+            })
+            send({
+                "method": "app/list/updated",
+                "params": {
+                    "data": [
+                        {
+                            "id": "github",
+                            "name": "GitHub",
+                            "displayName": "GitHub",
+                            "isAccessible": True,
+                            "isEnabled": True,
+                        },
+                    ],
                 },
             })
             send({

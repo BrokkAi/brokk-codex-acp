@@ -284,6 +284,7 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
         "Codex account rate limits updated: {\"primary\":{\"percentRemaining\":50}}.",
         "MCP server `github` OAuth login failed.",
         "browser closed",
+        "Codex app list updated: 1 entry.",
         "Codex remote control status: connected on `dev-host`. Environment: `env-1`.",
         "Codex fuzzy file search `fuzzy-1` updated for `lib`: 2 results.",
         "Codex fuzzy file search `fuzzy-1` completed for `lib`.",
@@ -1807,6 +1808,20 @@ for line in sys.stdin:
                     "name": "github",
                     "success": False,
                     "error": "browser closed",
+                },
+            })
+            send({
+                "method": "app/list/updated",
+                "params": {
+                    "data": [
+                        {
+                            "id": "github",
+                            "name": "GitHub",
+                            "displayName": "GitHub",
+                            "isAccessible": True,
+                            "isEnabled": True,
+                        },
+                    ],
                 },
             })
             send({

@@ -40,24 +40,25 @@ use crate::app_server::{
     AppServerAccountLoginCompletedUpdate, AppServerAccountRateLimitsUpdatedUpdate,
     AppServerAccountUpdatedUpdate, AppServerActivePermissionProfile, AppServerAdditionalContext,
     AppServerAdditionalContextEntry, AppServerAdditionalContextKind, AppServerAgentMessageDelta,
-    AppServerApprovalChoice, AppServerApprovalDecision, AppServerApprovalOption,
-    AppServerApprovalRequest, AppServerApprovalResponseKind, AppServerClient,
-    AppServerCollaborationMode, AppServerCollaborationModeMask, AppServerCollaborationModeSettings,
-    AppServerConfigWarningUpdate, AppServerDynamicToolCallRequest, AppServerErrorUpdate,
-    AppServerFuzzyFileSearchUpdate, AppServerGuardianApprovalReviewLifecycle,
-    AppServerGuardianApprovalReviewUpdate, AppServerHistoryEvent, AppServerInteractiveRequest,
-    AppServerMcpElicitationRequest, AppServerMcpServerOAuthLoginCompletedUpdate,
-    AppServerMcpServerStartupStatusUpdate, AppServerMessage, AppServerModel,
-    AppServerModelReroutedUpdate, AppServerModelSafetyBufferingUpdate,
-    AppServerModelVerificationUpdate, AppServerPermissionProfile, AppServerPlanStatus,
-    AppServerPromptCompletion, AppServerPromptEvent, AppServerRealtimeAudioDelta,
-    AppServerRealtimeUpdate, AppServerRemoteControlStatusUpdate,
-    AppServerServerRequestResolvedUpdate, AppServerSkill, AppServerThread,
-    AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
-    AppServerTurnModerationMetadataUpdate, AppServerTurnStartInput, AppServerUserInputQuestion,
-    AppServerUserInputRequest, AppServerWarningUpdate, AppServerWindowsSandboxSetupUpdate,
-    ThreadSettingsUpdateParams, decode_account_login_completed, decode_account_rate_limits_updated,
-    decode_account_updated, decode_config_warning, decode_error, decode_fuzzy_file_search_update,
+    AppServerAppListUpdate, AppServerApprovalChoice, AppServerApprovalDecision,
+    AppServerApprovalOption, AppServerApprovalRequest, AppServerApprovalResponseKind,
+    AppServerClient, AppServerCollaborationMode, AppServerCollaborationModeMask,
+    AppServerCollaborationModeSettings, AppServerConfigWarningUpdate,
+    AppServerDynamicToolCallRequest, AppServerErrorUpdate, AppServerFuzzyFileSearchUpdate,
+    AppServerGuardianApprovalReviewLifecycle, AppServerGuardianApprovalReviewUpdate,
+    AppServerHistoryEvent, AppServerInteractiveRequest, AppServerMcpElicitationRequest,
+    AppServerMcpServerOAuthLoginCompletedUpdate, AppServerMcpServerStartupStatusUpdate,
+    AppServerMessage, AppServerModel, AppServerModelReroutedUpdate,
+    AppServerModelSafetyBufferingUpdate, AppServerModelVerificationUpdate,
+    AppServerPermissionProfile, AppServerPlanStatus, AppServerPromptCompletion,
+    AppServerPromptEvent, AppServerRealtimeAudioDelta, AppServerRealtimeUpdate,
+    AppServerRemoteControlStatusUpdate, AppServerServerRequestResolvedUpdate, AppServerSkill,
+    AppServerThread, AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus,
+    AppServerTurnInput, AppServerTurnModerationMetadataUpdate, AppServerTurnStartInput,
+    AppServerUserInputQuestion, AppServerUserInputRequest, AppServerWarningUpdate,
+    AppServerWindowsSandboxSetupUpdate, ThreadSettingsUpdateParams, decode_account_login_completed,
+    decode_account_rate_limits_updated, decode_account_updated, decode_app_list_updated,
+    decode_config_warning, decode_error, decode_fuzzy_file_search_update,
     decode_guardian_approval_review_update, decode_mcp_server_oauth_login_completed,
     decode_mcp_server_startup_status_updated, decode_model_rerouted,
     decode_model_safety_buffering_updated, decode_model_verification, decode_realtime_update,
@@ -589,6 +590,14 @@ impl CodexAcpAgent {
                     decode_mcp_server_oauth_login_completed(&params).map_err(acp_internal_error)?;
                 self.publish_global_agent_message_to_inactive(
                     mcp_oauth_login_completed_message(&update),
+                    cx,
+                )
+                .await?;
+            }
+            "app/list/updated" => {
+                let update = decode_app_list_updated(&params).map_err(acp_internal_error)?;
+                self.publish_global_agent_message_to_inactive(
+                    app_list_updated_message(&update),
                     cx,
                 )
                 .await?;
@@ -4406,6 +4415,11 @@ fn send_prompt_event(
                 &update,
             ))),
         ),
+        AppServerPromptEvent::AppListUpdated(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(app_list_updated_message(&update))),
+        ),
         AppServerPromptEvent::FuzzyFileSearch(update) => send_session_update(
             cx,
             session_id,
@@ -5076,6 +5090,12 @@ fn mcp_oauth_login_completed_message(
         message.push_str(error);
     }
     message
+}
+
+fn app_list_updated_message(update: &AppServerAppListUpdate) -> String {
+    let count = update.data.as_array().map_or(0, Vec::len);
+    let entry_label = if count == 1 { "entry" } else { "entries" };
+    format!("Codex app list updated: {count} {entry_label}.")
 }
 
 fn remote_control_status_message(update: &AppServerRemoteControlStatusUpdate) -> String {

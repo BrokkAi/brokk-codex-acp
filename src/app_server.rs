@@ -994,6 +994,7 @@ impl AppServerClient {
                 | "account/updated"
                 | "account/rateLimits/updated"
                 | "mcpServer/oauthLogin/completed"
+                | "app/list/updated"
                 | "fuzzyFileSearch/sessionUpdated"
                 | "fuzzyFileSearch/sessionCompleted"
                 | "remoteControl/status/changed"
@@ -2241,6 +2242,7 @@ pub enum AppServerPromptEvent {
     AccountUpdated(AppServerAccountUpdatedUpdate),
     AccountRateLimitsUpdated(AppServerAccountRateLimitsUpdatedUpdate),
     McpServerOAuthLoginCompleted(AppServerMcpServerOAuthLoginCompletedUpdate),
+    AppListUpdated(AppServerAppListUpdate),
     FuzzyFileSearch(AppServerFuzzyFileSearchUpdate),
     RemoteControlStatus(AppServerRemoteControlStatusUpdate),
 }
@@ -2301,6 +2303,11 @@ pub struct AppServerMcpServerOAuthLoginCompletedUpdate {
     pub name: String,
     pub success: bool,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppServerAppListUpdate {
+    pub data: Value,
 }
 
 #[derive(Debug, Clone)]
@@ -3102,6 +3109,12 @@ struct McpServerOAuthLoginCompletedNotification {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct AppListUpdatedNotification {
+    data: Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RemoteControlStatusChangedNotification {
     status: String,
     server_name: String,
@@ -3322,6 +3335,10 @@ fn decode_prompt_event(
             Ok(Some(AppServerPromptEvent::McpServerOAuthLoginCompleted(
                 update,
             )))
+        }
+        "app/list/updated" => {
+            let update = decode_app_list_updated(params)?;
+            Ok(Some(AppServerPromptEvent::AppListUpdated(update)))
         }
         "fuzzyFileSearch/sessionUpdated" | "fuzzyFileSearch/sessionCompleted" => {
             let update = decode_fuzzy_file_search_update(method, params)?;
@@ -3677,6 +3694,13 @@ pub fn decode_mcp_server_oauth_login_completed(
         name: notification.name,
         success: notification.success,
         error: notification.error,
+    })
+}
+
+pub fn decode_app_list_updated(params: &Value) -> anyhow::Result<AppServerAppListUpdate> {
+    let notification: AppListUpdatedNotification = serde_json::from_value(params.clone())?;
+    Ok(AppServerAppListUpdate {
+        data: notification.data,
     })
 }
 

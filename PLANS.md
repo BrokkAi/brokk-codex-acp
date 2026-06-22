@@ -958,6 +958,7 @@ app-server item id -> ACP tool call id / message stream id
 | `configWarning` | `agent_message_chunk` | Implemented for known sessions because app-server emits this warning without a thread id. |
 | `windowsSandbox/setupCompleted` | `agent_message_chunk` | Implemented for known sessions because app-server emits this event without a thread id. |
 | `account/login/completed` / `account/updated` / `account/rateLimits/updated` / `mcpServer/oauthLogin/completed` | `agent_message_chunk` | Implemented for known sessions because app-server emits these account/OAuth events without a thread id. |
+| `app/list/updated` | `agent_message_chunk` | Implemented for known sessions so clients can observe app catalog refreshes. |
 | `remoteControl/status/changed` | `agent_message_chunk` | Implemented for known sessions because app-server emits remote-control status without a thread id. |
 | `fuzzyFileSearch/sessionUpdated` / `fuzzyFileSearch/sessionCompleted` | `agent_message_chunk` | Implemented as compact progress/completion diagnostics for known sessions. |
 | `thread/realtime/started` / `thread/realtime/sdp` / `thread/realtime/itemAdded` / `thread/realtime/transcript/delta` / `thread/realtime/transcript/done` / `thread/realtime/outputAudio/delta` / `thread/realtime/error` / `thread/realtime/closed` | `agent_message_chunk` | Implemented as user-visible diagnostics for realtime lifecycle, SDP, raw item, text transcript, audio metadata, and transport events. Native audio playback remains pending because ACP v1 has no realtime audio stream. |
