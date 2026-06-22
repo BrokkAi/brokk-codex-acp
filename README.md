@@ -60,7 +60,9 @@ The project currently includes:
 - Initial command, file-change, and permission-profile approval routing from
   app-server approval requests to ACP `session/request_permission`, with the
   selected decision sent back to app-server in the response shape each
-  app-server request expects.
+  app-server request expects. Rich command approval decisions such as
+  exec-policy and network-policy amendments keep their original app-server
+  payload and are returned unchanged when selected.
 - Initial ACP session config options for `model`, `reasoning_effort`,
   `service_tier`, `approval_policy`, `collaboration_mode`, and
   `permission_profile`, populated from app-server `model/list`,

@@ -1922,7 +1922,7 @@ pub struct AppServerApprovalRequest {
     pub title: String,
     pub kind: AppServerToolKind,
     pub raw: Value,
-    pub options: Vec<AppServerApprovalOption>,
+    pub options: Vec<AppServerApprovalChoice>,
     pub response_kind: AppServerApprovalResponseKind,
 }
 
@@ -1936,8 +1936,54 @@ pub enum AppServerApprovalResponseKind {
 pub enum AppServerApprovalOption {
     Accept,
     AcceptForSession,
+    AcceptWithExecpolicyAmendment,
+    ApplyNetworkPolicyAmendment,
     Decline,
     Cancel,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AppServerApprovalChoice {
+    pub option: AppServerApprovalOption,
+    pub option_id: String,
+    pub available_decision: Option<Value>,
+}
+
+impl AppServerApprovalChoice {
+    fn new(option: AppServerApprovalOption) -> Self {
+        Self {
+            option,
+            option_id: option.id().to_owned(),
+            available_decision: None,
+        }
+    }
+
+    fn with_available_decision(
+        option: AppServerApprovalOption,
+        index: usize,
+        available_decision: Value,
+    ) -> Self {
+        Self {
+            option,
+            option_id: format!("{}:{index}", option.id()),
+            available_decision: Some(available_decision),
+        }
+    }
+
+    pub fn id(&self) -> &str {
+        &self.option_id
+    }
+
+    pub fn label(&self) -> &'static str {
+        self.option.label()
+    }
+
+    pub fn decision(&self) -> AppServerApprovalDecision {
+        match &self.available_decision {
+            Some(decision) => AppServerApprovalDecision::Raw(decision.clone()),
+            None => self.option.simple_decision(),
+        }
+    }
 }
 
 impl AppServerApprovalOption {
@@ -1945,6 +1991,8 @@ impl AppServerApprovalOption {
         match self {
             Self::Accept => "accept",
             Self::AcceptForSession => "acceptForSession",
+            Self::AcceptWithExecpolicyAmendment => "acceptWithExecpolicyAmendment",
+            Self::ApplyNetworkPolicyAmendment => "applyNetworkPolicyAmendment",
             Self::Decline => "decline",
             Self::Cancel => "cancel",
         }
@@ -1954,27 +2002,42 @@ impl AppServerApprovalOption {
         match self {
             Self::Accept => "Allow once",
             Self::AcceptForSession => "Allow for session",
+            Self::AcceptWithExecpolicyAmendment => "Allow similar commands",
+            Self::ApplyNetworkPolicyAmendment => "Apply network rule",
             Self::Decline => "Reject",
             Self::Cancel => "Cancel",
         }
     }
+
+    fn simple_decision(self) -> AppServerApprovalDecision {
+        match self {
+            Self::Accept => AppServerApprovalDecision::Accept,
+            Self::AcceptForSession => AppServerApprovalDecision::AcceptForSession,
+            Self::AcceptWithExecpolicyAmendment => AppServerApprovalDecision::Cancel,
+            Self::ApplyNetworkPolicyAmendment => AppServerApprovalDecision::Cancel,
+            Self::Decline => AppServerApprovalDecision::Decline,
+            Self::Cancel => AppServerApprovalDecision::Cancel,
+        }
+    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AppServerApprovalDecision {
     Accept,
     AcceptForSession,
     Decline,
     Cancel,
+    Raw(Value),
 }
 
 impl AppServerApprovalDecision {
-    fn as_app_server_value(self) -> Value {
+    fn into_app_server_value(self) -> Value {
         match self {
             Self::Accept => Value::String("accept".to_owned()),
             Self::AcceptForSession => Value::String("acceptForSession".to_owned()),
             Self::Decline => Value::String("decline".to_owned()),
             Self::Cancel => Value::String("cancel".to_owned()),
+            Self::Raw(decision) => decision,
         }
     }
 }
@@ -2534,20 +2597,27 @@ fn decode_thread_settings_updated_for_thread(
 fn approval_options_from_params(
     params: &Value,
     defaults: &[AppServerApprovalOption],
-) -> Vec<AppServerApprovalOption> {
+) -> Vec<AppServerApprovalChoice> {
     let parsed = params
         .get("availableDecisions")
         .and_then(Value::as_array)
         .map(|decisions| {
             decisions
                 .iter()
-                .filter_map(|decision| decision.as_str().and_then(approval_option_from_id))
+                .enumerate()
+                .filter_map(|(index, decision)| {
+                    approval_choice_from_available_decision(index, decision)
+                })
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
 
     if parsed.is_empty() {
-        defaults.to_vec()
+        defaults
+            .iter()
+            .copied()
+            .map(AppServerApprovalChoice::new)
+            .collect()
     } else {
         parsed
     }
@@ -2617,10 +2687,31 @@ fn approval_option_from_id(id: &str) -> Option<AppServerApprovalOption> {
     match id {
         "accept" => Some(AppServerApprovalOption::Accept),
         "acceptForSession" => Some(AppServerApprovalOption::AcceptForSession),
+        "acceptWithExecpolicyAmendment" => {
+            Some(AppServerApprovalOption::AcceptWithExecpolicyAmendment)
+        }
+        "applyNetworkPolicyAmendment" => Some(AppServerApprovalOption::ApplyNetworkPolicyAmendment),
         "decline" => Some(AppServerApprovalOption::Decline),
         "cancel" => Some(AppServerApprovalOption::Cancel),
         _ => None,
     }
+}
+
+fn approval_choice_from_available_decision(
+    index: usize,
+    decision: &Value,
+) -> Option<AppServerApprovalChoice> {
+    if let Some(id) = decision.as_str() {
+        return approval_option_from_id(id).map(AppServerApprovalChoice::new);
+    }
+
+    let object = decision.as_object()?;
+    let id = object.keys().find_map(|key| approval_option_from_id(key))?;
+    Some(AppServerApprovalChoice::with_available_decision(
+        id,
+        index,
+        decision.clone(),
+    ))
 }
 
 fn approval_response_result(
@@ -2629,7 +2720,7 @@ fn approval_response_result(
 ) -> Value {
     match approval.response_kind {
         AppServerApprovalResponseKind::Decision => json!({
-            "decision": decision.as_app_server_value(),
+            "decision": decision.into_app_server_value(),
         }),
         AppServerApprovalResponseKind::Permissions {
             requested_permissions,
@@ -2637,9 +2728,9 @@ fn approval_response_result(
             let (permissions, scope) = match decision {
                 AppServerApprovalDecision::Accept => (requested_permissions, "turn"),
                 AppServerApprovalDecision::AcceptForSession => (requested_permissions, "session"),
-                AppServerApprovalDecision::Decline | AppServerApprovalDecision::Cancel => {
-                    (json!({}), "turn")
-                }
+                AppServerApprovalDecision::Decline
+                | AppServerApprovalDecision::Cancel
+                | AppServerApprovalDecision::Raw(_) => (json!({}), "turn"),
             };
             json!({
                 "permissions": permissions,
@@ -3132,10 +3223,77 @@ mod tests {
         assert_eq!(
             approval.options,
             vec![
-                AppServerApprovalOption::Accept,
-                AppServerApprovalOption::Decline
+                AppServerApprovalChoice::new(AppServerApprovalOption::Accept),
+                AppServerApprovalChoice::new(AppServerApprovalOption::Decline)
             ]
         );
+    }
+
+    #[test]
+    fn command_approval_preserves_rich_available_decisions_in_choices() {
+        let rich_decision = json!({
+            "acceptWithExecpolicyAmendment": {
+                "execpolicy_amendment": [
+                    {"type": "exact", "argv": ["cargo", "test"]}
+                ]
+            }
+        });
+        let approval = decode_approval_request(
+            "item/commandExecution/requestApproval",
+            &json!({
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "itemId": "command-approval",
+                "startedAtMs": 123,
+                "command": "cargo test",
+                "availableDecisions": [
+                    "accept",
+                    rich_decision.clone(),
+                    "decline"
+                ],
+            }),
+            "thread-1",
+            Some("turn-1"),
+        )
+        .unwrap()
+        .expect("command request should decode");
+
+        assert_eq!(
+            approval.options,
+            vec![
+                AppServerApprovalChoice::new(AppServerApprovalOption::Accept),
+                AppServerApprovalChoice::with_available_decision(
+                    AppServerApprovalOption::AcceptWithExecpolicyAmendment,
+                    1,
+                    rich_decision.clone(),
+                ),
+                AppServerApprovalChoice::new(AppServerApprovalOption::Decline),
+            ]
+        );
+    }
+
+    #[test]
+    fn command_approval_raw_decision_returns_available_decision_payload() {
+        let rich_decision = json!({
+            "acceptWithExecpolicyAmendment": {
+                "execpolicy_amendment": [
+                    {"type": "exact", "argv": ["cargo", "test"]}
+                ]
+            }
+        });
+        let response = approval_response_result(
+            AppServerApprovalRequest {
+                item_id: "command-approval".to_owned(),
+                title: "Run `cargo test`".to_owned(),
+                kind: AppServerToolKind::Execute,
+                raw: json!({}),
+                options: vec![],
+                response_kind: AppServerApprovalResponseKind::Decision,
+            },
+            AppServerApprovalDecision::Raw(rich_decision.clone()),
+        );
+
+        assert_eq!(response["decision"], rich_decision);
     }
 
     #[test]

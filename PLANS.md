@@ -178,6 +178,9 @@ The current repository has the first working ACP/app-server bridge in place:
   - `item/commandExecution/requestApproval` and
     `item/fileChange/requestApproval` -> ACP `session/request_permission`
     requests, then app-server JSON-RPC responses with the selected decision.
+    Rich command `availableDecisions` such as exec-policy and network-policy
+    amendments are exposed as ACP permission options and answered with the
+    original app-server decision payload when selected.
   - `item/permissions/requestApproval` -> ACP `session/request_permission`,
     then an app-server JSON-RPC response containing `permissions` and `scope`.
   - The adapter maps `accept`, `acceptForSession`, `decline`, and `cancel` to
@@ -844,7 +847,7 @@ app-server item id -> ACP tool call id / message stream id
 | `item/commandExecution/outputDelta` | `tool_call_update` content | Preserve stdout/stderr boundaries if present. |
 | `turn/diff/updated` | `tool_call_update` with diff content | Useful for file edit previews. |
 | `turn/plan/updated` | `plan` | Send the full plan every time. |
-| `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` | `session/request_permission` | Implemented for `accept`, `acceptForSession`, `decline`, and `cancel`; app-server remains blocked until the ACP client answers. |
+| `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` | `session/request_permission` | Implemented for simple decisions; rich command `availableDecisions` such as exec-policy and network-policy amendments keep their original app-server payload under ACP option metadata and are returned unchanged when selected. App-server remains blocked until the ACP client answers. |
 | `item/permissions/requestApproval` | `session/request_permission` | Implemented for full requested-profile grants scoped to turn/session and rejection. Partial grants are still pending. |
 | `mcpServer/elicitation/request`, `item/tool/call`, `item/tool/requestUserInput` | fallback response now; future ACP elicitation or extension request | Implemented as explicit cancel/empty/failure responses so app-server does not block. Rich ACP UI is still pending. |
 | `skills/changed` | `available_commands_update` | Implemented through the background app-server notification dispatcher; re-runs app-server `skills/list` with `forceReload`. |
@@ -1193,6 +1196,10 @@ When app-server emits a command or file-change approval request, the adapter now
   `kind` (`allow_once`, `allow_always`, `reject_once`, or `reject_always`)
 - sends the user's decision back to app-server through the matching response
   method
+- preserves rich command `availableDecisions` such as exec-policy and
+  network-policy amendments by exposing them as ACP permission options with the
+  original app-server decision payload under `_meta.brokk_codex_acp`, then
+  returning that original payload if selected
 
 Remaining approval work:
 
@@ -1200,8 +1207,6 @@ Remaining approval work:
   has an ACP-compatible elicitation surface.
 - Preserve partial-grant choices for `item/permissions/requestApproval` instead
   of only granting the full requested profile or `{}`.
-- Preserve richer `availableDecisions` payloads such as exec-policy and network
-  amendments instead of only mapping simple string decisions.
 
 Do not invent approval policies in the adapter. Policies should come from
 Codex config, app-server thread settings, or explicit ACP session options.

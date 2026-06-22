@@ -31,8 +31,8 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{debug, trace};
 
 use crate::app_server::{
-    AppServerActivePermissionProfile, AppServerApprovalDecision, AppServerApprovalOption,
-    AppServerApprovalRequest, AppServerClient, AppServerCollaborationMode,
+    AppServerActivePermissionProfile, AppServerApprovalChoice, AppServerApprovalDecision,
+    AppServerApprovalOption, AppServerApprovalRequest, AppServerClient, AppServerCollaborationMode,
     AppServerCollaborationModeMask, AppServerCollaborationModeSettings, AppServerErrorUpdate,
     AppServerHistoryEvent, AppServerMessage, AppServerModel, AppServerModelReroutedUpdate,
     AppServerPermissionProfile, AppServerPlanStatus, AppServerPromptCompletion,
@@ -3623,6 +3623,11 @@ async fn request_permission(
     fields.status = Some(ToolCallStatus::Pending);
     fields.raw_input = Some(approval.raw);
 
+    let decisions_by_option_id = approval
+        .options
+        .iter()
+        .map(|choice| (choice.id().to_owned(), choice.decision()))
+        .collect::<HashMap<_, _>>();
     let options = approval
         .options
         .into_iter()
@@ -3654,7 +3659,10 @@ async fn request_permission(
                 RequestPermissionOutcome::Selected(selected) => {
                     let option_id = selected.option_id.0.as_ref();
                     if known_option_ids.contains(option_id) {
-                        approval_decision_from_option_id(option_id)
+                        decisions_by_option_id
+                            .get(option_id)
+                            .cloned()
+                            .unwrap_or(AppServerApprovalDecision::Cancel)
                     } else {
                         AppServerApprovalDecision::Cancel
                     }
@@ -3721,31 +3729,53 @@ async fn cancel_outstanding_approvals_for_session(
     count
 }
 
-fn permission_option(option: AppServerApprovalOption) -> PermissionOption {
-    PermissionOption::new(
-        PermissionOptionId::new(option.id()),
-        option.label(),
-        permission_option_kind(option),
-    )
+fn permission_option(choice: AppServerApprovalChoice) -> PermissionOption {
+    let permission_option = PermissionOption::new(
+        PermissionOptionId::new(choice.id()),
+        choice.label(),
+        permission_option_kind(&choice),
+    );
+    if let Some(available_decision) = choice.available_decision {
+        let adapter_meta =
+            serde_json::Map::from_iter([("availableDecision".to_owned(), available_decision)]);
+        let meta = serde_json::Map::from_iter([(
+            "brokk_codex_acp".to_owned(),
+            serde_json::Value::Object(adapter_meta),
+        )]);
+        permission_option.meta(meta)
+    } else {
+        permission_option
+    }
 }
 
-fn permission_option_kind(option: AppServerApprovalOption) -> PermissionOptionKind {
-    match option {
+fn permission_option_kind(choice: &AppServerApprovalChoice) -> PermissionOptionKind {
+    match choice.option {
         AppServerApprovalOption::Accept => PermissionOptionKind::AllowOnce,
         AppServerApprovalOption::AcceptForSession => PermissionOptionKind::AllowAlways,
+        AppServerApprovalOption::AcceptWithExecpolicyAmendment => PermissionOptionKind::AllowAlways,
+        AppServerApprovalOption::ApplyNetworkPolicyAmendment => {
+            if network_policy_amendment_action(choice) == Some("deny") {
+                PermissionOptionKind::RejectAlways
+            } else {
+                PermissionOptionKind::AllowAlways
+            }
+        }
         AppServerApprovalOption::Decline => PermissionOptionKind::RejectOnce,
         AppServerApprovalOption::Cancel => PermissionOptionKind::RejectOnce,
     }
 }
 
-fn approval_decision_from_option_id(option_id: &str) -> AppServerApprovalDecision {
-    match option_id {
-        "accept" => AppServerApprovalDecision::Accept,
-        "acceptForSession" => AppServerApprovalDecision::AcceptForSession,
-        "decline" => AppServerApprovalDecision::Decline,
-        "cancel" => AppServerApprovalDecision::Cancel,
-        _ => AppServerApprovalDecision::Cancel,
-    }
+fn network_policy_amendment_action(choice: &AppServerApprovalChoice) -> Option<&str> {
+    let decision = choice.available_decision.as_ref()?;
+    let amendment = decision
+        .get("applyNetworkPolicyAmendment")?
+        .get("network_policy_amendment")
+        .or_else(|| {
+            decision
+                .get("applyNetworkPolicyAmendment")?
+                .get("networkPolicyAmendment")
+        })?;
+    amendment.get("action")?.as_str()
 }
 
 fn publish_agent_message(
@@ -4704,6 +4734,55 @@ mod tests {
         );
 
         assert_eq!(additional, vec![std::path::PathBuf::from("/shared")]);
+    }
+
+    #[test]
+    fn permission_option_preserves_rich_available_decision_meta() {
+        let available_decision = serde_json::json!({
+            "acceptWithExecpolicyAmendment": {
+                "execpolicy_amendment": [
+                    {"type": "exact", "argv": ["cargo", "test"]}
+                ]
+            }
+        });
+
+        let option = permission_option(AppServerApprovalChoice {
+            option: AppServerApprovalOption::AcceptWithExecpolicyAmendment,
+            option_id: "acceptWithExecpolicyAmendment:1".to_owned(),
+            available_decision: Some(available_decision.clone()),
+        });
+
+        assert_eq!(
+            option.option_id.to_string(),
+            "acceptWithExecpolicyAmendment:1"
+        );
+        assert_eq!(option.kind, PermissionOptionKind::AllowAlways);
+        assert_eq!(
+            option
+                .meta
+                .as_ref()
+                .and_then(|meta| meta.get("brokk_codex_acp"))
+                .and_then(|meta| meta.get("availableDecision")),
+            Some(&available_decision)
+        );
+    }
+
+    #[test]
+    fn permission_option_marks_network_deny_amendment_as_reject_always() {
+        let option = permission_option(AppServerApprovalChoice {
+            option: AppServerApprovalOption::ApplyNetworkPolicyAmendment,
+            option_id: "applyNetworkPolicyAmendment:0".to_owned(),
+            available_decision: Some(serde_json::json!({
+                "applyNetworkPolicyAmendment": {
+                    "network_policy_amendment": {
+                        "host": "example.com",
+                        "action": "deny"
+                    }
+                }
+            })),
+        });
+
+        assert_eq!(option.kind, PermissionOptionKind::RejectAlways);
     }
 
     #[test]
