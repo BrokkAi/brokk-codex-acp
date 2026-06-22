@@ -174,6 +174,12 @@ The current repository has the first working ACP/app-server bridge in place:
   - `thread/tokenUsage/updated` -> ACP usage updates through the unstable
     `unstable_session_usage` crate feature
   - `turn/completed` -> ACP prompt response completion
+- Server-initiated request handling:
+  - `currentTime/read` -> JSON-RPC response with the adapter host's current
+    Unix timestamp in seconds.
+  - `mcpServer/elicitation/request`, `item/tool/requestUserInput`, and
+    `item/tool/call` -> explicit cancel/empty/failure fallback responses when
+    no ACP-compatible rich UI is available.
 - Approval routing:
   - `item/commandExecution/requestApproval` and
     `item/fileChange/requestApproval` -> ACP `session/request_permission`
@@ -336,8 +342,9 @@ Tasks:
 - [x] Add approval request bridging for command and file-change approvals.
 - [x] Add approval request bridging for permission-profile requests, granting
   the full requested profile for a turn/session or rejecting it.
-- [x] Add non-blocking fallback responses for MCP elicitation, dynamic tool
-  requests, and `request_user_input` when no ACP-compatible UI is available.
+- [x] Add non-blocking fallback responses for current-time reads, MCP
+  elicitation, dynamic tool requests, and `request_user_input` when no
+  ACP-compatible UI is available.
 - [ ] Add rich ACP UI bridging for MCP elicitation and dynamic tool requests.
 - [ ] Add terminal embedding once ACP terminal creation is wired.
 
@@ -353,8 +360,9 @@ Acceptance criteria:
   `session/request_permission` instead of blocking or being ignored.
 - [x] Permission-profile approvals route through ACP `session/request_permission`
   and respond to app-server with `permissions`/`scope`.
-- [x] MCP elicitation, dynamic tool, and `request_user_input` requests receive
-  explicit cancel/failure fallback responses instead of blocking app-server.
+- [x] Current-time reads, MCP elicitation, dynamic tool, and
+  `request_user_input` requests receive explicit responses instead of blocking
+  app-server.
 - [ ] MCP elicitation and dynamic tool requests route through a rich ACP
   request surface when one is available.
 

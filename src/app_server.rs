@@ -4,6 +4,7 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -2742,6 +2743,9 @@ fn approval_response_result(
 
 fn fallback_interactive_request_response(method: &str, _params: &Value) -> Option<Value> {
     match method {
+        "currentTime/read" => Some(json!({
+            "currentTimeAt": current_unix_timestamp_seconds(),
+        })),
         "mcpServer/elicitation/request" => Some(json!({
             "action": "cancel",
             "content": null,
@@ -2761,6 +2765,13 @@ fn fallback_interactive_request_response(method: &str, _params: &Value) -> Optio
         })),
         _ => None,
     }
+}
+
+fn current_unix_timestamp_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
 }
 
 pub fn history_events(thread: &AppServerThreadHistory) -> Vec<AppServerHistoryEvent> {
@@ -3353,6 +3364,13 @@ mod tests {
 
     #[test]
     fn fallback_interactive_requests_cancel_or_fail_without_blocking_app_server() {
+        let current_time_response =
+            fallback_interactive_request_response("currentTime/read", &json!({})).unwrap();
+        assert!(
+            current_time_response["currentTimeAt"]
+                .as_u64()
+                .is_some_and(|timestamp| timestamp > 1_700_000_000)
+        );
         assert_eq!(
             fallback_interactive_request_response("mcpServer/elicitation/request", &json!({}))
                 .unwrap(),

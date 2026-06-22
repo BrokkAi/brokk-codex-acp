@@ -632,6 +632,13 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         run_text_turn_and_collect_messages(&mut client, "dynamic tool callback").await?;
     assert_eq!(dynamic_tool_summaries, vec!["message:failed dynamic tool"]);
 
+    let current_time_summaries =
+        run_text_turn_and_collect_messages(&mut client, "current time callback").await?;
+    assert_eq!(
+        current_time_summaries,
+        vec!["message:reported current time"]
+    );
+
     let (cancel_tx, cancel_rx) = oneshot::channel();
     tokio::spawn(async move {
         time::sleep(time::Duration::from_millis(50)).await;
@@ -1999,6 +2006,36 @@ for line in sys.stdin:
                 "params": {
                     "threadId": "thread-1",
                     "turn": {"id": "turn-dynamic-tool", "status": "completed"},
+                },
+            })
+        elif params["input"] == [{"type": "text", "text": "current time callback"}]:
+            response(message_id, {"turn": {"id": "turn-current-time", "status": "running"}})
+            send({
+                "id": "current-time-request-1",
+                "method": "currentTime/read",
+                "params": {
+                    "threadId": "thread-1",
+                },
+            })
+            current_time_response = json.loads(sys.stdin.readline())
+            assert current_time_response["id"] == "current-time-request-1"
+            timestamp = current_time_response["result"]["currentTimeAt"]
+            assert isinstance(timestamp, int)
+            assert timestamp > 1700000000
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-current-time",
+                    "itemId": "item-current-time",
+                    "delta": "reported current time",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {"id": "turn-current-time", "status": "completed"},
                 },
             })
         elif params["input"] == [{"type": "text", "text": "cancel me"}]:
