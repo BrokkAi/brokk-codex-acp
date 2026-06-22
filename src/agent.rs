@@ -31,24 +31,27 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{debug, trace};
 
 use crate::app_server::{
-    AppServerActivePermissionProfile, AppServerApprovalChoice, AppServerApprovalDecision,
-    AppServerApprovalOption, AppServerApprovalRequest, AppServerClient, AppServerCollaborationMode,
-    AppServerCollaborationModeMask, AppServerCollaborationModeSettings,
+    AppServerAccountLoginCompletedUpdate, AppServerAccountRateLimitsUpdatedUpdate,
+    AppServerAccountUpdatedUpdate, AppServerActivePermissionProfile, AppServerApprovalChoice,
+    AppServerApprovalDecision, AppServerApprovalOption, AppServerApprovalRequest, AppServerClient,
+    AppServerCollaborationMode, AppServerCollaborationModeMask, AppServerCollaborationModeSettings,
     AppServerConfigWarningUpdate, AppServerErrorUpdate, AppServerHistoryEvent,
-    AppServerMcpServerStartupStatusUpdate, AppServerMessage, AppServerModel,
-    AppServerModelReroutedUpdate, AppServerModelVerificationUpdate, AppServerPermissionProfile,
-    AppServerPlanStatus, AppServerPromptCompletion, AppServerPromptEvent,
-    AppServerRealtimeAudioDelta, AppServerRealtimeUpdate, AppServerSkill, AppServerThread,
-    AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
+    AppServerMcpServerOAuthLoginCompletedUpdate, AppServerMcpServerStartupStatusUpdate,
+    AppServerMessage, AppServerModel, AppServerModelReroutedUpdate,
+    AppServerModelVerificationUpdate, AppServerPermissionProfile, AppServerPlanStatus,
+    AppServerPromptCompletion, AppServerPromptEvent, AppServerRealtimeAudioDelta,
+    AppServerRealtimeUpdate, AppServerSkill, AppServerThread, AppServerThreadSettingsUpdate,
+    AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
     AppServerTurnModerationMetadataUpdate, AppServerWarningUpdate,
-    AppServerWindowsSandboxSetupUpdate, ThreadSettingsUpdateParams, decode_config_warning,
-    decode_error, decode_mcp_server_startup_status_updated, decode_model_rerouted,
-    decode_model_verification, decode_realtime_update, decode_thread_archived,
-    decode_thread_closed, decode_thread_deleted, decode_thread_goal_cleared,
-    decode_thread_goal_updated, decode_thread_name_updated, decode_thread_settings_updated,
-    decode_thread_status_changed, decode_thread_unarchived, decode_turn_moderation_metadata,
-    decode_warning, decode_windows_sandbox_setup_completed, history_events_for_turns,
-    is_app_server_method_unavailable,
+    AppServerWindowsSandboxSetupUpdate, ThreadSettingsUpdateParams, decode_account_login_completed,
+    decode_account_rate_limits_updated, decode_account_updated, decode_config_warning,
+    decode_error, decode_mcp_server_oauth_login_completed,
+    decode_mcp_server_startup_status_updated, decode_model_rerouted, decode_model_verification,
+    decode_realtime_update, decode_thread_archived, decode_thread_closed, decode_thread_deleted,
+    decode_thread_goal_cleared, decode_thread_goal_updated, decode_thread_name_updated,
+    decode_thread_settings_updated, decode_thread_status_changed, decode_thread_unarchived,
+    decode_turn_moderation_metadata, decode_warning, decode_windows_sandbox_setup_completed,
+    history_events_for_turns, is_app_server_method_unavailable,
 };
 
 const MODEL_CONFIG_ID: &str = "model";
@@ -517,6 +520,37 @@ impl CodexAcpAgent {
                     decode_windows_sandbox_setup_completed(&params).map_err(acp_internal_error)?;
                 self.publish_global_agent_message_to_inactive(
                     windows_sandbox_setup_message(&update),
+                    cx,
+                )
+                .await?;
+            }
+            "account/login/completed" => {
+                let update = decode_account_login_completed(&params).map_err(acp_internal_error)?;
+                self.publish_global_agent_message_to_inactive(
+                    account_login_completed_message(&update),
+                    cx,
+                )
+                .await?;
+            }
+            "account/updated" => {
+                let update = decode_account_updated(&params).map_err(acp_internal_error)?;
+                self.publish_global_agent_message_to_inactive(account_updated_message(&update), cx)
+                    .await?;
+            }
+            "account/rateLimits/updated" => {
+                let update =
+                    decode_account_rate_limits_updated(&params).map_err(acp_internal_error)?;
+                self.publish_global_agent_message_to_inactive(
+                    account_rate_limits_updated_message(&update),
+                    cx,
+                )
+                .await?;
+            }
+            "mcpServer/oauthLogin/completed" => {
+                let update =
+                    decode_mcp_server_oauth_login_completed(&params).map_err(acp_internal_error)?;
+                self.publish_global_agent_message_to_inactive(
+                    mcp_oauth_login_completed_message(&update),
                     cx,
                 )
                 .await?;
@@ -3704,6 +3738,30 @@ fn send_prompt_event(
             session_id,
             SessionUpdate::AgentMessageChunk(text_chunk(windows_sandbox_setup_message(&update))),
         ),
+        AppServerPromptEvent::AccountLoginCompleted(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(account_login_completed_message(&update))),
+        ),
+        AppServerPromptEvent::AccountUpdated(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(account_updated_message(&update))),
+        ),
+        AppServerPromptEvent::AccountRateLimitsUpdated(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(account_rate_limits_updated_message(
+                &update,
+            ))),
+        ),
+        AppServerPromptEvent::McpServerOAuthLoginCompleted(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(mcp_oauth_login_completed_message(
+                &update,
+            ))),
+        ),
         AppServerPromptEvent::SkillsChanged | AppServerPromptEvent::ThreadSettingsUpdated(_) => {
             Ok(())
         }
@@ -3951,6 +4009,73 @@ fn windows_sandbox_setup_message(update: &AppServerWindowsSandboxSetupUpdate) ->
         "failed"
     };
     let mut message = format!("Windows sandbox `{}` setup {status}.", update.mode);
+    if let Some(error) = update.error.as_deref()
+        && !error.trim().is_empty()
+    {
+        message.push_str("\n\n");
+        message.push_str(error);
+    }
+    message
+}
+
+fn account_login_completed_message(update: &AppServerAccountLoginCompletedUpdate) -> String {
+    let status = if update.success {
+        "completed"
+    } else {
+        "failed"
+    };
+    let mut message = "Codex account login ".to_owned();
+    message.push_str(status);
+    if let Some(login_id) = update.login_id.as_deref()
+        && !login_id.trim().is_empty()
+    {
+        message.push_str(" for `");
+        message.push_str(login_id);
+        message.push('`');
+    }
+    message.push('.');
+    if let Some(error) = update.error.as_deref()
+        && !error.trim().is_empty()
+    {
+        message.push_str("\n\n");
+        message.push_str(error);
+    }
+    message
+}
+
+fn account_updated_message(update: &AppServerAccountUpdatedUpdate) -> String {
+    let auth_mode = update.auth_mode.as_deref().unwrap_or("signed out");
+    let mut message = format!(
+        "Codex account updated: auth mode {}.",
+        json_value_label(&serde_json::Value::String(auth_mode.to_owned()))
+    );
+    if let Some(plan_type) = update.plan_type.as_deref()
+        && !plan_type.trim().is_empty()
+    {
+        message.push_str("\n\nPlan: ");
+        message.push_str(&json_value_label(&serde_json::Value::String(
+            plan_type.to_owned(),
+        )));
+    }
+    message
+}
+
+fn account_rate_limits_updated_message(update: &AppServerAccountRateLimitsUpdatedUpdate) -> String {
+    format!(
+        "Codex account rate limits updated: {}.",
+        json_value_label(&update.rate_limits)
+    )
+}
+
+fn mcp_oauth_login_completed_message(
+    update: &AppServerMcpServerOAuthLoginCompletedUpdate,
+) -> String {
+    let status = if update.success {
+        "completed"
+    } else {
+        "failed"
+    };
+    let mut message = format!("MCP server `{}` OAuth login {status}.", update.name);
     if let Some(error) = update.error.as_deref()
         && !error.trim().is_empty()
     {

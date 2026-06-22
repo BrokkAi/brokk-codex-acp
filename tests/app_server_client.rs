@@ -416,6 +416,21 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
                             update.mode, update.success
                         ));
                     }
+                    AppServerPromptEvent::AccountLoginCompleted(update) => {
+                        events.push(format!("account-login:{}", update.success));
+                    }
+                    AppServerPromptEvent::AccountUpdated(update) => {
+                        events.push(format!(
+                            "account-updated:{}",
+                            update.auth_mode.as_deref().unwrap_or_default()
+                        ));
+                    }
+                    AppServerPromptEvent::AccountRateLimitsUpdated(update) => {
+                        events.push(format!("account-limits:{}", update.rate_limits));
+                    }
+                    AppServerPromptEvent::McpServerOAuthLoginCompleted(update) => {
+                        events.push(format!("mcp-oauth:{}:{}", update.name, update.success));
+                    }
                 }
                 Ok(())
             },
@@ -822,6 +837,21 @@ fn summarize_prompt_event(event: AppServerPromptEvent) -> String {
         }
         AppServerPromptEvent::WindowsSandboxSetup(update) => {
             format!("windows-sandbox:{}:{}", update.mode, update.success)
+        }
+        AppServerPromptEvent::AccountLoginCompleted(update) => {
+            format!("account-login:{}", update.success)
+        }
+        AppServerPromptEvent::AccountUpdated(update) => {
+            format!(
+                "account-updated:{}",
+                update.auth_mode.as_deref().unwrap_or_default()
+            )
+        }
+        AppServerPromptEvent::AccountRateLimitsUpdated(update) => {
+            format!("account-limits:{}", update.rate_limits)
+        }
+        AppServerPromptEvent::McpServerOAuthLoginCompleted(update) => {
+            format!("mcp-oauth:{}:{}", update.name, update.success)
         }
     }
 }

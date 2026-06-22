@@ -73,6 +73,8 @@ The project currently includes:
   diagnostic messages for every known session.
 - Global Windows sandbox setup completion notifications are projected as
   user-visible ACP diagnostic messages for every known session.
+- Global account, rate-limit, and MCP OAuth login notifications are projected
+  as user-visible ACP diagnostic messages for every known session.
 - Model verification notifications are projected as user-visible ACP
   diagnostic messages.
 - Turn moderation metadata notifications are projected as user-visible ACP

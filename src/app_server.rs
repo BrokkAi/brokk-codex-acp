@@ -786,6 +786,10 @@ impl AppServerClient {
                 | "mcpServer/startupStatus/updated"
                 | "configWarning"
                 | "windowsSandbox/setupCompleted"
+                | "account/login/completed"
+                | "account/updated"
+                | "account/rateLimits/updated"
+                | "mcpServer/oauthLogin/completed"
                 | "thread/realtime/started"
                 | "thread/realtime/sdp"
                 | "thread/realtime/itemAdded"
@@ -1951,6 +1955,10 @@ pub enum AppServerPromptEvent {
     Realtime(AppServerRealtimeUpdate),
     ConfigWarning(AppServerConfigWarningUpdate),
     WindowsSandboxSetup(AppServerWindowsSandboxSetupUpdate),
+    AccountLoginCompleted(AppServerAccountLoginCompletedUpdate),
+    AccountUpdated(AppServerAccountUpdatedUpdate),
+    AccountRateLimitsUpdated(AppServerAccountRateLimitsUpdatedUpdate),
+    McpServerOAuthLoginCompleted(AppServerMcpServerOAuthLoginCompletedUpdate),
 }
 
 pub enum AppServerHistoryEvent {
@@ -1969,6 +1977,31 @@ pub struct AppServerConfigWarningUpdate {
 #[derive(Debug, Clone)]
 pub struct AppServerWindowsSandboxSetupUpdate {
     pub mode: String,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppServerAccountLoginCompletedUpdate {
+    pub login_id: Option<String>,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppServerAccountUpdatedUpdate {
+    pub auth_mode: Option<String>,
+    pub plan_type: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppServerAccountRateLimitsUpdatedUpdate {
+    pub rate_limits: Value,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppServerMcpServerOAuthLoginCompletedUpdate {
+    pub name: String,
     pub success: bool,
     pub error: Option<String>,
 }
@@ -2552,6 +2585,40 @@ struct WindowsSandboxSetupCompletedNotification {
     error: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AccountLoginCompletedNotification {
+    #[serde(default)]
+    login_id: Option<String>,
+    success: bool,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AccountUpdatedNotification {
+    #[serde(default)]
+    auth_mode: Option<String>,
+    #[serde(default)]
+    plan_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AccountRateLimitsUpdatedNotification {
+    rate_limits: Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpServerOAuthLoginCompletedNotification {
+    name: String,
+    success: bool,
+    #[serde(default)]
+    error: Option<String>,
+}
+
 fn decode_prompt_event(
     method: &str,
     params: &Value,
@@ -2686,6 +2753,24 @@ fn decode_prompt_event(
         "windowsSandbox/setupCompleted" => {
             let update = decode_windows_sandbox_setup_completed(params)?;
             Ok(Some(AppServerPromptEvent::WindowsSandboxSetup(update)))
+        }
+        "account/login/completed" => {
+            let update = decode_account_login_completed(params)?;
+            Ok(Some(AppServerPromptEvent::AccountLoginCompleted(update)))
+        }
+        "account/updated" => {
+            let update = decode_account_updated(params)?;
+            Ok(Some(AppServerPromptEvent::AccountUpdated(update)))
+        }
+        "account/rateLimits/updated" => {
+            let update = decode_account_rate_limits_updated(params)?;
+            Ok(Some(AppServerPromptEvent::AccountRateLimitsUpdated(update)))
+        }
+        "mcpServer/oauthLogin/completed" => {
+            let update = decode_mcp_server_oauth_login_completed(params)?;
+            Ok(Some(AppServerPromptEvent::McpServerOAuthLoginCompleted(
+                update,
+            )))
         }
         "thread/realtime/started"
         | "thread/realtime/sdp"
@@ -2887,6 +2972,47 @@ pub fn decode_windows_sandbox_setup_completed(
         serde_json::from_value(params.clone())?;
     Ok(AppServerWindowsSandboxSetupUpdate {
         mode: notification.mode,
+        success: notification.success,
+        error: notification.error,
+    })
+}
+
+pub fn decode_account_login_completed(
+    params: &Value,
+) -> anyhow::Result<AppServerAccountLoginCompletedUpdate> {
+    let notification: AccountLoginCompletedNotification = serde_json::from_value(params.clone())?;
+    Ok(AppServerAccountLoginCompletedUpdate {
+        login_id: notification.login_id,
+        success: notification.success,
+        error: notification.error,
+    })
+}
+
+pub fn decode_account_updated(params: &Value) -> anyhow::Result<AppServerAccountUpdatedUpdate> {
+    let notification: AccountUpdatedNotification = serde_json::from_value(params.clone())?;
+    Ok(AppServerAccountUpdatedUpdate {
+        auth_mode: notification.auth_mode,
+        plan_type: notification.plan_type,
+    })
+}
+
+pub fn decode_account_rate_limits_updated(
+    params: &Value,
+) -> anyhow::Result<AppServerAccountRateLimitsUpdatedUpdate> {
+    let notification: AccountRateLimitsUpdatedNotification =
+        serde_json::from_value(params.clone())?;
+    Ok(AppServerAccountRateLimitsUpdatedUpdate {
+        rate_limits: notification.rate_limits,
+    })
+}
+
+pub fn decode_mcp_server_oauth_login_completed(
+    params: &Value,
+) -> anyhow::Result<AppServerMcpServerOAuthLoginCompletedUpdate> {
+    let notification: McpServerOAuthLoginCompletedNotification =
+        serde_json::from_value(params.clone())?;
+    Ok(AppServerMcpServerOAuthLoginCompletedUpdate {
+        name: notification.name,
         success: notification.success,
         error: notification.error,
     })

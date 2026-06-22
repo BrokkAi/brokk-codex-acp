@@ -212,6 +212,12 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
         "Range: {\"start\":{\"line\":3,\"column\":1},\"end\":{\"line\":3,\"column\":8}}",
         "Windows sandbox `elevated` setup failed.",
         "PowerShell execution policy blocked setup",
+        "Codex account login completed for `login-1`.",
+        "Codex account updated: auth mode Chatgpt.",
+        "Plan: Plus",
+        "Codex account rate limits updated: {\"primary\":{\"percentRemaining\":50}}.",
+        "MCP server `github` OAuth login failed.",
+        "browser closed",
         "Codex warning: limited skills loaded",
         "MCP server `filesystem` startup status: Failed.",
         "spawn ENOENT",
@@ -1091,6 +1097,37 @@ for line in sys.stdin:
                     "mode": "elevated",
                     "success": False,
                     "error": "PowerShell execution policy blocked setup",
+                },
+            })
+            send({
+                "method": "account/login/completed",
+                "params": {
+                    "loginId": "login-1",
+                    "success": True,
+                    "error": None,
+                },
+            })
+            send({
+                "method": "account/updated",
+                "params": {
+                    "authMode": "chatgpt",
+                    "planType": "plus",
+                },
+            })
+            send({
+                "method": "account/rateLimits/updated",
+                "params": {
+                    "rateLimits": {
+                        "primary": {"percentRemaining": 50},
+                    },
+                },
+            })
+            send({
+                "method": "mcpServer/oauthLogin/completed",
+                "params": {
+                    "name": "github",
+                    "success": False,
+                    "error": "browser closed",
                 },
             })
             send({
