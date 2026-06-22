@@ -211,6 +211,7 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
         "spawn ENOENT",
         "Codex rerouted the model from `gpt-5-codex` to `gpt-5` (High Risk Cyber Activity) for this turn.",
         "Codex requires additional verification: Trusted Access For Cyber.",
+        "Codex moderation metadata: {\"category\":\"cyber\",\"severity\":\"medium\"}.",
         "Codex error (retrying): transient failure",
         "retry details",
         "Code: Rate Limit",
@@ -1229,6 +1230,17 @@ for line in sys.stdin:
                     "threadId": "thread-serialized",
                     "turnId": "turn-serialized-notifications",
                     "verifications": ["trustedAccessForCyber"],
+                },
+            })
+            send({
+                "method": "turn/moderationMetadata",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "metadata": {
+                        "category": "cyber",
+                        "severity": "medium",
+                    },
                 },
             })
             send({

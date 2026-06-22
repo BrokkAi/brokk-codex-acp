@@ -782,6 +782,7 @@ impl AppServerClient {
                 | "error"
                 | "model/rerouted"
                 | "model/verification"
+                | "turn/moderationMetadata"
                 | "mcpServer/startupStatus/updated" => {
                     if let Some(event) = decode_prompt_event(
                         method.as_str(),
@@ -1935,6 +1936,7 @@ pub enum AppServerPromptEvent {
     Error(AppServerErrorUpdate),
     ModelRerouted(AppServerModelReroutedUpdate),
     ModelVerification(AppServerModelVerificationUpdate),
+    TurnModerationMetadata(AppServerTurnModerationMetadataUpdate),
     McpServerStartupStatus(AppServerMcpServerStartupStatusUpdate),
 }
 
@@ -2214,6 +2216,13 @@ pub struct AppServerModelVerificationUpdate {
 }
 
 #[derive(Debug, Clone)]
+pub struct AppServerTurnModerationMetadataUpdate {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub metadata: Value,
+}
+
+#[derive(Debug, Clone)]
 pub struct AppServerMcpServerStartupStatusUpdate {
     pub thread_id: Option<String>,
     pub name: String,
@@ -2308,6 +2317,14 @@ struct ModelVerificationNotification {
     thread_id: String,
     turn_id: String,
     verifications: Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TurnModerationMetadataNotification {
+    thread_id: String,
+    turn_id: String,
+    metadata: Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2464,6 +2481,15 @@ fn decode_prompt_event(
                 return Ok(None);
             }
             Ok(Some(AppServerPromptEvent::ModelVerification(update)))
+        }
+        "turn/moderationMetadata" => {
+            let update = decode_turn_moderation_metadata(params)?;
+            if update.thread_id != active_thread_id
+                || Some(update.turn_id.as_str()) != active_turn_id
+            {
+                return Ok(None);
+            }
+            Ok(Some(AppServerPromptEvent::TurnModerationMetadata(update)))
         }
         "mcpServer/startupStatus/updated" => {
             let update = decode_mcp_server_startup_status_updated(params)?;
@@ -2672,6 +2698,17 @@ pub fn decode_model_verification(
         thread_id: notification.thread_id,
         turn_id: notification.turn_id,
         verifications: notification.verifications,
+    })
+}
+
+pub fn decode_turn_moderation_metadata(
+    params: &Value,
+) -> anyhow::Result<AppServerTurnModerationMetadataUpdate> {
+    let notification: TurnModerationMetadataNotification = serde_json::from_value(params.clone())?;
+    Ok(AppServerTurnModerationMetadataUpdate {
+        thread_id: notification.thread_id,
+        turn_id: notification.turn_id,
+        metadata: notification.metadata,
     })
 }
 

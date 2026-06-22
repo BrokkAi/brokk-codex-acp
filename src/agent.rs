@@ -38,12 +38,13 @@ use crate::app_server::{
     AppServerModelReroutedUpdate, AppServerModelVerificationUpdate, AppServerPermissionProfile,
     AppServerPlanStatus, AppServerPromptCompletion, AppServerPromptEvent, AppServerSkill,
     AppServerThread, AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus,
-    AppServerTurnInput, AppServerWarningUpdate, ThreadSettingsUpdateParams, decode_error,
-    decode_mcp_server_startup_status_updated, decode_model_rerouted, decode_model_verification,
-    decode_thread_archived, decode_thread_closed, decode_thread_deleted,
-    decode_thread_goal_cleared, decode_thread_goal_updated, decode_thread_name_updated,
-    decode_thread_settings_updated, decode_thread_status_changed, decode_thread_unarchived,
-    decode_warning, history_events_for_turns, is_app_server_method_unavailable,
+    AppServerTurnInput, AppServerTurnModerationMetadataUpdate, AppServerWarningUpdate,
+    ThreadSettingsUpdateParams, decode_error, decode_mcp_server_startup_status_updated,
+    decode_model_rerouted, decode_model_verification, decode_thread_archived, decode_thread_closed,
+    decode_thread_deleted, decode_thread_goal_cleared, decode_thread_goal_updated,
+    decode_thread_name_updated, decode_thread_settings_updated, decode_thread_status_changed,
+    decode_thread_unarchived, decode_turn_moderation_metadata, decode_warning,
+    history_events_for_turns, is_app_server_method_unavailable,
 };
 
 const MODEL_CONFIG_ID: &str = "model";
@@ -554,6 +555,21 @@ impl CodexAcpAgent {
                 }
                 let session_id = SessionId::new(update.thread_id.clone());
                 publish_agent_message(&session_id, model_verification_message(&update), cx)
+                    .map_err(acp_internal_error)?;
+            }
+            "turn/moderationMetadata" => {
+                let update =
+                    decode_turn_moderation_metadata(&params).map_err(acp_internal_error)?;
+                if self
+                    .active_prompts
+                    .lock()
+                    .await
+                    .contains_key(&update.thread_id)
+                {
+                    return Ok(());
+                }
+                let session_id = SessionId::new(update.thread_id.clone());
+                publish_agent_message(&session_id, turn_moderation_metadata_message(&update), cx)
                     .map_err(acp_internal_error)?;
             }
             "mcpServer/startupStatus/updated" => {
@@ -3608,6 +3624,11 @@ fn send_prompt_event(
             session_id,
             SessionUpdate::AgentMessageChunk(text_chunk(model_verification_message(&update))),
         ),
+        AppServerPromptEvent::TurnModerationMetadata(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(turn_moderation_metadata_message(&update))),
+        ),
         AppServerPromptEvent::McpServerStartupStatus(update) => send_session_update(
             cx,
             session_id,
@@ -3887,6 +3908,13 @@ fn readable_label_list(parts: Vec<String>) -> Option<String> {
             Some(format!("{}, and {last}", rest.join(", ")))
         }
     }
+}
+
+fn turn_moderation_metadata_message(update: &AppServerTurnModerationMetadataUpdate) -> String {
+    format!(
+        "Codex moderation metadata: {}.",
+        json_value_label(&update.metadata)
+    )
 }
 
 fn mcp_startup_status_message(update: &AppServerMcpServerStartupStatusUpdate) -> String {

@@ -176,6 +176,8 @@ The current repository has the first working ACP/app-server bridge in place:
   - `turn/completed` -> ACP prompt response completion
   - `model/verification` -> ACP agent-message diagnostics for additional
     account verification requirements.
+  - `turn/moderationMetadata` -> ACP agent-message diagnostics for backend
+    moderation metadata intended for client-side presentation.
   - `mcpServer/startupStatus/updated` -> ACP agent-message diagnostics for
     thread-scoped MCP startup state and failures.
 - Server-initiated request handling:
@@ -874,6 +876,7 @@ app-server item id -> ACP tool call id / message stream id
 | `thread/deleted` / `thread/closed` | `session_info_update._meta` | Implemented through adapter lifecycle metadata so ACP clients can react to app-server lifecycle events. |
 | `model/rerouted` | `agent_message_chunk` | Implemented as a non-invasive user-visible diagnostic chunk. |
 | `model/verification` | `agent_message_chunk` | Implemented as a user-visible diagnostic chunk summarizing additional verification requirements. |
+| `turn/moderationMetadata` | `agent_message_chunk` | Implemented as a user-visible diagnostic chunk preserving the metadata payload as compact JSON. |
 | `mcpServer/startupStatus/updated` | `agent_message_chunk` | Implemented for thread-scoped MCP startup diagnostics; app-scoped updates have no stable ACP session target and are ignored. |
 | `warning` / `error` | `agent_message_chunk` | Implemented with retry/details/error-code text when app-server provides it. |
 

@@ -397,6 +397,9 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
                     AppServerPromptEvent::ModelVerification(update) => {
                         events.push(format!("model-verification:{}", update.verifications));
                     }
+                    AppServerPromptEvent::TurnModerationMetadata(update) => {
+                        events.push(format!("moderation:{}", update.metadata));
+                    }
                     AppServerPromptEvent::McpServerStartupStatus(update) => {
                         events.push(format!("mcp-startup:{}:{}", update.name, update.status));
                     }
@@ -785,6 +788,9 @@ fn summarize_prompt_event(event: AppServerPromptEvent) -> String {
         }
         AppServerPromptEvent::ModelVerification(update) => {
             format!("model-verification:{}", update.verifications)
+        }
+        AppServerPromptEvent::TurnModerationMetadata(update) => {
+            format!("moderation:{}", update.metadata)
         }
         AppServerPromptEvent::McpServerStartupStatus(update) => {
             format!("mcp-startup:{}:{}", update.name, update.status)

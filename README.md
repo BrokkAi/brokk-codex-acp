@@ -71,6 +71,8 @@ The project currently includes:
   user-visible ACP diagnostic messages.
 - Model verification notifications are projected as user-visible ACP
   diagnostic messages.
+- Turn moderation metadata notifications are projected as user-visible ACP
+  diagnostic messages.
 - Initial ACP session config options for `model`, `reasoning_effort`,
   `service_tier`, `approval_policy`, `collaboration_mode`, and
   `permission_profile`, populated from app-server `model/list`,
