@@ -52,8 +52,8 @@ The project currently includes:
 - App-server `skills/extraRoots/set` mapping through `/skill-roots <paths...>`;
   roots are process-local and not persisted by Codex app-server.
 - Initial slash-command routing for `/rename <title>`, `/archive`, `/goal`,
-  `/compact`, `/review`, `/init`, `/new`, `/resume`, `/fork`, `/apps`,
-  `/plugins`, `/plugin <pluginName@marketplacePath>`, `/mcp`,
+  `/compact`, `/review`, `/init`, `/new`, `/resume`, `/fork`, `/delete`,
+  `/apps`, `/plugins`, `/plugin <pluginName@marketplacePath>`, `/mcp`,
   `/mcp-resource <server> <uri>`, `/hooks`, `/model`, `/permissions`, `/ps`,
   `/skill-roots`, `/stop`, and `/status`, mapped to app-server thread, review,
   catalog, and config endpoints with ACP session update, turn-stream,
@@ -107,9 +107,9 @@ The project currently includes:
   `thread/settings/updated` notifications are observed.
 
 The adapter is not complete yet. Rich ACP UI for dynamic tool callbacks, exact
-terminal embedding, native realtime audio playback, remaining slash command
-routing, plugin install/uninstall actions, direct MCP tool UI, and
-paginated/full-fidelity history replay are still planned work.
+terminal embedding, native realtime audio playback, plugin install/uninstall
+actions, direct MCP tool UI, and paginated/full-fidelity history replay are
+still planned work.
 
 ## Usage
 

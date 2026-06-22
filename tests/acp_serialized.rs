@@ -583,6 +583,7 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             "/kill 42",
             &["Terminated background terminal process `42`."],
         ),
+        ("/delete", &["Deleted Codex session `thread-serialized`."]),
         ("/plan", &["Plan mode enabled for subsequent Codex turns."]),
         (
             "/rollback 2",
@@ -609,7 +610,7 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
                 "command {command} did not publish plan config update; notifications: {notifications:#?}"
             );
         }
-        if command == "/apps" {
+        if command == "/apps" || command == "/delete" {
             assert!(
                 notifications
                     .iter()
@@ -1078,6 +1079,19 @@ for line in sys.stdin:
                 "code": -32000,
                 "message": "thread/read should not be called when paginated turns are available",
             },
+        })
+    elif method == "thread/delete":
+        assert params == {"threadId": "thread-serialized"}
+        response(message_id, {
+            "result": {},
+        })
+        send({
+            "method": "thread/deleted",
+            "params": {"threadId": "thread-serialized"},
+        })
+        send({
+            "method": "thread/closed",
+            "params": {"threadId": "thread-serialized"},
         })
     elif method == "app/list":
         assert params == {}

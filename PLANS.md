@@ -950,7 +950,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/fork` | `thread/fork` extension only `[implemented]` |
 | `/archive` | `thread/archive` `[implemented]` |
 | `/rollback <num-turns>` | `thread/rollback` `[implemented as status message; ACP v1 cannot delete visible transcript entries]` |
-| `/delete` | `thread/delete` |
+| `/delete` | `thread/delete` `[implemented]` |
 | `/goal ...` | `thread/goal/*` `[implemented for get, clear, and objective updates]` |
 | `/plan` | `thread/settings/update` with collaboration mode `[implemented]` |
 | `/model` | `model/list` plus ACP config-option refresh `[implemented]` |

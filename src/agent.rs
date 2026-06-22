@@ -75,6 +75,7 @@ const SKILL_DISABLED_VALUE: &str = "disabled";
 const ARCHIVE_COMMAND: &str = "archive";
 const APPS_COMMAND: &str = "apps";
 const COMPACT_COMMAND: &str = "compact";
+const DELETE_COMMAND: &str = "delete";
 const FORK_COMMAND: &str = "fork";
 const GOAL_COMMAND: &str = "goal";
 const HOOKS_COMMAND: &str = "hooks";
@@ -1180,6 +1181,23 @@ impl CodexAcpAgent {
                     .await
                     .map_err(acp_internal_error)?;
                 publish_catalog_message(session_id, "Apps", catalog_summary("Apps", &response), cx)
+            }
+            BuiltinCommand::Delete => {
+                self.cancel_session_work(session_id).await;
+                self.app_server
+                    .lock()
+                    .await
+                    .thread_delete(thread_id.to_owned())
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_session_deleted_update(session_id, true, cx).map_err(acp_internal_error)?;
+                publish_session_closed_update(session_id, true, cx).map_err(acp_internal_error)?;
+                publish_catalog_message(
+                    session_id,
+                    "Delete",
+                    format!("Deleted Codex session `{}`.", session_id.0),
+                    cx,
+                )
             }
             BuiltinCommand::GoalSet { objective } => {
                 let response = self
@@ -2582,6 +2600,7 @@ enum BuiltinCommand {
     Archive,
     Apps,
     Compact,
+    Delete,
     Fork,
     GoalSet {
         objective: String,
@@ -2643,6 +2662,7 @@ enum CommandHandler {
     Archive,
     Apps,
     Compact,
+    Delete,
     Fork,
     Goal,
     Hooks,
@@ -2701,6 +2721,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: None,
         availability: CommandAvailability::RequiresNoActiveTurn,
         handler: CommandHandler::Compact,
+    },
+    BuiltinCommandSpec {
+        name: DELETE_COMMAND,
+        aliases: &[],
+        description: "Delete this Codex session",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Delete,
     },
     BuiltinCommandSpec {
         name: FORK_COMMAND,
@@ -2931,6 +2959,9 @@ fn parse_command_from_spec(
         CommandHandler::Apps => parse_no_argument_command(rest, spec.name, BuiltinCommand::Apps),
         CommandHandler::Compact => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Compact)
+        }
+        CommandHandler::Delete => {
+            parse_no_argument_command(rest, spec.name, BuiltinCommand::Delete)
         }
         CommandHandler::Fork => parse_no_argument_command(rest, spec.name, BuiltinCommand::Fork),
         CommandHandler::Goal => parse_goal_command(rest),
@@ -5335,6 +5366,7 @@ mod tests {
     fn parse_builtin_command_recognizes_catalog_commands() {
         for text in [
             "/apps",
+            "/delete",
             "/fork",
             "/hooks",
             "/init",
@@ -5356,6 +5388,7 @@ mod tests {
             let command = parse_builtin_command(text).unwrap().unwrap();
             match text {
                 "/apps" => assert!(matches!(command, BuiltinCommand::Apps)),
+                "/delete" => assert!(matches!(command, BuiltinCommand::Delete)),
                 "/fork" => assert!(matches!(command, BuiltinCommand::Fork)),
                 "/hooks" => assert!(matches!(command, BuiltinCommand::Hooks)),
                 "/init" => assert!(matches!(command, BuiltinCommand::Init)),
@@ -5587,6 +5620,7 @@ mod tests {
     fn parse_builtin_command_rejects_catalog_command_arguments() {
         for (text, expected) in [
             ("/apps now", "/apps does not accept arguments"),
+            ("/delete now", "/delete does not accept arguments"),
             ("/fork now", "/fork does not accept arguments"),
             ("/hooks now", "/hooks does not accept arguments"),
             ("/init now", "/init does not accept arguments"),
@@ -5695,6 +5729,7 @@ mod tests {
                 "archive",
                 "apps",
                 "compact",
+                "delete",
                 "fork",
                 "goal",
                 "hooks",
