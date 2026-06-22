@@ -71,6 +71,8 @@ The project currently includes:
   user-visible ACP diagnostic messages.
 - Global app-server configuration warnings are projected as user-visible ACP
   diagnostic messages for every known session.
+- Global Windows sandbox setup completion notifications are projected as
+  user-visible ACP diagnostic messages for every known session.
 - Model verification notifications are projected as user-visible ACP
   diagnostic messages.
 - Turn moderation metadata notifications are projected as user-visible ACP

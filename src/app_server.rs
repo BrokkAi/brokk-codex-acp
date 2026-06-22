@@ -784,6 +784,8 @@ impl AppServerClient {
                 | "model/verification"
                 | "turn/moderationMetadata"
                 | "mcpServer/startupStatus/updated"
+                | "configWarning"
+                | "windowsSandbox/setupCompleted"
                 | "thread/realtime/started"
                 | "thread/realtime/sdp"
                 | "thread/realtime/itemAdded"
@@ -1947,6 +1949,8 @@ pub enum AppServerPromptEvent {
     TurnModerationMetadata(AppServerTurnModerationMetadataUpdate),
     McpServerStartupStatus(AppServerMcpServerStartupStatusUpdate),
     Realtime(AppServerRealtimeUpdate),
+    ConfigWarning(AppServerConfigWarningUpdate),
+    WindowsSandboxSetup(AppServerWindowsSandboxSetupUpdate),
 }
 
 pub enum AppServerHistoryEvent {
@@ -1960,6 +1964,13 @@ pub struct AppServerConfigWarningUpdate {
     pub details: Option<String>,
     pub path: Option<String>,
     pub range: Option<Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppServerWindowsSandboxSetupUpdate {
+    pub mode: String,
+    pub success: bool,
+    pub error: Option<String>,
 }
 
 pub enum AppServerPromptCompletion {
@@ -2532,6 +2543,15 @@ struct ConfigWarningNotification {
     range: Option<Value>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WindowsSandboxSetupCompletedNotification {
+    mode: String,
+    success: bool,
+    #[serde(default)]
+    error: Option<String>,
+}
+
 fn decode_prompt_event(
     method: &str,
     params: &Value,
@@ -2658,6 +2678,14 @@ fn decode_prompt_event(
                 return Ok(None);
             }
             Ok(Some(AppServerPromptEvent::McpServerStartupStatus(update)))
+        }
+        "configWarning" => {
+            let update = decode_config_warning(params)?;
+            Ok(Some(AppServerPromptEvent::ConfigWarning(update)))
+        }
+        "windowsSandbox/setupCompleted" => {
+            let update = decode_windows_sandbox_setup_completed(params)?;
+            Ok(Some(AppServerPromptEvent::WindowsSandboxSetup(update)))
         }
         "thread/realtime/started"
         | "thread/realtime/sdp"
@@ -2849,6 +2877,18 @@ pub fn decode_config_warning(params: &Value) -> anyhow::Result<AppServerConfigWa
         details: notification.details,
         path: notification.path,
         range: notification.range,
+    })
+}
+
+pub fn decode_windows_sandbox_setup_completed(
+    params: &Value,
+) -> anyhow::Result<AppServerWindowsSandboxSetupUpdate> {
+    let notification: WindowsSandboxSetupCompletedNotification =
+        serde_json::from_value(params.clone())?;
+    Ok(AppServerWindowsSandboxSetupUpdate {
+        mode: notification.mode,
+        success: notification.success,
+        error: notification.error,
     })
 }
 

@@ -40,13 +40,14 @@ use crate::app_server::{
     AppServerPlanStatus, AppServerPromptCompletion, AppServerPromptEvent,
     AppServerRealtimeAudioDelta, AppServerRealtimeUpdate, AppServerSkill, AppServerThread,
     AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
-    AppServerTurnModerationMetadataUpdate, AppServerWarningUpdate, ThreadSettingsUpdateParams,
-    decode_config_warning, decode_error, decode_mcp_server_startup_status_updated,
-    decode_model_rerouted, decode_model_verification, decode_realtime_update,
-    decode_thread_archived, decode_thread_closed, decode_thread_deleted,
-    decode_thread_goal_cleared, decode_thread_goal_updated, decode_thread_name_updated,
-    decode_thread_settings_updated, decode_thread_status_changed, decode_thread_unarchived,
-    decode_turn_moderation_metadata, decode_warning, history_events_for_turns,
+    AppServerTurnModerationMetadataUpdate, AppServerWarningUpdate,
+    AppServerWindowsSandboxSetupUpdate, ThreadSettingsUpdateParams, decode_config_warning,
+    decode_error, decode_mcp_server_startup_status_updated, decode_model_rerouted,
+    decode_model_verification, decode_realtime_update, decode_thread_archived,
+    decode_thread_closed, decode_thread_deleted, decode_thread_goal_cleared,
+    decode_thread_goal_updated, decode_thread_name_updated, decode_thread_settings_updated,
+    decode_thread_status_changed, decode_thread_unarchived, decode_turn_moderation_metadata,
+    decode_warning, decode_windows_sandbox_setup_completed, history_events_for_turns,
     is_app_server_method_unavailable,
 };
 
@@ -508,18 +509,17 @@ impl CodexAcpAgent {
             }
             "configWarning" => {
                 let update = decode_config_warning(&params).map_err(acp_internal_error)?;
-                let session_ids = self
-                    .session_cwds
-                    .lock()
-                    .await
-                    .keys()
-                    .cloned()
-                    .collect::<Vec<_>>();
-                for thread_id in session_ids {
-                    let session_id = SessionId::new(thread_id);
-                    publish_agent_message(&session_id, config_warning_message(&update), cx)
-                        .map_err(acp_internal_error)?;
-                }
+                self.publish_global_agent_message_to_inactive(config_warning_message(&update), cx)
+                    .await?;
+            }
+            "windowsSandbox/setupCompleted" => {
+                let update =
+                    decode_windows_sandbox_setup_completed(&params).map_err(acp_internal_error)?;
+                self.publish_global_agent_message_to_inactive(
+                    windows_sandbox_setup_message(&update),
+                    cx,
+                )
+                .await?;
             }
             "warning" => {
                 let update = decode_warning(&params).map_err(acp_internal_error)?;
@@ -623,6 +623,26 @@ impl CodexAcpAgent {
             _ => {}
         }
 
+        Ok(())
+    }
+
+    async fn publish_global_agent_message_to_inactive(
+        &self,
+        message: String,
+        cx: &ConnectionTo<Client>,
+    ) -> Result<(), Error> {
+        let session_cwds = self.session_cwds.lock().await.clone();
+        let active_prompts = self.active_prompts.lock().await;
+        let session_ids = session_cwds
+            .keys()
+            .filter(|thread_id| !active_prompts.contains_key(*thread_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        drop(active_prompts);
+        for thread_id in session_ids {
+            let session_id = SessionId::new(thread_id);
+            publish_agent_message(&session_id, message.clone(), cx).map_err(acp_internal_error)?;
+        }
         Ok(())
     }
 
@@ -3674,6 +3694,16 @@ fn send_prompt_event(
             session_id,
             SessionUpdate::AgentMessageChunk(text_chunk(realtime_message(&update))),
         ),
+        AppServerPromptEvent::ConfigWarning(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(config_warning_message(&update))),
+        ),
+        AppServerPromptEvent::WindowsSandboxSetup(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(windows_sandbox_setup_message(&update))),
+        ),
         AppServerPromptEvent::SkillsChanged | AppServerPromptEvent::ThreadSettingsUpdated(_) => {
             Ok(())
         }
@@ -3910,6 +3940,22 @@ fn config_warning_message(update: &AppServerConfigWarningUpdate) -> String {
     if let Some(range) = update.range.as_ref() {
         message.push_str("\n\nRange: ");
         message.push_str(&json_value_label(range));
+    }
+    message
+}
+
+fn windows_sandbox_setup_message(update: &AppServerWindowsSandboxSetupUpdate) -> String {
+    let status = if update.success {
+        "completed"
+    } else {
+        "failed"
+    };
+    let mut message = format!("Windows sandbox `{}` setup {status}.", update.mode);
+    if let Some(error) = update.error.as_deref()
+        && !error.trim().is_empty()
+    {
+        message.push_str("\n\n");
+        message.push_str(error);
     }
     message
 }

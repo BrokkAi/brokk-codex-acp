@@ -407,6 +407,15 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
                     AppServerPromptEvent::Realtime(update) => {
                         events.push(realtime_summary(&update));
                     }
+                    AppServerPromptEvent::ConfigWarning(update) => {
+                        events.push(format!("config-warning:{}", update.summary));
+                    }
+                    AppServerPromptEvent::WindowsSandboxSetup(update) => {
+                        events.push(format!(
+                            "windows-sandbox:{}:{}",
+                            update.mode, update.success
+                        ));
+                    }
                 }
                 Ok(())
             },
@@ -808,6 +817,12 @@ fn summarize_prompt_event(event: AppServerPromptEvent) -> String {
             format!("mcp-startup:{}:{}", update.name, update.status)
         }
         AppServerPromptEvent::Realtime(update) => realtime_summary(&update),
+        AppServerPromptEvent::ConfigWarning(update) => {
+            format!("config-warning:{}", update.summary)
+        }
+        AppServerPromptEvent::WindowsSandboxSetup(update) => {
+            format!("windows-sandbox:{}:{}", update.mode, update.success)
+        }
     }
 }
 

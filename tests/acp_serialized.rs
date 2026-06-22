@@ -210,6 +210,8 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
         "ignored unknown field",
         "Path: /tmp/fake-codex-home/config.toml",
         "Range: {\"start\":{\"line\":3,\"column\":1},\"end\":{\"line\":3,\"column\":8}}",
+        "Windows sandbox `elevated` setup failed.",
+        "PowerShell execution policy blocked setup",
         "Codex warning: limited skills loaded",
         "MCP server `filesystem` startup status: Failed.",
         "spawn ENOENT",
@@ -1081,6 +1083,14 @@ for line in sys.stdin:
                         "start": {"line": 3, "column": 1},
                         "end": {"line": 3, "column": 8},
                     },
+                },
+            })
+            send({
+                "method": "windowsSandbox/setupCompleted",
+                "params": {
+                    "mode": "elevated",
+                    "success": False,
+                    "error": "PowerShell execution policy blocked setup",
                 },
             })
             send({
