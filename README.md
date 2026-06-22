@@ -66,6 +66,7 @@ The project currently includes:
   `/logout`, `/apps`, `/plugins`,
   `/plugin <pluginName@marketplacePath>`,
   `/plugin-install <pluginName@marketplacePath>`,
+  `/plugin-skill <remoteMarketplaceName> <remotePluginId> <skillName>`,
   `/plugin-uninstall <pluginId>`,
   `/marketplace-add <source> [ref] [sparsePathsCsv]`,
   `/marketplace-remove <name>`, `/marketplace-upgrade [name]`,

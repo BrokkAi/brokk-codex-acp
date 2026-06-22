@@ -951,6 +951,16 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             ],
         ),
         (
+            "/plugin-skill openai remote-github triage",
+            &[
+                "Plugin skill: triage",
+                "- Marketplace: openai",
+                "- Plugin: remote-github",
+                "# Triage",
+                "Use GitHub issues.",
+            ],
+        ),
+        (
             "/plugin-uninstall github@openai",
             &["Uninstalled Codex plugin `github@openai`."],
         ),
@@ -1802,6 +1812,17 @@ for line in sys.stdin:
                         "name": "triage",
                     },
                 ],
+            },
+        })
+    elif method == "plugin/skill/read":
+        assert params == {
+            "remoteMarketplaceName": "openai",
+            "remotePluginId": "remote-github",
+            "skillName": "triage",
+        }
+        response(message_id, {
+            "result": {
+                "contents": '# Triage\nUse GitHub issues.',
             },
         })
     elif method == "plugin/install":

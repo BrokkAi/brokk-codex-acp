@@ -493,6 +493,23 @@ impl AppServerClient {
         .await
     }
 
+    pub async fn plugin_skill_read(
+        &mut self,
+        remote_marketplace_name: String,
+        remote_plugin_id: String,
+        skill_name: String,
+    ) -> anyhow::Result<Value> {
+        self.request(
+            "plugin/skill/read",
+            PluginSkillReadParams {
+                remote_marketplace_name,
+                remote_plugin_id,
+                skill_name,
+            },
+        )
+        .await
+    }
+
     pub async fn plugin_install(
         &mut self,
         marketplace_path: String,
@@ -2052,6 +2069,14 @@ pub struct ExperimentalFeatureEnablementSetResponse {
 struct PluginReadParams {
     marketplace_path: String,
     plugin_name: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginSkillReadParams {
+    remote_marketplace_name: String,
+    remote_plugin_id: String,
+    skill_name: String,
 }
 
 #[derive(Debug, Serialize)]

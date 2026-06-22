@@ -247,8 +247,8 @@ The current repository has the first working ACP/app-server bridge in place:
     `hooks`, `init`, `kill`, `login`, `login-cancel`, `logout`,
     `marketplace-add`, `marketplace-remove`, `marketplace-upgrade`, `memory`,
     `mcp`, `mcp-reload`, `model`, `model-provider`, `new`, `permissions`,
-    `plan`, `plugins`, `ps`, `rate-limits`, `rename`, `resume`, `review`,
-    `rollback`, `skill-roots`, `status`, `stop`, `unarchive`, `usage`, and
+    `plan`, `plugin-skill`, `plugins`, `ps`, `rate-limits`, `rename`, `resume`,
+    `review`, `rollback`, `skill-roots`, `status`, `stop`, `unarchive`, `usage`, and
     `workspace-messages` commands are published through ACP
     `available_commands_update` alongside enabled skills.
   - `/archive` is intercepted by the adapter, mapped to `thread/archive`, and
@@ -532,7 +532,7 @@ Tasks:
   `/kill`, `/login`, `/login-cancel`, `/logout`, `/marketplace-add`,
   `/marketplace-remove`, `/marketplace-upgrade`, `/memory`, `/mcp`,
   `/mcp-reload`, `/model`, `/model-provider`, `/new`, `/permissions`, `/plan`,
-  `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
+  `/plugin-skill`, `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
   `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
   `/workspace-messages`.
 - [x] Build the full command registry with aliases, availability, required
@@ -546,7 +546,7 @@ Tasks:
   `/kill`, `/login`, `/login-cancel`, `/logout`, `/marketplace-add`,
   `/marketplace-remove`, `/marketplace-upgrade`, `/memory`, `/mcp`,
   `/mcp-reload`, `/model`, `/model-provider`, `/new`, `/permissions`, `/plan`,
-  `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
+  `/plugin-skill`, `/plugins`, `/ps`, `/rate-limits`, `/rename`, `/resume`, `/review`, `/rollback`,
   `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
   `/workspace-messages`. `/fork` is implemented only as an extension command
   backed by Codex `thread/fork`, not as required ACP v1 behavior.
@@ -1075,6 +1075,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/plugins` | `plugin/list` and `plugin/installed` `[implemented as summary]` |
 | `/plugin <pluginName@marketplacePath>` | `plugin/read` `[implemented as summary]` |
 | `/plugin-install <pluginName@marketplacePath>` | `plugin/install` `[implemented as summary]` |
+| `/plugin-skill <remoteMarketplaceName> <remotePluginId> <skillName>` | `plugin/skill/read` `[implemented as summary]` |
 | `/plugin-uninstall <pluginId>` | `plugin/uninstall` `[implemented as summary]` |
 | `/marketplace-add <source> [ref] [sparsePathsCsv]` | `marketplace/add` `[implemented as summary]` |
 | `/marketplace-remove <name>` | `marketplace/remove` `[implemented as summary]` |
@@ -1312,6 +1313,8 @@ model prompts:
   ACP agent-message summary.
 - [x] `/plugin-install <pluginName@marketplacePath>` calls `plugin/install` and
   returns an ACP agent-message summary.
+- [x] `/plugin-skill <remoteMarketplaceName> <remotePluginId> <skillName>`
+  calls `plugin/skill/read` and returns an ACP agent-message summary.
 - [x] `/plugin-uninstall <pluginId>` calls `plugin/uninstall` and returns an ACP
   agent-message summary.
 - [x] `/marketplace-add <source> [ref] [sparsePathsCsv]` calls

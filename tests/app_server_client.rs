@@ -819,6 +819,15 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         .await?;
     assert_eq!(plugin["manifest"]["name"], "github");
 
+    let plugin_skill = client
+        .plugin_skill_read(
+            "openai".to_string(),
+            "remote-github".to_string(),
+            "triage".to_string(),
+        )
+        .await?;
+    assert_eq!(plugin_skill["contents"], "# Triage\nUse GitHub issues.");
+
     let plugin_install = client
         .plugin_install("openai".to_string(), "github".to_string())
         .await?;
@@ -1843,6 +1852,15 @@ for line in sys.stdin:
                     "name": "triage",
                 },
             ],
+        })
+    elif method == "plugin/skill/read":
+        assert params == {
+            "remoteMarketplaceName": "openai",
+            "remotePluginId": "remote-github",
+            "skillName": "triage",
+        }
+        response(message_id, {
+            "contents": '# Triage\nUse GitHub issues.',
         })
     elif method == "plugin/install":
         assert params == {

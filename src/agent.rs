@@ -115,6 +115,7 @@ const PERMISSIONS_COMMAND: &str = "permissions";
 const PLAN_COMMAND: &str = "plan";
 const PLUGIN_COMMAND: &str = "plugin";
 const PLUGIN_INSTALL_COMMAND: &str = "plugin-install";
+const PLUGIN_SKILL_COMMAND: &str = "plugin-skill";
 const PLUGIN_UNINSTALL_COMMAND: &str = "plugin-uninstall";
 const PLUGINS_COMMAND: &str = "plugins";
 const PS_COMMAND: &str = "ps";
@@ -1802,6 +1803,34 @@ impl CodexAcpAgent {
                     .map_err(acp_internal_error)?;
                 publish_catalog_message(session_id, "Plugin", plugin_detail_summary(&response), cx)
             }
+            BuiltinCommand::PluginSkill {
+                remote_marketplace_name,
+                remote_plugin_id,
+                skill_name,
+            } => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .plugin_skill_read(
+                        remote_marketplace_name.clone(),
+                        remote_plugin_id.clone(),
+                        skill_name.clone(),
+                    )
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(
+                    session_id,
+                    "Plugin skill",
+                    plugin_skill_summary(
+                        &remote_marketplace_name,
+                        &remote_plugin_id,
+                        &skill_name,
+                        &response,
+                    ),
+                    cx,
+                )
+            }
             BuiltinCommand::PluginInstall {
                 marketplace_path,
                 plugin_name,
@@ -3417,6 +3446,11 @@ enum BuiltinCommand {
         marketplace_path: String,
         plugin_name: String,
     },
+    PluginSkill {
+        remote_marketplace_name: String,
+        remote_plugin_id: String,
+        skill_name: String,
+    },
     PluginInstall {
         marketplace_path: String,
         plugin_name: String,
@@ -3499,6 +3533,7 @@ enum CommandHandler {
     Permissions,
     Plan,
     Plugin,
+    PluginSkill,
     PluginInstall,
     PluginUninstall,
     Plugins,
@@ -3784,6 +3819,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         handler: CommandHandler::PluginInstall,
     },
     BuiltinCommandSpec {
+        name: PLUGIN_SKILL_COMMAND,
+        aliases: &[],
+        description: "Read a remote Codex plugin skill",
+        input_hint: Some("remoteMarketplaceName remotePluginId skillName"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::PluginSkill,
+    },
+    BuiltinCommandSpec {
         name: PLUGIN_UNINSTALL_COMMAND,
         aliases: &[],
         description: "Uninstall a Codex plugin",
@@ -4012,6 +4055,7 @@ fn parse_command_from_spec(
         }
         CommandHandler::Plan => parse_no_argument_command(rest, spec.name, BuiltinCommand::Plan),
         CommandHandler::Plugin => parse_plugin_command(rest),
+        CommandHandler::PluginSkill => parse_plugin_skill_command(rest),
         CommandHandler::PluginInstall => parse_plugin_install_command(rest),
         CommandHandler::PluginUninstall => parse_plugin_uninstall_command(rest),
         CommandHandler::Plugins => {
@@ -4234,6 +4278,33 @@ fn parse_plugin_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
     Ok(Some(BuiltinCommand::Plugin {
         marketplace_path,
         plugin_name,
+    }))
+}
+
+fn parse_plugin_skill_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
+    let mut parts = rest.split_whitespace();
+    let remote_marketplace_name = parts.next().ok_or_else(|| {
+        Error::invalid_params()
+            .data("/plugin-skill requires remote marketplace, remote plugin id, and skill name")
+    })?;
+    let remote_plugin_id = parts.next().ok_or_else(|| {
+        Error::invalid_params()
+            .data("/plugin-skill requires remote marketplace, remote plugin id, and skill name")
+    })?;
+    let skill_name = parts.next().ok_or_else(|| {
+        Error::invalid_params()
+            .data("/plugin-skill requires remote marketplace, remote plugin id, and skill name")
+    })?;
+    if parts.next().is_some() {
+        return Err(Error::invalid_params().data(
+            "/plugin-skill accepts only remote marketplace, remote plugin id, and skill name",
+        ));
+    }
+
+    Ok(Some(BuiltinCommand::PluginSkill {
+        remote_marketplace_name: remote_marketplace_name.to_owned(),
+        remote_plugin_id: remote_plugin_id.to_owned(),
+        skill_name: skill_name.to_owned(),
     }))
 }
 
@@ -6682,6 +6753,29 @@ fn plugin_install_summary(plugin_name: &str, value: &serde_json::Value) -> Strin
     lines.join("\n")
 }
 
+fn plugin_skill_summary(
+    remote_marketplace_name: &str,
+    remote_plugin_id: &str,
+    skill_name: &str,
+    value: &serde_json::Value,
+) -> String {
+    let mut lines = vec![
+        format!("Plugin skill: {skill_name}"),
+        format!("- Marketplace: {remote_marketplace_name}"),
+        format!("- Plugin: {remote_plugin_id}"),
+    ];
+
+    match value.get("contents").and_then(serde_json::Value::as_str) {
+        Some(contents) if !contents.trim().is_empty() => {
+            lines.push("- Contents:".to_owned());
+            lines.push(contents.to_owned());
+        }
+        _ => lines.push("- Contents: unavailable".to_owned()),
+    }
+
+    lines.join("\n")
+}
+
 fn marketplace_add_summary(response: &crate::app_server::MarketplaceAddResponse) -> String {
     let action = if response.already_added {
         "already configured"
@@ -7433,6 +7527,7 @@ mod tests {
             "/plan",
             "/plugin github@openai",
             "/plugin-install github@openai",
+            "/plugin-skill openai remote-github triage",
             "/plugin-uninstall github@openai",
             "/plugins",
             "/ps",
@@ -7547,6 +7642,16 @@ mod tests {
                         plugin_name,
                         marketplace_path
                     } if plugin_name == "github" && marketplace_path == "openai"
+                )),
+                "/plugin-skill openai remote-github triage" => assert!(matches!(
+                    command,
+                    BuiltinCommand::PluginSkill {
+                        remote_marketplace_name,
+                        remote_plugin_id,
+                        skill_name
+                    } if remote_marketplace_name == "openai"
+                        && remote_plugin_id == "remote-github"
+                        && skill_name == "triage"
                 )),
                 "/plugin-uninstall github@openai" => assert!(matches!(
                     command,
@@ -7934,6 +8039,27 @@ mod tests {
     }
 
     #[test]
+    fn parse_builtin_command_rejects_invalid_plugin_skill_reference() {
+        for text in [
+            "/plugin-skill",
+            "/plugin-skill openai",
+            "/plugin-skill openai github",
+        ] {
+            let error = parse_builtin_command(text).unwrap_err();
+            assert_eq!(
+                error.data.as_ref().and_then(serde_json::Value::as_str),
+                Some("/plugin-skill requires remote marketplace, remote plugin id, and skill name")
+            );
+        }
+
+        let error = parse_builtin_command("/plugin-skill openai github triage extra").unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("/plugin-skill accepts only remote marketplace, remote plugin id, and skill name")
+        );
+    }
+
+    #[test]
     fn parse_builtin_command_rejects_invalid_plugin_uninstall_reference() {
         for text in ["/plugin-uninstall", "/plugin-uninstall github extra"] {
             let error = parse_builtin_command(text).unwrap_err();
@@ -8067,6 +8193,7 @@ mod tests {
                 "plan",
                 "plugin",
                 "plugin-install",
+                "plugin-skill",
                 "plugin-uninstall",
                 "plugins",
                 "ps",
@@ -8297,6 +8424,23 @@ mod tests {
         assert_eq!(
             summary,
             "Installed Codex plugin `github`.\n- Auth policy: {\"type\":\"requireAuthenticated\"}\nApps needing auth: 1 entries\n- GitHub"
+        );
+    }
+
+    #[test]
+    fn plugin_skill_summary_lists_contents() {
+        let summary = plugin_skill_summary(
+            "openai",
+            "remote-github",
+            "triage",
+            &serde_json::json!({
+                "contents": "# Triage\nUse GitHub issues."
+            }),
+        );
+
+        assert_eq!(
+            summary,
+            "Plugin skill: triage\n- Marketplace: openai\n- Plugin: remote-github\n- Contents:\n# Triage\nUse GitHub issues."
         );
     }
 
