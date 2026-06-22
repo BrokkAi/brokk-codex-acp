@@ -977,6 +977,7 @@ impl AppServerClient {
                 | "item/reasoning/summaryTextDelta"
                 | "item/reasoning/summaryPartAdded"
                 | "item/reasoning/textDelta"
+                | "serverRequest/resolved"
                 | "turn/diff/updated"
                 | "turn/plan/updated"
                 | "thread/tokenUsage/updated"
@@ -2219,6 +2220,7 @@ pub enum AppServerPromptEvent {
     ToolCallStarted(AppServerToolCall),
     ToolCallUpdated(AppServerToolCallUpdate),
     GuardianApprovalReview(AppServerGuardianApprovalReviewUpdate),
+    ServerRequestResolved(AppServerServerRequestResolvedUpdate),
     PlanUpdated(Vec<AppServerPlanEntry>),
     TurnDiffUpdated { turn_id: String, diff: String },
     UsageUpdated(AppServerUsage),
@@ -2557,6 +2559,13 @@ pub struct AppServerGuardianApprovalReviewUpdate {
     pub decision_source: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct AppServerServerRequestResolvedUpdate {
+    pub thread_id: String,
+    pub turn_id: Option<String>,
+    pub request_id: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppServerGuardianApprovalReviewLifecycle {
     Started,
@@ -2859,6 +2868,15 @@ struct GuardianApprovalReviewCompletedNotification {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ServerRequestResolvedNotification {
+    thread_id: String,
+    #[serde(default)]
+    turn_id: Option<String>,
+    request_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct TurnErrorNotification {
     message: String,
     #[serde(default)]
@@ -3111,6 +3129,8 @@ fn decode_prompt_event(
             decode_guardian_approval_review_update(method, params)
                 .map(|update| Some(AppServerPromptEvent::GuardianApprovalReview(update)))
         }
+        "serverRequest/resolved" => decode_server_request_resolved(params)
+            .map(|update| Some(AppServerPromptEvent::ServerRequestResolved(update))),
         "item/commandExecution/outputDelta" => {
             let Some(item_id) = string_field(params, "itemId") else {
                 return Ok(None);
@@ -3715,6 +3735,17 @@ pub fn decode_guardian_approval_review_update(
         }
         _ => anyhow::bail!("unsupported Guardian approval review notification `{method}`"),
     }
+}
+
+pub fn decode_server_request_resolved(
+    params: &Value,
+) -> anyhow::Result<AppServerServerRequestResolvedUpdate> {
+    let notification: ServerRequestResolvedNotification = serde_json::from_value(params.clone())?;
+    Ok(AppServerServerRequestResolvedUpdate {
+        thread_id: notification.thread_id,
+        turn_id: notification.turn_id,
+        request_id: notification.request_id,
+    })
 }
 
 pub fn decode_model_rerouted(params: &Value) -> anyhow::Result<AppServerModelReroutedUpdate> {

@@ -84,6 +84,8 @@ The project currently includes:
 - Server-initiated `tool/requestUserInput` and `item/tool/requestUserInput`
   requests are bridged to ACP `elicitation/create` form requests when the
   client can answer them, with explicit empty-answer fallbacks preserved.
+- App-server `serverRequest/resolved` notifications are projected as compact
+  ACP diagnostics so clients can observe approval and elicitation cleanup.
 - Unsupported server-initiated app-server requests receive explicit JSON-RPC
   method-not-found errors instead of being silently ignored.
 - Unexpected `attestation/generate` requests receive an explicit JSON-RPC

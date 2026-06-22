@@ -381,6 +381,9 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
                             update.target_item_id.as_deref().unwrap_or_default()
                         ));
                     }
+                    AppServerPromptEvent::ServerRequestResolved(update) => {
+                        events.push(format!("request-resolved:{}", update.request_id));
+                    }
                     AppServerPromptEvent::PlanUpdated(entries) => {
                         events.push(format!("plan:{}", entries.len()));
                     }
@@ -480,6 +483,7 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
             "tool-updated:file-1",
             "guardian:review-1:Started:file-1",
             "guardian:review-1:Completed:file-1",
+            "request-resolved:approval-1",
             "tool-updated:file-1",
             "diff:diff --git a/src/lib.rs b/src/lib.rs",
             "usage:42/100",
@@ -973,6 +977,9 @@ fn summarize_prompt_event(event: AppServerPromptEvent) -> String {
             update.lifecycle,
             update.target_item_id.as_deref().unwrap_or_default()
         ),
+        AppServerPromptEvent::ServerRequestResolved(update) => {
+            format!("request-resolved:{}", update.request_id)
+        }
         AppServerPromptEvent::PlanUpdated(entries) => format!("plan:{}", entries.len()),
         AppServerPromptEvent::TurnDiffUpdated { diff, .. } => format!("diff:{diff}"),
         AppServerPromptEvent::UsageUpdated(usage) => format!("usage:{}/{}", usage.used, usage.size),
@@ -2132,6 +2139,14 @@ for line in sys.stdin:
                         "cwd": "/repo",
                         "files": ["/repo/src/lib.rs"],
                     },
+                },
+            })
+            send({
+                "method": "serverRequest/resolved",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "requestId": "approval-1",
                 },
             })
             send({

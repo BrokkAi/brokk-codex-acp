@@ -51,8 +51,8 @@ use crate::app_server::{
     AppServerModelReroutedUpdate, AppServerModelSafetyBufferingUpdate,
     AppServerModelVerificationUpdate, AppServerPermissionProfile, AppServerPlanStatus,
     AppServerPromptCompletion, AppServerPromptEvent, AppServerRealtimeAudioDelta,
-    AppServerRealtimeUpdate, AppServerSkill, AppServerThread, AppServerThreadSettingsUpdate,
-    AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
+    AppServerRealtimeUpdate, AppServerServerRequestResolvedUpdate, AppServerSkill, AppServerThread,
+    AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
     AppServerTurnModerationMetadataUpdate, AppServerTurnStartInput, AppServerUserInputQuestion,
     AppServerUserInputRequest, AppServerWarningUpdate, AppServerWindowsSandboxSetupUpdate,
     ThreadSettingsUpdateParams, decode_account_login_completed, decode_account_rate_limits_updated,
@@ -60,11 +60,12 @@ use crate::app_server::{
     decode_guardian_approval_review_update, decode_mcp_server_oauth_login_completed,
     decode_mcp_server_startup_status_updated, decode_model_rerouted,
     decode_model_safety_buffering_updated, decode_model_verification, decode_realtime_update,
-    decode_thread_archived, decode_thread_closed, decode_thread_deleted,
-    decode_thread_goal_cleared, decode_thread_goal_updated, decode_thread_name_updated,
-    decode_thread_settings_updated, decode_thread_status_changed, decode_thread_unarchived,
-    decode_turn_moderation_metadata, decode_warning, decode_windows_sandbox_setup_completed,
-    history_events_for_turns, is_app_server_method_unavailable,
+    decode_server_request_resolved, decode_thread_archived, decode_thread_closed,
+    decode_thread_deleted, decode_thread_goal_cleared, decode_thread_goal_updated,
+    decode_thread_name_updated, decode_thread_settings_updated, decode_thread_status_changed,
+    decode_thread_unarchived, decode_turn_moderation_metadata, decode_warning,
+    decode_windows_sandbox_setup_completed, history_events_for_turns,
+    is_app_server_method_unavailable,
 };
 
 const MODEL_CONFIG_ID: &str = "model";
@@ -639,6 +640,20 @@ impl CodexAcpAgent {
                 }
                 let session_id = SessionId::new(update.thread_id.clone());
                 publish_agent_message(&session_id, guardian_approval_review_message(&update), cx)
+                    .map_err(acp_internal_error)?;
+            }
+            "serverRequest/resolved" => {
+                let update = decode_server_request_resolved(&params).map_err(acp_internal_error)?;
+                if self
+                    .active_prompts
+                    .lock()
+                    .await
+                    .contains_key(&update.thread_id)
+                {
+                    return Ok(());
+                }
+                let session_id = SessionId::new(update.thread_id.clone());
+                publish_agent_message(&session_id, server_request_resolved_message(&update), cx)
                     .map_err(acp_internal_error)?;
             }
             "model/rerouted" => {
@@ -4263,6 +4278,11 @@ fn send_prompt_event(
             session_id,
             SessionUpdate::AgentMessageChunk(text_chunk(guardian_approval_review_message(&update))),
         ),
+        AppServerPromptEvent::ServerRequestResolved(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(server_request_resolved_message(&update))),
+        ),
         AppServerPromptEvent::PlanUpdated(entries) => {
             let entries = entries
                 .into_iter()
@@ -5135,6 +5155,17 @@ fn guardian_approval_review_message(update: &AppServerGuardianApprovalReviewUpda
         && completed_at_ms >= started_at_ms
     {
         parts.push(format!("Duration: {} ms.", completed_at_ms - started_at_ms));
+    }
+    parts.join(" ")
+}
+
+fn server_request_resolved_message(update: &AppServerServerRequestResolvedUpdate) -> String {
+    let mut parts = vec![format!(
+        "Codex server request `{}` resolved.",
+        update.request_id
+    )];
+    if let Some(turn_id) = update.turn_id.as_deref() {
+        parts.push(format!("Turn: `{turn_id}`."));
     }
     parts.join(" ")
 }

@@ -890,6 +890,7 @@ Primary notification families:
 - `item/fileChange/requestApproval`
 - `item/permissions/requestApproval`
 - `item/tool/requestUserInput`
+- `serverRequest/resolved`
 - `skills/changed`
 - `app/list/updated`
 
@@ -911,6 +912,8 @@ Mapping rules:
   empty-answer fallback when the ACP client cannot answer.
 - Dynamic tool callbacks -> explicit failure fallback until ACP exposes a
   compatible dynamic tool execution surface.
+- Server request resolution notifications -> compact `agent_message_chunk`
+  diagnostics because ACP v1 has no generic request-cleanup notification.
 - Turn completion -> ACP prompt response stop reason.
 
 The adapter should keep a per-session active item map:
@@ -940,6 +943,7 @@ app-server item id -> ACP tool call id / message stream id
 | `mcpServer/elicitation/request` | `elicitation/create` with cancel fallback | Implemented for form, `openai/form`, and URL elicitations; falls back to app-server cancel semantics when the ACP client cannot answer. |
 | `tool/requestUserInput`, `item/tool/requestUserInput` | `elicitation/create` with empty-answer fallback | Implemented as form elicitations from app-server questions; falls back to empty answers when the ACP client cannot answer. |
 | `item/tool/call` | custom ACP extension request with fallback response | Implemented through `_brokk_codex_acp/dynamic_tool_call`; valid client responses are forwarded to app-server, and explicit failure fallback keeps app-server from blocking when clients cannot answer. |
+| `serverRequest/resolved` | `agent_message_chunk` | Implemented as compact diagnostics for app-server request cleanup because ACP v1 has no generic cancellation/completion update for in-flight server-to-client requests. |
 | `attestation/generate` | JSON-RPC error | Implemented as an explicit request failure because the adapter does not advertise or provide native attestation tokens. |
 | `skills/changed` | `available_commands_update` | Implemented through the background app-server notification dispatcher; re-runs app-server `skills/list` with `forceReload`. |
 | `thread/settings/updated` | `config_option_update` | Implemented through the background app-server notification dispatcher; refreshes model, collaboration-mode, and permission catalogs before publishing current options. |
