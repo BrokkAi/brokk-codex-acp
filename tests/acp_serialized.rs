@@ -563,6 +563,18 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
                 "- triage",
             ],
         ),
+        (
+            "/plugin-install github@openai",
+            &[
+                "Installed Codex plugin `github`.",
+                "Apps needing auth: 1 entries",
+                "- GitHub",
+            ],
+        ),
+        (
+            "/plugin-uninstall github@openai",
+            &["Uninstalled Codex plugin `github@openai`."],
+        ),
         ("/mcp", &["MCP: 1 entries", "- filesystem"]),
         (
             "/mcp-resource filesystem file:///repo/README.md",
@@ -1167,6 +1179,31 @@ for line in sys.stdin:
                     },
                 ],
             },
+        })
+    elif method == "plugin/install":
+        assert params == {
+            "marketplacePath": "openai",
+            "pluginName": "github",
+        }
+        response(message_id, {
+            "result": {
+                "authPolicy": {
+                    "type": "requireAuthenticated",
+                },
+                "appsNeedingAuth": [
+                    {
+                        "displayName": "GitHub",
+                        "connectorId": "github",
+                    },
+                ],
+            },
+        })
+    elif method == "plugin/uninstall":
+        assert params == {
+            "pluginId": "github@openai",
+        }
+        response(message_id, {
+            "result": {},
         })
     elif method == "mcpServerStatus/list":
         assert params == {

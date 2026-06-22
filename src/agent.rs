@@ -89,6 +89,8 @@ const NEW_COMMAND: &str = "new";
 const PERMISSIONS_COMMAND: &str = "permissions";
 const PLAN_COMMAND: &str = "plan";
 const PLUGIN_COMMAND: &str = "plugin";
+const PLUGIN_INSTALL_COMMAND: &str = "plugin-install";
+const PLUGIN_UNINSTALL_COMMAND: &str = "plugin-uninstall";
 const PLUGINS_COMMAND: &str = "plugins";
 const PS_COMMAND: &str = "ps";
 const RENAME_COMMAND: &str = "rename";
@@ -1417,6 +1419,38 @@ impl CodexAcpAgent {
                     .map_err(acp_internal_error)?;
                 publish_catalog_message(session_id, "Plugin", plugin_detail_summary(&response), cx)
             }
+            BuiltinCommand::PluginInstall {
+                marketplace_path,
+                plugin_name,
+            } => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .plugin_install(marketplace_path, plugin_name.clone())
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(
+                    session_id,
+                    "Plugin install",
+                    plugin_install_summary(&plugin_name, &response),
+                    cx,
+                )
+            }
+            BuiltinCommand::PluginUninstall { plugin_id } => {
+                self.app_server
+                    .lock()
+                    .await
+                    .plugin_uninstall(plugin_id.clone())
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(
+                    session_id,
+                    "Plugin uninstall",
+                    format!("Uninstalled Codex plugin `{plugin_id}`."),
+                    cx,
+                )
+            }
             BuiltinCommand::Plugins => {
                 let (plugins, installed) = {
                     let mut app_server = self.app_server.lock().await;
@@ -2655,6 +2689,13 @@ enum BuiltinCommand {
         marketplace_path: String,
         plugin_name: String,
     },
+    PluginInstall {
+        marketplace_path: String,
+        plugin_name: String,
+    },
+    PluginUninstall {
+        plugin_id: String,
+    },
     Plugins,
     Ps,
     Rename {
@@ -2706,6 +2747,8 @@ enum CommandHandler {
     Permissions,
     Plan,
     Plugin,
+    PluginInstall,
+    PluginUninstall,
     Plugins,
     Ps,
     Rename,
@@ -2864,6 +2907,22 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: Some("pluginName@marketplacePath"),
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::Plugin,
+    },
+    BuiltinCommandSpec {
+        name: PLUGIN_INSTALL_COMMAND,
+        aliases: &[],
+        description: "Install a Codex plugin",
+        input_hint: Some("pluginName@marketplacePath"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::PluginInstall,
+    },
+    BuiltinCommandSpec {
+        name: PLUGIN_UNINSTALL_COMMAND,
+        aliases: &[],
+        description: "Uninstall a Codex plugin",
+        input_hint: Some("pluginId"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::PluginUninstall,
     },
     BuiltinCommandSpec {
         name: PLUGINS_COMMAND,
@@ -3025,6 +3084,8 @@ fn parse_command_from_spec(
         }
         CommandHandler::Plan => parse_no_argument_command(rest, spec.name, BuiltinCommand::Plan),
         CommandHandler::Plugin => parse_plugin_command(rest),
+        CommandHandler::PluginInstall => parse_plugin_install_command(rest),
+        CommandHandler::PluginUninstall => parse_plugin_uninstall_command(rest),
         CommandHandler::Plugins => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Plugins)
         }
@@ -3098,24 +3159,54 @@ fn parse_plugin_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
     const MESSAGE: &str =
         "/plugin requires a plugin name and marketplace path as name@marketplacePath";
 
+    let (plugin_name, marketplace_path) = parse_plugin_marketplace_ref(rest, MESSAGE)?;
+
+    Ok(Some(BuiltinCommand::Plugin {
+        marketplace_path,
+        plugin_name,
+    }))
+}
+
+fn parse_plugin_install_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
+    const MESSAGE: &str =
+        "/plugin-install requires a plugin name and marketplace path as name@marketplacePath";
+
+    let (plugin_name, marketplace_path) = parse_plugin_marketplace_ref(rest, MESSAGE)?;
+    Ok(Some(BuiltinCommand::PluginInstall {
+        marketplace_path,
+        plugin_name,
+    }))
+}
+
+fn parse_plugin_uninstall_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
+    let plugin_id = rest.trim();
+    if plugin_id.is_empty() || plugin_id.split_whitespace().count() != 1 {
+        return Err(Error::invalid_params().data("/plugin-uninstall requires a plugin id"));
+    }
+    Ok(Some(BuiltinCommand::PluginUninstall {
+        plugin_id: plugin_id.to_owned(),
+    }))
+}
+
+fn parse_plugin_marketplace_ref(
+    rest: &str,
+    message: &'static str,
+) -> Result<(String, String), Error> {
     let rest = rest.trim();
     if rest.is_empty() || rest.split_whitespace().count() != 1 {
-        return Err(Error::invalid_params().data(MESSAGE));
+        return Err(Error::invalid_params().data(message));
     }
 
     let Some((plugin_name, marketplace_path)) = rest.split_once('@') else {
-        return Err(Error::invalid_params().data(MESSAGE));
+        return Err(Error::invalid_params().data(message));
     };
     let plugin_name = plugin_name.trim();
     let marketplace_path = marketplace_path.trim();
     if plugin_name.is_empty() || marketplace_path.is_empty() {
-        return Err(Error::invalid_params().data(MESSAGE));
+        return Err(Error::invalid_params().data(message));
     }
 
-    Ok(Some(BuiltinCommand::Plugin {
-        marketplace_path: marketplace_path.to_owned(),
-        plugin_name: plugin_name.to_owned(),
-    }))
+    Ok((plugin_name.to_owned(), marketplace_path.to_owned()))
 }
 
 fn parse_mcp_resource_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
@@ -4972,6 +5063,19 @@ fn plugin_detail_summary(value: &serde_json::Value) -> String {
     lines.join("\n")
 }
 
+fn plugin_install_summary(plugin_name: &str, value: &serde_json::Value) -> String {
+    let mut lines = vec![format!("Installed Codex plugin `{plugin_name}`.")];
+    if let Some(policy) = value.get("authPolicy") {
+        lines.push(format!("- Auth policy: {}", compact_json(policy)));
+    }
+    append_plugin_entries(
+        &mut lines,
+        "Apps needing auth",
+        value.get("appsNeedingAuth"),
+    );
+    lines.join("\n")
+}
+
 fn first_string_at_paths<'a>(value: &'a serde_json::Value, paths: &[&[&str]]) -> Option<&'a str> {
     paths
         .iter()
@@ -5459,6 +5563,8 @@ mod tests {
             "/permissions",
             "/plan",
             "/plugin github@openai",
+            "/plugin-install github@openai",
+            "/plugin-uninstall github@openai",
             "/plugins",
             "/ps",
             "/rollback 2",
@@ -5502,6 +5608,17 @@ mod tests {
                         plugin_name,
                         marketplace_path
                     } if plugin_name == "github" && marketplace_path == "openai"
+                )),
+                "/plugin-install github@openai" => assert!(matches!(
+                    command,
+                    BuiltinCommand::PluginInstall {
+                        plugin_name,
+                        marketplace_path
+                    } if plugin_name == "github" && marketplace_path == "openai"
+                )),
+                "/plugin-uninstall github@openai" => assert!(matches!(
+                    command,
+                    BuiltinCommand::PluginUninstall { plugin_id } if plugin_id == "github@openai"
                 )),
                 "/plugins" => assert!(matches!(command, BuiltinCommand::Plugins)),
                 "/ps" => assert!(matches!(command, BuiltinCommand::Ps)),
@@ -5754,6 +5871,35 @@ mod tests {
     }
 
     #[test]
+    fn parse_builtin_command_rejects_invalid_plugin_install_reference() {
+        for text in [
+            "/plugin-install",
+            "/plugin-install github",
+            "/plugin-install @openai",
+            "/plugin-install github@",
+        ] {
+            let error = parse_builtin_command(text).unwrap_err();
+            assert_eq!(
+                error.data.as_ref().and_then(serde_json::Value::as_str),
+                Some(
+                    "/plugin-install requires a plugin name and marketplace path as name@marketplacePath"
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn parse_builtin_command_rejects_invalid_plugin_uninstall_reference() {
+        for text in ["/plugin-uninstall", "/plugin-uninstall github extra"] {
+            let error = parse_builtin_command(text).unwrap_err();
+            assert_eq!(
+                error.data.as_ref().and_then(serde_json::Value::as_str),
+                Some("/plugin-uninstall requires a plugin id")
+            );
+        }
+    }
+
+    #[test]
     fn parse_builtin_command_rejects_invalid_mcp_resource_reference() {
         for text in ["/mcp-resource", "/mcp-resource filesystem"] {
             let error = parse_builtin_command(text).unwrap_err();
@@ -5861,6 +6007,8 @@ mod tests {
                 "permissions",
                 "plan",
                 "plugin",
+                "plugin-install",
+                "plugin-uninstall",
                 "plugins",
                 "ps",
                 "rename",
@@ -5918,6 +6066,29 @@ mod tests {
         assert_eq!(
             summary,
             "Plugin: github\nMarketplace: openai\nDescription: GitHub integration\nSkills: 1 entries\n- triage\nMCP servers: 1 entries\n- github"
+        );
+    }
+
+    #[test]
+    fn plugin_install_summary_lists_auth_requirements() {
+        let summary = plugin_install_summary(
+            "github",
+            &serde_json::json!({
+                "authPolicy": {
+                    "type": "requireAuthenticated"
+                },
+                "appsNeedingAuth": [
+                    {
+                        "displayName": "GitHub",
+                        "connectorId": "github"
+                    }
+                ]
+            }),
+        );
+
+        assert_eq!(
+            summary,
+            "Installed Codex plugin `github`.\n- Auth policy: {\"type\":\"requireAuthenticated\"}\nApps needing auth: 1 entries\n- GitHub"
         );
     }
 

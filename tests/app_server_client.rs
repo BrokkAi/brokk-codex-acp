@@ -725,6 +725,17 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         .await?;
     assert_eq!(plugin["manifest"]["name"], "github");
 
+    let plugin_install = client
+        .plugin_install("openai".to_string(), "github".to_string())
+        .await?;
+    assert_eq!(
+        plugin_install["appsNeedingAuth"][0]["displayName"],
+        "GitHub"
+    );
+
+    let plugin_uninstall = client.plugin_uninstall("github@openai".to_string()).await?;
+    assert_eq!(plugin_uninstall, serde_json::json!({}));
+
     let mcp_servers = client
         .mcp_server_status_list("thread-1".to_string())
         .await?;
@@ -1500,6 +1511,27 @@ for line in sys.stdin:
                 },
             ],
         })
+    elif method == "plugin/install":
+        assert params == {
+            "marketplacePath": "openai",
+            "pluginName": "github",
+        }
+        response(message_id, {
+            "authPolicy": {
+                "type": "requireAuthenticated",
+            },
+            "appsNeedingAuth": [
+                {
+                    "displayName": "GitHub",
+                    "connectorId": "github",
+                },
+            ],
+        })
+    elif method == "plugin/uninstall":
+        assert params == {
+            "pluginId": "github@openai",
+        }
+        response(message_id, {})
     elif method == "mcpServerStatus/list":
         assert params == {
             "threadId": "thread-1",

@@ -392,6 +392,27 @@ impl AppServerClient {
         .await
     }
 
+    pub async fn plugin_install(
+        &mut self,
+        marketplace_path: String,
+        plugin_name: String,
+    ) -> anyhow::Result<Value> {
+        self.request(
+            "plugin/install",
+            PluginInstallParams {
+                marketplace_path: Some(marketplace_path),
+                remote_marketplace_name: None,
+                plugin_name,
+            },
+        )
+        .await
+    }
+
+    pub async fn plugin_uninstall(&mut self, plugin_id: String) -> anyhow::Result<Value> {
+        self.request("plugin/uninstall", PluginUninstallParams { plugin_id })
+            .await
+    }
+
     pub async fn hooks_list(&mut self, cwd: String) -> anyhow::Result<Value> {
         self.request("hooks/list", HooksListParams { cwds: vec![cwd] })
             .await
@@ -1725,6 +1746,22 @@ struct EmptyParams {}
 struct PluginReadParams {
     marketplace_path: String,
     plugin_name: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginInstallParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    marketplace_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    remote_marketplace_name: Option<String>,
+    plugin_name: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginUninstallParams {
+    plugin_id: String,
 }
 
 #[derive(Debug, Serialize)]

@@ -961,6 +961,8 @@ These map cleanly to app-server APIs and should be supported early:
 | `/apps` | `app/list` `[implemented as summary]` |
 | `/plugins` | `plugin/list` and `plugin/installed` `[implemented as summary]` |
 | `/plugin <pluginName@marketplacePath>` | `plugin/read` `[implemented as summary]` |
+| `/plugin-install <pluginName@marketplacePath>` | `plugin/install` `[implemented as summary]` |
+| `/plugin-uninstall <pluginId>` | `plugin/uninstall` `[implemented as summary]` |
 | `/hooks` | `hooks/list` `[implemented as summary]` |
 | `/skill-roots <paths...>` | `skills/extraRoots/set` plus `skills/list(forceReload)` `[implemented as process-local summary]` |
 | `/ps` | `thread/backgroundTerminals/list` `[implemented as summary]` |
@@ -1182,6 +1184,10 @@ model prompts:
   agent-message summary.
 - [x] `/plugin <pluginName@marketplacePath>` calls `plugin/read` and returns an
   ACP agent-message summary.
+- [x] `/plugin-install <pluginName@marketplacePath>` calls `plugin/install` and
+  returns an ACP agent-message summary.
+- [x] `/plugin-uninstall <pluginId>` calls `plugin/uninstall` and returns an ACP
+  agent-message summary.
 - [x] `/mcp` calls `mcpServerStatus/list` and returns an ACP agent-message
   summary.
 - [x] `/mcp-resource <server> <uri>` calls `mcpServer/resource/read` for the
