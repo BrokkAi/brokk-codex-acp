@@ -675,6 +675,31 @@ impl AppServerClient {
         .await
     }
 
+    pub async fn thread_realtime_start(
+        &mut self,
+        thread_id: String,
+        output_modality: AppServerRealtimeOutputModality,
+    ) -> anyhow::Result<Value> {
+        self.request(
+            "thread/realtime/start",
+            ThreadRealtimeStartParams {
+                thread_id,
+                output_modality,
+            },
+        )
+        .await
+    }
+
+    pub async fn thread_realtime_stop(&mut self, thread_id: String) -> anyhow::Result<Value> {
+        self.request("thread/realtime/stop", ThreadScopedParams { thread_id })
+            .await
+    }
+
+    pub async fn thread_realtime_list_voices(&mut self) -> anyhow::Result<Value> {
+        self.request("thread/realtime/listVoices", EmptyParams {})
+            .await
+    }
+
     pub async fn thread_loaded_list(&mut self) -> anyhow::Result<Value> {
         self.request("thread/loaded/list", EmptyParams {}).await
     }
@@ -2264,6 +2289,20 @@ struct McpServerToolCallParams {
     arguments: Value,
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     meta: Option<Value>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AppServerRealtimeOutputModality {
+    Text,
+    Audio,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadRealtimeStartParams {
+    thread_id: String,
+    output_modality: AppServerRealtimeOutputModality,
 }
 
 #[derive(Debug, Serialize)]

@@ -52,7 +52,7 @@ use crate::app_server::{
     AppServerModelReroutedUpdate, AppServerModelSafetyBufferingUpdate,
     AppServerModelVerificationUpdate, AppServerPermissionProfile, AppServerPlanStatus,
     AppServerPromptCompletion, AppServerPromptEvent, AppServerRealtimeAudioDelta,
-    AppServerRealtimeUpdate, AppServerRemoteControlStatusUpdate,
+    AppServerRealtimeOutputModality, AppServerRealtimeUpdate, AppServerRemoteControlStatusUpdate,
     AppServerServerRequestResolvedUpdate, AppServerSkill, AppServerThread,
     AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
     AppServerTurnModerationMetadataUpdate, AppServerTurnStartInput, AppServerUserInputQuestion,
@@ -122,6 +122,7 @@ const PLUGIN_UNINSTALL_COMMAND: &str = "plugin-uninstall";
 const PLUGINS_COMMAND: &str = "plugins";
 const PS_COMMAND: &str = "ps";
 const RATE_LIMITS_COMMAND: &str = "rate-limits";
+const REALTIME_COMMAND: &str = "realtime";
 const RENAME_COMMAND: &str = "rename";
 const REMOTE_CONTROL_COMMAND: &str = "remote-control";
 const RESUME_COMMAND: &str = "resume";
@@ -1949,6 +1950,57 @@ impl CodexAcpAgent {
                     cx,
                 )
             }
+            BuiltinCommand::Realtime { action } => match action {
+                RealtimeCommandAction::Start { output_modality } => {
+                    self.app_server
+                        .lock()
+                        .await
+                        .thread_realtime_start(thread_id.to_owned(), output_modality)
+                        .await
+                        .map_err(|error| {
+                            acp_app_server_method_error("thread/realtime/start", error)
+                        })?;
+                    publish_catalog_message(
+                        session_id,
+                        "Realtime",
+                        realtime_start_summary(output_modality),
+                        cx,
+                    )
+                }
+                RealtimeCommandAction::Stop => {
+                    self.app_server
+                        .lock()
+                        .await
+                        .thread_realtime_stop(thread_id.to_owned())
+                        .await
+                        .map_err(|error| {
+                            acp_app_server_method_error("thread/realtime/stop", error)
+                        })?;
+                    publish_catalog_message(
+                        session_id,
+                        "Realtime",
+                        "Stopped Codex realtime session for this thread.".to_owned(),
+                        cx,
+                    )
+                }
+                RealtimeCommandAction::Voices => {
+                    let response = self
+                        .app_server
+                        .lock()
+                        .await
+                        .thread_realtime_list_voices()
+                        .await
+                        .map_err(|error| {
+                            acp_app_server_method_error("thread/realtime/listVoices", error)
+                        })?;
+                    publish_catalog_message(
+                        session_id,
+                        "Realtime voices",
+                        realtime_voices_summary(&response),
+                        cx,
+                    )
+                }
+            },
             BuiltinCommand::RemoteControl { action } => {
                 let response = {
                     let mut app_server = self.app_server.lock().await;
@@ -3531,6 +3583,9 @@ enum BuiltinCommand {
     Plugins,
     Ps,
     RateLimits,
+    Realtime {
+        action: RealtimeCommandAction,
+    },
     RemoteControl {
         action: RemoteControlAction,
     },
@@ -3572,6 +3627,15 @@ enum RemoteControlAction {
     Status,
     Enable,
     Disable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RealtimeCommandAction {
+    Start {
+        output_modality: AppServerRealtimeOutputModality,
+    },
+    Stop,
+    Voices,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3621,6 +3685,7 @@ enum CommandHandler {
     Plugins,
     Ps,
     RateLimits,
+    Realtime,
     RemoteControl,
     Rename,
     Resume,
@@ -3958,6 +4023,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         handler: CommandHandler::RateLimits,
     },
     BuiltinCommandSpec {
+        name: REALTIME_COMMAND,
+        aliases: &[],
+        description: "Control Codex thread realtime",
+        input_hint: Some("start [text|audio], stop, or voices"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Realtime,
+    },
+    BuiltinCommandSpec {
         name: REMOTE_CONTROL_COMMAND,
         aliases: &[],
         description: "Show or change Codex remote-control status",
@@ -4176,6 +4249,7 @@ fn parse_command_from_spec(
         CommandHandler::RateLimits => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::RateLimits)
         }
+        CommandHandler::Realtime => parse_realtime_command(rest),
         CommandHandler::RemoteControl => parse_remote_control_command(rest),
         CommandHandler::Rename => {
             let title = rest.trim();
@@ -4273,6 +4347,54 @@ fn parse_remote_control_command(rest: &str) -> Result<Option<BuiltinCommand>, Er
     }
 
     Ok(Some(BuiltinCommand::RemoteControl { action }))
+}
+
+fn parse_realtime_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
+    let mut parts = rest.split_whitespace();
+    let Some(action) = parts.next() else {
+        return Err(Error::invalid_params().data("/realtime requires `start`, `stop`, or `voices`"));
+    };
+    let command_action =
+        match action {
+            "start" => {
+                let output_modality = match parts.next() {
+                    None | Some("text") => AppServerRealtimeOutputModality::Text,
+                    Some("audio") => AppServerRealtimeOutputModality::Audio,
+                    Some(_) => {
+                        return Err(Error::invalid_params()
+                            .data("/realtime start accepts only `text` or `audio`"));
+                    }
+                };
+                if parts.next().is_some() {
+                    return Err(Error::invalid_params()
+                        .data("/realtime start accepts only `text` or `audio`"));
+                }
+                RealtimeCommandAction::Start { output_modality }
+            }
+            "stop" => {
+                if parts.next().is_some() {
+                    return Err(
+                        Error::invalid_params().data("/realtime stop does not accept arguments")
+                    );
+                }
+                RealtimeCommandAction::Stop
+            }
+            "voices" => {
+                if parts.next().is_some() {
+                    return Err(
+                        Error::invalid_params().data("/realtime voices does not accept arguments")
+                    );
+                }
+                RealtimeCommandAction::Voices
+            }
+            _ => {
+                return Err(Error::invalid_params()
+                    .data("/realtime accepts only `start`, `stop`, or `voices`"));
+            }
+        };
+    Ok(Some(BuiltinCommand::Realtime {
+        action: command_action,
+    }))
 }
 
 fn parse_login_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
@@ -7048,6 +7170,56 @@ fn mcp_login_summary(
     )
 }
 
+fn realtime_start_summary(output_modality: AppServerRealtimeOutputModality) -> String {
+    let output_modality = match output_modality {
+        AppServerRealtimeOutputModality::Text => "text",
+        AppServerRealtimeOutputModality::Audio => "audio",
+    };
+    format!("Started Codex realtime session for this thread.\n- Output modality: {output_modality}")
+}
+
+fn realtime_voices_summary(value: &serde_json::Value) -> String {
+    let Some(voices) = value.get("voices") else {
+        return "Realtime voices: unavailable".to_owned();
+    };
+    let mut lines = vec!["Realtime voices".to_owned()];
+    append_voice_list(&mut lines, "V1", voices.get("v1"));
+    append_voice_list(&mut lines, "V2", voices.get("v2"));
+    if let Some(default_v1) = voices.get("defaultV1").and_then(serde_json::Value::as_str) {
+        lines.push(format!("- Default V1: {default_v1}"));
+    }
+    if let Some(default_v2) = voices.get("defaultV2").and_then(serde_json::Value::as_str) {
+        lines.push(format!("- Default V2: {default_v2}"));
+    }
+    if lines.len() == 1 {
+        lines.push(format!("- {}", json_value_label(voices)));
+    }
+    lines.join("\n")
+}
+
+fn append_voice_list(lines: &mut Vec<String>, label: &str, value: Option<&serde_json::Value>) {
+    let Some(voices) = value.and_then(serde_json::Value::as_array) else {
+        return;
+    };
+    if voices.is_empty() {
+        return;
+    }
+    let names = voices
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .take(12)
+        .collect::<Vec<_>>();
+    if names.is_empty() {
+        return;
+    }
+    let suffix = if voices.len() > names.len() {
+        format!(", and {} more", voices.len() - names.len())
+    } else {
+        String::new()
+    };
+    lines.push(format!("- {label}: {}{suffix}", names.join(", ")));
+}
+
 fn mcp_resource_summary(server: &str, uri: &str, value: &serde_json::Value) -> String {
     let mut lines = vec![
         "MCP resource".to_owned(),
@@ -7711,6 +7883,10 @@ mod tests {
             "/plugins",
             "/ps",
             "/rate-limits",
+            "/realtime start",
+            "/realtime start audio",
+            "/realtime stop",
+            "/realtime voices",
             "/remote-control",
             "/remote-control enable",
             "/remote-control disable",
@@ -7847,6 +8023,34 @@ mod tests {
                 "/plugins" => assert!(matches!(command, BuiltinCommand::Plugins)),
                 "/ps" => assert!(matches!(command, BuiltinCommand::Ps)),
                 "/rate-limits" => assert!(matches!(command, BuiltinCommand::RateLimits)),
+                "/realtime start" => assert!(matches!(
+                    command,
+                    BuiltinCommand::Realtime {
+                        action: RealtimeCommandAction::Start {
+                            output_modality: AppServerRealtimeOutputModality::Text
+                        }
+                    }
+                )),
+                "/realtime start audio" => assert!(matches!(
+                    command,
+                    BuiltinCommand::Realtime {
+                        action: RealtimeCommandAction::Start {
+                            output_modality: AppServerRealtimeOutputModality::Audio
+                        }
+                    }
+                )),
+                "/realtime stop" => assert!(matches!(
+                    command,
+                    BuiltinCommand::Realtime {
+                        action: RealtimeCommandAction::Stop
+                    }
+                )),
+                "/realtime voices" => assert!(matches!(
+                    command,
+                    BuiltinCommand::Realtime {
+                        action: RealtimeCommandAction::Voices
+                    }
+                )),
                 "/remote-control" => assert!(matches!(
                     command,
                     BuiltinCommand::RemoteControl {
@@ -8047,6 +8251,42 @@ mod tests {
             assert_eq!(
                 error.data.as_ref().and_then(serde_json::Value::as_str),
                 Some("/remote-control accepts only `status`, `enable`, or `disable`")
+            );
+        }
+    }
+
+    #[test]
+    fn parse_builtin_command_rejects_invalid_realtime_action() {
+        for (text, expected) in [
+            (
+                "/realtime",
+                "/realtime requires `start`, `stop`, or `voices`",
+            ),
+            (
+                "/realtime now",
+                "/realtime accepts only `start`, `stop`, or `voices`",
+            ),
+            (
+                "/realtime start video",
+                "/realtime start accepts only `text` or `audio`",
+            ),
+            (
+                "/realtime start text extra",
+                "/realtime start accepts only `text` or `audio`",
+            ),
+            (
+                "/realtime stop now",
+                "/realtime stop does not accept arguments",
+            ),
+            (
+                "/realtime voices now",
+                "/realtime voices does not accept arguments",
+            ),
+        ] {
+            let error = parse_builtin_command(text).unwrap_err();
+            assert_eq!(
+                error.data.as_ref().and_then(serde_json::Value::as_str),
+                Some(expected)
             );
         }
     }
@@ -8432,6 +8672,7 @@ mod tests {
                 "plugins",
                 "ps",
                 "rate-limits",
+                "realtime",
                 "remote-control",
                 "rename",
                 "resume",

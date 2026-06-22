@@ -921,6 +921,20 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     let mcp_refresh = client.mcp_server_refresh().await?;
     assert_eq!(mcp_refresh, serde_json::json!({}));
 
+    let realtime_start = client
+        .thread_realtime_start(
+            "thread-1".to_string(),
+            brokk_codex_acp::app_server::AppServerRealtimeOutputModality::Audio,
+        )
+        .await?;
+    assert_eq!(realtime_start, serde_json::json!({}));
+
+    let realtime_stop = client.thread_realtime_stop("thread-1".to_string()).await?;
+    assert_eq!(realtime_stop, serde_json::json!({}));
+
+    let realtime_voices = client.thread_realtime_list_voices().await?;
+    assert_eq!(realtime_voices["voices"]["defaultV2"], "marin");
+
     let model_provider = client.model_provider_capabilities_read().await?;
     assert_eq!(model_provider["namespaceTools"], true);
     assert_eq!(model_provider["imageGeneration"], false);
@@ -2017,6 +2031,27 @@ for line in sys.stdin:
     elif method == "mcpServer/refresh":
         assert params is None
         response(message_id, {})
+    elif method == "thread/realtime/start":
+        assert params == {
+            "threadId": "thread-1",
+            "outputModality": "audio",
+        }
+        response(message_id, {})
+    elif method == "thread/realtime/stop":
+        assert params == {
+            "threadId": "thread-1",
+        }
+        response(message_id, {})
+    elif method == "thread/realtime/listVoices":
+        assert params == {}
+        response(message_id, {
+            "voices": {
+                "v1": ["juniper", "maple"],
+                "v2": ["alloy", "marin"],
+                "defaultV1": "juniper",
+                "defaultV2": "marin",
+            },
+        })
     elif method == "modelProvider/capabilities/read":
         assert params == {}
         response(message_id, {

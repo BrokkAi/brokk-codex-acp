@@ -1029,6 +1029,27 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             ],
         ),
         (
+            "/realtime start audio",
+            &[
+                "Started Codex realtime session for this thread.",
+                "- Output modality: audio",
+            ],
+        ),
+        (
+            "/realtime stop",
+            &["Stopped Codex realtime session for this thread."],
+        ),
+        (
+            "/realtime voices",
+            &[
+                "Realtime voices",
+                "- V1: juniper, maple",
+                "- V2: alloy, marin",
+                "- Default V1: juniper",
+                "- Default V2: marin",
+            ],
+        ),
+        (
             "/model-provider",
             &[
                 "Model provider: capabilities",
@@ -1988,6 +2009,33 @@ for line in sys.stdin:
         assert params is None
         response(message_id, {
             "result": {},
+        })
+    elif method == "thread/realtime/start":
+        assert params == {
+            "threadId": "thread-serialized",
+            "outputModality": "audio",
+        }
+        response(message_id, {
+            "result": {},
+        })
+    elif method == "thread/realtime/stop":
+        assert params == {
+            "threadId": "thread-serialized",
+        }
+        response(message_id, {
+            "result": {},
+        })
+    elif method == "thread/realtime/listVoices":
+        assert params == {}
+        response(message_id, {
+            "result": {
+                "voices": {
+                    "v1": ["juniper", "maple"],
+                    "v2": ["alloy", "marin"],
+                    "defaultV1": "juniper",
+                    "defaultV2": "marin",
+                },
+            },
         })
     elif method == "modelProvider/capabilities/read":
         assert params == {}

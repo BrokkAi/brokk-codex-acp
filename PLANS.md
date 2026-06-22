@@ -247,7 +247,7 @@ The current repository has the first working ACP/app-server bridge in place:
     `hooks`, `init`, `kill`, `login`, `login-cancel`, `logout`,
     `marketplace-add`, `marketplace-remove`, `marketplace-upgrade`, `memory`,
     `mcp`, `mcp-login`, `mcp-refresh`, `mcp-reload`, `model`, `model-provider`, `new`, `permissions`,
-    `plan`, `plugin-skill`, `plugins`, `ps`, `rate-limits`, `remote-control`,
+    `plan`, `plugin-skill`, `plugins`, `ps`, `rate-limits`, `realtime`, `remote-control`,
     `rename`, `resume`, `review`, `rollback`, `skill-roots`, `status`, `stop`,
     `unarchive`, `usage`, and `workspace-messages` commands are published through ACP
     `available_commands_update` alongside enabled skills.
@@ -274,6 +274,12 @@ The current repository has the first working ACP/app-server bridge in place:
   - `/features` is intercepted by the adapter, mapped to
     `experimentalFeature/list` for the current thread, and reflected as a short
     ACP agent-message summary.
+  - `/realtime start [text|audio]`, `/realtime stop`, and `/realtime voices`
+    are intercepted by the adapter, mapped to `thread/realtime/start`,
+    `thread/realtime/stop`, and `thread/realtime/listVoices`, and reflected as
+    short ACP agent-message summaries. Realtime output notifications continue
+    through the diagnostic projection because ACP v1 has no native realtime
+    audio stream.
   - `/account` is intercepted by the adapter, mapped to `account/read`, and
     reflected as a short ACP agent-message summary.
   - `/login [chatgpt|device]`, `/login-cancel <loginId>`, and `/logout` are
@@ -532,7 +538,7 @@ Tasks:
   `/kill`, `/login`, `/login-cancel`, `/logout`, `/marketplace-add`,
   `/marketplace-remove`, `/marketplace-upgrade`, `/memory`, `/mcp`,
   `/mcp-login`, `/mcp-refresh`, `/mcp-reload`, `/model`, `/model-provider`, `/new`, `/permissions`, `/plan`,
-  `/plugin-skill`, `/plugins`, `/ps`, `/rate-limits`, `/remote-control`,
+  `/plugin-skill`, `/plugins`, `/ps`, `/rate-limits`, `/realtime`, `/remote-control`,
   `/rename`, `/resume`, `/review`, `/rollback`, `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
   `/workspace-messages`.
 - [x] Build the full command registry with aliases, availability, required
@@ -546,7 +552,7 @@ Tasks:
   `/kill`, `/login`, `/login-cancel`, `/logout`, `/marketplace-add`,
   `/marketplace-remove`, `/marketplace-upgrade`, `/memory`, `/mcp`,
   `/mcp-login`, `/mcp-refresh`, `/mcp-reload`, `/model`, `/model-provider`, `/new`, `/permissions`, `/plan`,
-  `/plugin-skill`, `/plugins`, `/ps`, `/rate-limits`, `/remote-control`,
+  `/plugin-skill`, `/plugins`, `/ps`, `/rate-limits`, `/realtime`, `/remote-control`,
   `/rename`, `/resume`, `/review`, `/rollback`, `/skill-roots`, `/status`, `/stop`, `/unarchive`, `/usage`, and
   `/workspace-messages`. `/fork` is implemented only as an extension command
   backed by Codex `thread/fork`, not as required ACP v1 behavior.
@@ -1070,6 +1076,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/features` | `experimentalFeature/list` `[implemented as summary]` |
 | `/feature <name> enable|disable` | `experimentalFeature/enablement/set` `[implemented as summary]` |
 | `/rate-limits` | `account/rateLimits/read` `[implemented as summary]` |
+| `/realtime start [text\|audio]` / `/realtime stop` / `/realtime voices` | `thread/realtime/start`, `thread/realtime/stop`, or `thread/realtime/listVoices` `[implemented as summary]` |
 | `/remote-control [status\|enable\|disable]` | `remoteControl/status/read`, `remoteControl/enable`, or `remoteControl/disable` `[implemented as summary]` |
 | `/usage` | `account/usage/read` `[implemented as summary]` |
 | `/workspace-messages` | `account/workspaceMessages/read` `[implemented as summary]` |
@@ -1354,6 +1361,9 @@ model prompts:
   ACP agent-message summary.
 - [x] `/rate-limits` calls `account/rateLimits/read` and returns an ACP
   agent-message summary.
+- [x] `/realtime start [text|audio]`, `/realtime stop`, and
+  `/realtime voices` call `thread/realtime/start`, `thread/realtime/stop`, or
+  `thread/realtime/listVoices` and return ACP agent-message summaries.
 - [x] `/remote-control [status|enable|disable]` calls
   `remoteControl/status/read`, `remoteControl/enable`, or
   `remoteControl/disable` and returns an ACP agent-message summary.
@@ -1706,6 +1716,7 @@ Manual flows:
 - [x] Add account login/logout commands.
 - [x] Add experimental feature flag display.
 - [x] Add experimental feature enable/disable command.
+- [x] Add realtime start, stop, and voices commands.
 - [x] Add remote-control status, enable, and disable commands.
 - [x] Add initial hooks display.
 - [x] Add background terminal list/clean.
