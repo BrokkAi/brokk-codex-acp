@@ -636,15 +636,23 @@ impl CodexAcpAgent {
             "mcpServer/startupStatus/updated" => {
                 let update = decode_mcp_server_startup_status_updated(&params)
                     .map_err(acp_internal_error)?;
-                let Some(thread_id) = update.thread_id.as_ref() else {
-                    return Ok(());
-                };
-                if self.active_prompts.lock().await.contains_key(thread_id) {
-                    return Ok(());
+                match update.thread_id.as_ref() {
+                    Some(thread_id) => {
+                        if self.active_prompts.lock().await.contains_key(thread_id) {
+                            return Ok(());
+                        }
+                        let session_id = SessionId::new(thread_id.clone());
+                        publish_agent_message(&session_id, mcp_startup_status_message(&update), cx)
+                            .map_err(acp_internal_error)?;
+                    }
+                    None => {
+                        self.publish_global_agent_message_to_inactive(
+                            mcp_startup_status_message(&update),
+                            cx,
+                        )
+                        .await?;
+                    }
                 }
-                let session_id = SessionId::new(thread_id.clone());
-                publish_agent_message(&session_id, mcp_startup_status_message(&update), cx)
-                    .map_err(acp_internal_error)?;
             }
             "thread/realtime/started"
             | "thread/realtime/sdp"

@@ -72,8 +72,8 @@ The project currently includes:
   method-not-found errors instead of being silently ignored.
 - Unexpected `attestation/generate` requests receive an explicit JSON-RPC
   failure because this adapter does not provide a native attestation token.
-- Thread-scoped MCP server startup status notifications are projected as
-  user-visible ACP diagnostic messages.
+- Thread-scoped and app-scoped MCP server startup status notifications are
+  projected as user-visible ACP diagnostic messages.
 - Global app-server configuration warnings are projected as user-visible ACP
   diagnostic messages for every known session.
 - Global Windows sandbox setup completion notifications are projected as

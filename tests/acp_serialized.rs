@@ -223,6 +223,7 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
         "Codex warning: limited skills loaded",
         "MCP server `filesystem` startup status: Failed.",
         "spawn ENOENT",
+        "MCP server `global-cache` startup status: Ready.",
         "Codex rerouted the model from `gpt-5-codex` to `gpt-5` (High Risk Cyber Activity) for this turn.",
         "Codex requires additional verification: Trusted Access For Cyber.",
         "Codex moderation metadata: {\"category\":\"cyber\",\"severity\":\"medium\"}.",
@@ -1303,6 +1304,15 @@ for line in sys.stdin:
                     "name": "filesystem",
                     "status": "failed",
                     "error": "spawn ENOENT",
+                },
+            })
+            send({
+                "method": "mcpServer/startupStatus/updated",
+                "params": {
+                    "threadId": None,
+                    "name": "global-cache",
+                    "status": "ready",
+                    "error": None,
                 },
             })
             send({

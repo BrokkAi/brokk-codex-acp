@@ -2769,7 +2769,9 @@ fn decode_prompt_event(
         }
         "mcpServer/startupStatus/updated" => {
             let update = decode_mcp_server_startup_status_updated(params)?;
-            if update.thread_id.as_deref() != Some(active_thread_id) {
+            if let Some(thread_id) = update.thread_id.as_deref()
+                && thread_id != active_thread_id
+            {
                 return Ok(None);
             }
             Ok(Some(AppServerPromptEvent::McpServerStartupStatus(update)))
