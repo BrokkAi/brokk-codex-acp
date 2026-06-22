@@ -105,6 +105,7 @@ const MARKETPLACE_REMOVE_COMMAND: &str = "marketplace-remove";
 const MARKETPLACE_UPGRADE_COMMAND: &str = "marketplace-upgrade";
 const MEMORY_COMMAND: &str = "memory";
 const MCP_COMMAND: &str = "mcp";
+const MCP_LOGIN_COMMAND: &str = "mcp-login";
 const MCP_RELOAD_COMMAND: &str = "mcp-reload";
 const MCP_RESOURCE_COMMAND: &str = "mcp-resource";
 const MCP_TOOL_COMMAND: &str = "mcp-tool";
@@ -1598,6 +1599,21 @@ impl CodexAcpAgent {
                     .await
                     .map_err(acp_internal_error)?;
                 publish_catalog_message(session_id, "MCP", catalog_summary("MCP", &response), cx)
+            }
+            BuiltinCommand::McpLogin { server } => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .mcp_server_oauth_login(server.clone())
+                    .await
+                    .map_err(|error| acp_app_server_method_error("mcpServer/oauth/login", error))?;
+                publish_catalog_message(
+                    session_id,
+                    "MCP login",
+                    mcp_login_summary(&server, &response),
+                    cx,
+                )
             }
             BuiltinCommand::McpReload => {
                 let response = {
@@ -3457,6 +3473,9 @@ enum BuiltinCommand {
     },
     Init,
     Mcp,
+    McpLogin {
+        server: String,
+    },
     McpReload,
     McpResource {
         server: String,
@@ -3564,6 +3583,7 @@ enum CommandHandler {
     Memory,
     Init,
     Mcp,
+    McpLogin,
     McpReload,
     McpResource,
     McpTool,
@@ -3778,6 +3798,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: None,
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::Mcp,
+    },
+    BuiltinCommandSpec {
+        name: MCP_LOGIN_COMMAND,
+        aliases: &[],
+        description: "Start OAuth login for a configured MCP server",
+        input_hint: Some("server"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::McpLogin,
     },
     BuiltinCommandSpec {
         name: MCP_RELOAD_COMMAND,
@@ -4089,6 +4117,7 @@ fn parse_command_from_spec(
         CommandHandler::Memory => parse_memory_command(rest),
         CommandHandler::Init => parse_no_argument_command(rest, spec.name, BuiltinCommand::Init),
         CommandHandler::Mcp => parse_no_argument_command(rest, spec.name, BuiltinCommand::Mcp),
+        CommandHandler::McpLogin => parse_mcp_login_command(rest),
         CommandHandler::McpReload => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::McpReload)
         }
@@ -4436,6 +4465,17 @@ fn parse_mcp_resource_command(rest: &str) -> Result<Option<BuiltinCommand>, Erro
     Ok(Some(BuiltinCommand::McpResource {
         server: server.to_owned(),
         uri: uri.to_owned(),
+    }))
+}
+
+fn parse_mcp_login_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
+    let server = rest.trim();
+    if server.is_empty() || server.split_whitespace().count() != 1 {
+        return Err(Error::invalid_params().data("/mcp-login requires one server name"));
+    }
+
+    Ok(Some(BuiltinCommand::McpLogin {
+        server: server.to_owned(),
     }))
 }
 
@@ -6958,6 +6998,16 @@ fn mcp_reload_summary(value: &serde_json::Value) -> String {
     )
 }
 
+fn mcp_login_summary(
+    server: &str,
+    response: &crate::app_server::McpServerOAuthLoginResponse,
+) -> String {
+    format!(
+        "MCP server `{server}` OAuth login started.\n- Authorization URL: {}",
+        response.authorization_url
+    )
+}
+
 fn mcp_resource_summary(server: &str, uri: &str, value: &serde_json::Value) -> String {
     let mut lines = vec![
         "MCP resource".to_owned(),
@@ -7603,6 +7653,7 @@ mod tests {
             "/marketplace-remove debug",
             "/marketplace-upgrade debug",
             "/mcp",
+            "/mcp-login github",
             "/mcp-reload",
             "/memory disable",
             "/mcp-resource filesystem file:///repo/README.md",
@@ -7690,6 +7741,10 @@ mod tests {
                         if marketplace_name.as_deref() == Some("debug")
                 )),
                 "/mcp" => assert!(matches!(command, BuiltinCommand::Mcp)),
+                "/mcp-login github" => assert!(matches!(
+                    command,
+                    BuiltinCommand::McpLogin { server } if server == "github"
+                )),
                 "/mcp-reload" => assert!(matches!(command, BuiltinCommand::McpReload)),
                 "/memory disable" => assert!(matches!(
                     command,
@@ -8205,6 +8260,17 @@ mod tests {
     }
 
     #[test]
+    fn parse_builtin_command_rejects_invalid_mcp_login_reference() {
+        for text in ["/mcp-login", "/mcp-login github extra"] {
+            let error = parse_builtin_command(text).unwrap_err();
+            assert_eq!(
+                error.data.as_ref().and_then(serde_json::Value::as_str),
+                Some("/mcp-login requires one server name")
+            );
+        }
+    }
+
+    #[test]
     fn parse_builtin_command_rejects_invalid_mcp_tool_reference() {
         for text in ["/mcp-tool", "/mcp-tool filesystem"] {
             let error = parse_builtin_command(text).unwrap_err();
@@ -8306,6 +8372,7 @@ mod tests {
                 "memory",
                 "init",
                 "mcp",
+                "mcp-login",
                 "mcp-reload",
                 "mcp-resource",
                 "mcp-tool",

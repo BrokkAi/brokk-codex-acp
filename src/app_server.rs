@@ -618,6 +618,21 @@ impl AppServerClient {
             .await
     }
 
+    pub async fn mcp_server_oauth_login(
+        &mut self,
+        name: String,
+    ) -> anyhow::Result<McpServerOAuthLoginResponse> {
+        self.request(
+            "mcpServer/oauth/login",
+            McpServerOAuthLoginParams {
+                name,
+                scopes: None,
+                timeout_secs: None,
+            },
+        )
+        .await
+    }
+
     pub async fn mcp_server_resource_read(
         &mut self,
         thread_id: String,
@@ -2207,6 +2222,22 @@ struct McpServerStatusListParams {
     thread_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     detail: Option<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct McpServerOAuthLoginParams {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scopes: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    timeout_secs: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerOAuthLoginResponse {
+    pub authorization_url: String,
 }
 
 #[derive(Debug, Serialize)]

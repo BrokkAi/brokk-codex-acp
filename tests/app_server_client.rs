@@ -912,6 +912,12 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     let mcp_reload = client.mcp_server_reload().await?;
     assert_eq!(mcp_reload, serde_json::json!({}));
 
+    let mcp_login = client.mcp_server_oauth_login("github".to_string()).await?;
+    assert_eq!(
+        mcp_login.authorization_url,
+        "https://example.test/mcp/oauth"
+    );
+
     let model_provider = client.model_provider_capabilities_read().await?;
     assert_eq!(model_provider["namespaceTools"], true);
     assert_eq!(model_provider["imageGeneration"], false);
@@ -1998,6 +2004,13 @@ for line in sys.stdin:
     elif method == "config/mcpServer/reload":
         assert params == {}
         response(message_id, {})
+    elif method == "mcpServer/oauth/login":
+        assert params == {
+            "name": "github",
+        }
+        response(message_id, {
+            "authorizationUrl": "https://example.test/mcp/oauth",
+        })
     elif method == "modelProvider/capabilities/read":
         assert params == {}
         response(message_id, {

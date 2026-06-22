@@ -1006,6 +1006,13 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
         ),
         ("/mcp", &["MCP: 1 entries", "- filesystem"]),
         (
+            "/mcp-login github",
+            &[
+                "MCP server `github` OAuth login started.",
+                "- Authorization URL: https://example.test/mcp/oauth",
+            ],
+        ),
+        (
             "/mcp-reload",
             &[
                 "Reloaded Codex MCP server configuration.",
@@ -1959,6 +1966,15 @@ for line in sys.stdin:
         assert params == {}
         response(message_id, {
             "result": {},
+        })
+    elif method == "mcpServer/oauth/login":
+        assert params == {
+            "name": "github",
+        }
+        response(message_id, {
+            "result": {
+                "authorizationUrl": "https://example.test/mcp/oauth",
+            },
         })
     elif method == "modelProvider/capabilities/read":
         assert params == {}
