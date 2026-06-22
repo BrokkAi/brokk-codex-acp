@@ -461,6 +461,9 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
                     AppServerPromptEvent::McpServerOAuthLoginCompleted(update) => {
                         events.push(format!("mcp-oauth:{}:{}", update.name, update.success));
                     }
+                    AppServerPromptEvent::RemoteControlStatus(update) => {
+                        events.push(format!("remote-control:{}", update.status));
+                    }
                     AppServerPromptEvent::FuzzyFileSearch(update) => {
                         events.push(fuzzy_file_search_summary(&update));
                     }
@@ -498,6 +501,7 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
             "realtime-audio:8:24000:1:320",
             "realtime-error:network interrupted",
             "realtime-closed:client stopped",
+            "remote-control:connected",
             "message:fake response",
         ]
     );
@@ -1028,6 +1032,9 @@ fn summarize_prompt_event(event: AppServerPromptEvent) -> String {
         }
         AppServerPromptEvent::McpServerOAuthLoginCompleted(update) => {
             format!("mcp-oauth:{}:{}", update.name, update.success)
+        }
+        AppServerPromptEvent::RemoteControlStatus(update) => {
+            format!("remote-control:{}", update.status)
         }
         AppServerPromptEvent::FuzzyFileSearch(update) => fuzzy_file_search_summary(&update),
     }
@@ -2284,6 +2291,14 @@ for line in sys.stdin:
                 "params": {
                     "threadId": "thread-1",
                     "reason": "client stopped",
+                },
+            })
+            send({
+                "method": "remoteControl/status/changed",
+                "params": {
+                    "status": "connected",
+                    "serverName": "dev-host",
+                    "environmentId": "env-1",
                 },
             })
             send({

@@ -996,6 +996,7 @@ impl AppServerClient {
                 | "mcpServer/oauthLogin/completed"
                 | "fuzzyFileSearch/sessionUpdated"
                 | "fuzzyFileSearch/sessionCompleted"
+                | "remoteControl/status/changed"
                 | "thread/realtime/started"
                 | "thread/realtime/sdp"
                 | "thread/realtime/itemAdded"
@@ -2241,6 +2242,7 @@ pub enum AppServerPromptEvent {
     AccountRateLimitsUpdated(AppServerAccountRateLimitsUpdatedUpdate),
     McpServerOAuthLoginCompleted(AppServerMcpServerOAuthLoginCompletedUpdate),
     FuzzyFileSearch(AppServerFuzzyFileSearchUpdate),
+    RemoteControlStatus(AppServerRemoteControlStatusUpdate),
 }
 
 #[derive(Debug, Clone)]
@@ -2267,6 +2269,13 @@ pub struct AppServerWindowsSandboxSetupUpdate {
     pub mode: String,
     pub success: bool,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppServerRemoteControlStatusUpdate {
+    pub status: String,
+    pub server_name: String,
+    pub environment_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -3093,6 +3102,15 @@ struct McpServerOAuthLoginCompletedNotification {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct RemoteControlStatusChangedNotification {
+    status: String,
+    server_name: String,
+    #[serde(default)]
+    environment_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct FuzzyFileSearchSessionUpdatedNotification {
     session_id: String,
     query: String,
@@ -3308,6 +3326,10 @@ fn decode_prompt_event(
         "fuzzyFileSearch/sessionUpdated" | "fuzzyFileSearch/sessionCompleted" => {
             let update = decode_fuzzy_file_search_update(method, params)?;
             Ok(Some(AppServerPromptEvent::FuzzyFileSearch(update)))
+        }
+        "remoteControl/status/changed" => {
+            let update = decode_remote_control_status_changed(params)?;
+            Ok(Some(AppServerPromptEvent::RemoteControlStatus(update)))
         }
         "thread/realtime/started"
         | "thread/realtime/sdp"
@@ -3655,6 +3677,18 @@ pub fn decode_mcp_server_oauth_login_completed(
         name: notification.name,
         success: notification.success,
         error: notification.error,
+    })
+}
+
+pub fn decode_remote_control_status_changed(
+    params: &Value,
+) -> anyhow::Result<AppServerRemoteControlStatusUpdate> {
+    let notification: RemoteControlStatusChangedNotification =
+        serde_json::from_value(params.clone())?;
+    Ok(AppServerRemoteControlStatusUpdate {
+        status: notification.status,
+        server_name: notification.server_name,
+        environment_id: notification.environment_id,
     })
 }
 

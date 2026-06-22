@@ -51,7 +51,8 @@ use crate::app_server::{
     AppServerModelReroutedUpdate, AppServerModelSafetyBufferingUpdate,
     AppServerModelVerificationUpdate, AppServerPermissionProfile, AppServerPlanStatus,
     AppServerPromptCompletion, AppServerPromptEvent, AppServerRealtimeAudioDelta,
-    AppServerRealtimeUpdate, AppServerServerRequestResolvedUpdate, AppServerSkill, AppServerThread,
+    AppServerRealtimeUpdate, AppServerRemoteControlStatusUpdate,
+    AppServerServerRequestResolvedUpdate, AppServerSkill, AppServerThread,
     AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
     AppServerTurnModerationMetadataUpdate, AppServerTurnStartInput, AppServerUserInputQuestion,
     AppServerUserInputRequest, AppServerWarningUpdate, AppServerWindowsSandboxSetupUpdate,
@@ -60,11 +61,11 @@ use crate::app_server::{
     decode_guardian_approval_review_update, decode_mcp_server_oauth_login_completed,
     decode_mcp_server_startup_status_updated, decode_model_rerouted,
     decode_model_safety_buffering_updated, decode_model_verification, decode_realtime_update,
-    decode_server_request_resolved, decode_thread_archived, decode_thread_closed,
-    decode_thread_deleted, decode_thread_goal_cleared, decode_thread_goal_updated,
-    decode_thread_name_updated, decode_thread_settings_updated, decode_thread_status_changed,
-    decode_thread_unarchived, decode_turn_moderation_metadata, decode_warning,
-    decode_windows_sandbox_setup_completed, history_events_for_turns,
+    decode_remote_control_status_changed, decode_server_request_resolved, decode_thread_archived,
+    decode_thread_closed, decode_thread_deleted, decode_thread_goal_cleared,
+    decode_thread_goal_updated, decode_thread_name_updated, decode_thread_settings_updated,
+    decode_thread_status_changed, decode_thread_unarchived, decode_turn_moderation_metadata,
+    decode_warning, decode_windows_sandbox_setup_completed, history_events_for_turns,
     is_app_server_method_unavailable,
 };
 
@@ -588,6 +589,15 @@ impl CodexAcpAgent {
                     decode_mcp_server_oauth_login_completed(&params).map_err(acp_internal_error)?;
                 self.publish_global_agent_message_to_inactive(
                     mcp_oauth_login_completed_message(&update),
+                    cx,
+                )
+                .await?;
+            }
+            "remoteControl/status/changed" => {
+                let update =
+                    decode_remote_control_status_changed(&params).map_err(acp_internal_error)?;
+                self.publish_global_agent_message_to_inactive(
+                    remote_control_status_message(&update),
                     cx,
                 )
                 .await?;
@@ -4401,6 +4411,11 @@ fn send_prompt_event(
             session_id,
             SessionUpdate::AgentMessageChunk(text_chunk(fuzzy_file_search_message(&update))),
         ),
+        AppServerPromptEvent::RemoteControlStatus(update) => send_session_update(
+            cx,
+            session_id,
+            SessionUpdate::AgentMessageChunk(text_chunk(remote_control_status_message(&update))),
+        ),
         AppServerPromptEvent::SkillsChanged | AppServerPromptEvent::ThreadSettingsUpdated(_) => {
             Ok(())
         }
@@ -5061,6 +5076,17 @@ fn mcp_oauth_login_completed_message(
         message.push_str(error);
     }
     message
+}
+
+fn remote_control_status_message(update: &AppServerRemoteControlStatusUpdate) -> String {
+    let mut parts = vec![format!(
+        "Codex remote control status: {} on `{}`.",
+        update.status, update.server_name
+    )];
+    if let Some(environment_id) = update.environment_id.as_deref() {
+        parts.push(format!("Environment: `{environment_id}`."));
+    }
+    parts.join(" ")
 }
 
 fn fuzzy_file_search_message(update: &AppServerFuzzyFileSearchUpdate) -> String {
