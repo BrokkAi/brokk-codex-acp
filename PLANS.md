@@ -882,6 +882,7 @@ Primary notification families:
 - `item/started`
 - `item/completed`
 - `item/agentMessage/delta`
+- `item/plan/delta`
 - `item/reasoning/summaryTextDelta`
 - `item/reasoning/textDelta`
 - `item/commandExecution/outputDelta`
@@ -897,6 +898,7 @@ Mapping rules:
 - Agent message deltas -> `session/update` with `agent_message_chunk`.
 - Reasoning deltas and summary section boundaries -> `session/update` with
   `agent_thought_chunk`.
+- Plan item text deltas -> `session/update` with `agent_thought_chunk`.
 - Command execution begin/end -> `session/update` with `tool_call` and
   `tool_call_update`, using `ToolKind::execute` where appropriate.
 - Command output deltas -> `tool_call_update` content. Use ACP terminal methods
@@ -925,6 +927,7 @@ app-server item id -> ACP tool call id / message stream id
 | `turn/completed` | `PromptResponse.stopReason` | Already handled for the active prompt path. |
 | `item/agentMessage/delta` | `agent_message_chunk` | Already handled for the active prompt path. |
 | `item/reasoning/summaryTextDelta` / `item/reasoning/summaryPartAdded` / `item/reasoning/textDelta` | `agent_thought_chunk` | Stable ACP v1 supports thought chunks; summary part boundaries become paragraph separators. |
+| `item/plan/delta` | `agent_thought_chunk` | Implemented for experimental plan-mode text streaming. Structured `turn/plan/updated` remains the source for ACP `plan` updates. |
 | `item/started` | `tool_call` or internal item state | Depends on item subtype. |
 | `item/completed` | `tool_call_update` | Mark final status and attach final content. File-change items attach ACP `diff` content for each `{path, diff}` entry. |
 | `item/commandExecution/outputDelta` | `tool_call_update` content | Preserve stdout/stderr boundaries if present. |

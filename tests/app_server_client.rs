@@ -472,6 +472,7 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
             "thought:thinking",
             "thought:\n\n",
             "plan:1",
+            "thought:plan draft",
             "tool-started:cmd-1:cargo test",
             "tool-updated:cmd-1",
             "tool-updated:cmd-1",
@@ -2013,6 +2014,15 @@ for line in sys.stdin:
                     "plan": [
                         {"step": "Run tests", "status": "inProgress"},
                     ],
+                },
+            })
+            send({
+                "method": "item/plan/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "plan-1",
+                    "delta": "plan draft",
                 },
             })
             send({

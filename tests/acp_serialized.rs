@@ -182,6 +182,13 @@ async fn serialized_prompt_emits_session_update_notification_families() -> anyho
     );
     assert!(
         session_updates.iter().any(|update| {
+            update["sessionUpdate"] == "agent_thought_chunk"
+                && update["content"]["text"] == "serialized plan draft"
+        }),
+        "session updates: {session_updates:#?}"
+    );
+    assert!(
+        session_updates.iter().any(|update| {
             update["sessionUpdate"] == "tool_call" && update["toolCallId"] == "cmd-1"
         }),
         "session updates: {session_updates:#?}"
@@ -1845,6 +1852,15 @@ for line in sys.stdin:
                     "plan": [
                         {"step": "Run serialized test", "status": "inProgress"},
                     ],
+                },
+            })
+            send({
+                "method": "item/plan/delta",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-notifications",
+                    "itemId": "plan-serialized",
+                    "delta": "serialized plan draft",
                 },
             })
             send({

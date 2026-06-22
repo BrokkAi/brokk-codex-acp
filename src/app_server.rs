@@ -973,6 +973,7 @@ impl AppServerClient {
                 | "item/autoApprovalReview/completed"
                 | "item/commandExecution/outputDelta"
                 | "item/fileChange/patchUpdated"
+                | "item/plan/delta"
                 | "item/reasoning/summaryTextDelta"
                 | "item/reasoning/summaryPartAdded"
                 | "item/reasoning/textDelta"
@@ -3159,6 +3160,10 @@ fn decode_prompt_event(
             Ok((summary_index > 0)
                 .then(|| AppServerPromptEvent::AgentThoughtDelta("\n\n".to_owned())))
         }
+        "item/plan/delta" => Ok(params
+            .get("delta")
+            .and_then(Value::as_str)
+            .map(|delta| AppServerPromptEvent::AgentThoughtDelta(delta.to_owned()))),
         "turn/diff/updated" => {
             let Some(turn_id) =
                 string_field(params, "turnId").or_else(|| active_turn_id.map(str::to_owned))
