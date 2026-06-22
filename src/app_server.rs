@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::future::Future;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
@@ -22,6 +23,8 @@ const JSON_RPC_METHOD_NOT_FOUND: i64 = -32601;
 const APP_SERVER_OVERLOAD_MAX_RETRIES: usize = 3;
 const APP_SERVER_OVERLOAD_INITIAL_RETRY_DELAY: Duration = Duration::from_millis(25);
 const APP_SERVER_MESSAGE_BUFFER_CAPACITY: usize = 16 * 1024;
+const APP_SERVER_SPAWN_MAX_RETRIES: usize = 3;
+const APP_SERVER_SPAWN_RETRY_DELAY: Duration = Duration::from_millis(25);
 
 #[derive(Debug, Clone)]
 pub struct AppServerCommand {
@@ -48,19 +51,7 @@ impl AppServerClient {
     pub async fn spawn(command: AppServerCommand) -> anyhow::Result<Self> {
         debug!(codex_bin = %command.codex_bin.display(), "spawning codex app-server");
 
-        let mut child = Command::new(&command.codex_bin)
-            .arg("app-server")
-            .arg("--stdio")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .with_context(|| {
-                format!(
-                    "failed to spawn `{}` app-server --stdio",
-                    command.codex_bin.display()
-                )
-            })?;
+        let mut child = spawn_app_server_child(&command).await?;
 
         let stdin = child
             .stdin
@@ -2530,6 +2521,41 @@ impl AppServerCollaborationMode {
             },
         }
     }
+}
+
+async fn spawn_app_server_child(command: &AppServerCommand) -> anyhow::Result<Child> {
+    let mut attempt = 0;
+    loop {
+        match Command::new(&command.codex_bin)
+            .arg("app-server")
+            .arg("--stdio")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+        {
+            Ok(child) => return Ok(child),
+            Err(error)
+                if is_transient_text_file_busy(&error)
+                    && attempt < APP_SERVER_SPAWN_MAX_RETRIES =>
+            {
+                attempt += 1;
+                sleep(APP_SERVER_SPAWN_RETRY_DELAY).await;
+            }
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!(
+                        "failed to spawn `{}` app-server --stdio",
+                        command.codex_bin.display()
+                    )
+                });
+            }
+        }
+    }
+}
+
+fn is_transient_text_file_busy(error: &io::Error) -> bool {
+    error.raw_os_error() == Some(26)
 }
 
 #[derive(Debug, Clone, Deserialize)]

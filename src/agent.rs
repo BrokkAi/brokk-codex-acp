@@ -9382,31 +9382,20 @@ mod tests {
 
     #[test]
     fn runtime_workspace_roots_include_cwd_and_additional_directories() {
-        let roots = runtime_workspace_roots_for_acp_request(
-            std::path::Path::new("/repo"),
-            &[
-                std::path::PathBuf::from("/shared"),
-                std::path::PathBuf::from("/repo"),
-            ],
-        )
-        .expect("absolute roots should map");
+        let cwd = absolute_test_path("repo");
+        let shared = absolute_test_path("shared");
+        let roots = runtime_workspace_roots_for_acp_request(&cwd, &[shared.clone(), cwd.clone()])
+            .expect("absolute roots should map");
 
-        assert_eq!(
-            roots,
-            vec![
-                std::path::PathBuf::from("/repo"),
-                std::path::PathBuf::from("/shared")
-            ]
-        );
+        assert_eq!(roots, vec![cwd, shared]);
     }
 
     #[test]
     fn runtime_workspace_roots_reject_relative_additional_directories() {
-        let error = runtime_workspace_roots_for_acp_request(
-            std::path::Path::new("/repo"),
-            &[std::path::PathBuf::from("relative")],
-        )
-        .unwrap_err();
+        let cwd = absolute_test_path("repo");
+        let error =
+            runtime_workspace_roots_for_acp_request(&cwd, &[std::path::PathBuf::from("relative")])
+                .unwrap_err();
 
         assert_eq!(
             error.data.as_ref().and_then(serde_json::Value::as_str),
@@ -9416,16 +9405,18 @@ mod tests {
 
     #[test]
     fn additional_directories_are_extracted_from_runtime_workspace_roots() {
+        let cwd = absolute_test_path("repo");
+        let shared = absolute_test_path("shared");
         let additional = additional_directories_from_runtime_roots(
-            std::path::Path::new("/repo"),
-            vec![
-                std::path::PathBuf::from("/repo"),
-                std::path::PathBuf::from("/shared"),
-                std::path::PathBuf::from("/shared"),
-            ],
+            &cwd,
+            vec![cwd.clone(), shared.clone(), shared.clone()],
         );
 
-        assert_eq!(additional, vec![std::path::PathBuf::from("/shared")]);
+        assert_eq!(additional, vec![shared]);
+    }
+
+    fn absolute_test_path(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(name)
     }
 
     #[test]
