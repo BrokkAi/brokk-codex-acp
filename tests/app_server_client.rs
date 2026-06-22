@@ -21,11 +21,26 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     assert_eq!(initialize.codex_home, "/tmp/fake-codex-home");
 
     let mut app_server_messages = client.subscribe();
-    let started = client.thread_start("/repo".to_string()).await?;
+    let started = client
+        .thread_start(
+            "/repo".to_string(),
+            Some(vec![
+                std::path::PathBuf::from("/repo"),
+                std::path::PathBuf::from("/shared"),
+            ]),
+        )
+        .await?;
     assert_eq!(started.thread.id, "thread-1");
     assert_eq!(
         started.thread.cwd.as_deref(),
         Some(std::path::Path::new("/repo"))
+    );
+    assert_eq!(
+        started.runtime_workspace_roots,
+        vec![
+            std::path::PathBuf::from("/repo"),
+            std::path::PathBuf::from("/shared")
+        ]
     );
     let message = time::timeout(time::Duration::from_secs(1), app_server_messages.recv()).await??;
     assert!(matches!(
@@ -34,20 +49,40 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
     ));
 
     let forked = client
-        .thread_fork("thread-1".to_string(), "/repo-fork".to_string())
+        .thread_fork(
+            "thread-1".to_string(),
+            "/repo-fork".to_string(),
+            Some(vec![
+                std::path::PathBuf::from("/repo-fork"),
+                std::path::PathBuf::from("/shared-fork"),
+            ]),
+        )
         .await?;
     assert_eq!(forked.thread.id, "thread-2");
     let fork_events = history_events_for_thread_turns(&forked.thread.turns);
     assert_eq!(fork_events, vec!["user:forked hello"]);
 
     let ephemeral_fork = client
-        .thread_fork_with_options("thread-1".to_string(), "/repo-side".to_string(), true, true)
+        .thread_fork_with_options(
+            "thread-1".to_string(),
+            "/repo-side".to_string(),
+            Some(vec![std::path::PathBuf::from("/repo-side")]),
+            true,
+            true,
+        )
         .await?;
     assert_eq!(ephemeral_fork.thread.id, "thread-side");
     assert!(ephemeral_fork.thread.turns.is_empty());
 
     let resumed = client
-        .thread_resume("thread-1".to_string(), "/repo".to_string())
+        .thread_resume(
+            "thread-1".to_string(),
+            "/repo".to_string(),
+            Some(vec![
+                std::path::PathBuf::from("/repo"),
+                std::path::PathBuf::from("/shared"),
+            ]),
+        )
         .await?;
     assert_eq!(resumed.thread.id, "thread-1");
     assert_eq!(resumed.model.as_deref(), Some("gpt-5-codex"));
@@ -656,7 +691,10 @@ async fn app_server_client_maps_error_responses() -> anyhow::Result<()> {
     assert!(message.contains("codex app-server request `app/list` failed"));
     assert!(message.contains("boom"));
 
-    let error = client.thread_start("/repo".to_string()).await.unwrap_err();
+    let error = client
+        .thread_start("/repo".to_string(), None)
+        .await
+        .unwrap_err();
     let message = format!("{error:#}");
     assert!(message.contains("failed to decode app-server `thread/start` response"));
 
@@ -884,12 +922,14 @@ for line in sys.stdin:
         continue
     elif method == "thread/start":
         assert params["cwd"] == "/repo"
+        assert params["runtimeWorkspaceRoots"] == ["/repo", "/shared"]
         response(message_id, {
             "thread": {
                 "id": "thread-1",
                 "cwd": params["cwd"],
                 "name": "Started Thread",
             },
+            "runtimeWorkspaceRoots": params["runtimeWorkspaceRoots"],
             "model": "gpt-5",
             "reasoningEffort": "medium",
             "serviceTier": "standard",
@@ -911,6 +951,7 @@ for line in sys.stdin:
     elif method == "thread/fork":
         assert params["threadId"] == "thread-1"
         if params["cwd"] == "/repo-side":
+            assert params["runtimeWorkspaceRoots"] == ["/repo-side"]
             assert params["ephemeral"] is True
             assert params["excludeTurns"] is True
             response(message_id, {
@@ -919,9 +960,11 @@ for line in sys.stdin:
                     "cwd": params["cwd"],
                     "name": "Ephemeral Fork",
                 },
+                "runtimeWorkspaceRoots": params["runtimeWorkspaceRoots"],
             })
             continue
         assert params["cwd"] == "/repo-fork"
+        assert params["runtimeWorkspaceRoots"] == ["/repo-fork", "/shared-fork"]
         assert "ephemeral" not in params
         assert "excludeTurns" not in params
         response(message_id, {
@@ -943,6 +986,7 @@ for line in sys.stdin:
                     },
                 ],
             },
+            "runtimeWorkspaceRoots": params["runtimeWorkspaceRoots"],
             "model": "gpt-5-codex",
             "reasoningEffort": "high",
             "serviceTier": "priority",
@@ -960,6 +1004,7 @@ for line in sys.stdin:
     elif method == "thread/resume":
         assert params["threadId"] == "thread-1"
         assert params["cwd"] == "/repo"
+        assert params["runtimeWorkspaceRoots"] == ["/repo", "/shared"]
         assert params["excludeTurns"] is True
         response(message_id, {
             "thread": {
@@ -967,6 +1012,7 @@ for line in sys.stdin:
                 "cwd": params["cwd"],
                 "name": "Started Thread",
             },
+            "runtimeWorkspaceRoots": params["runtimeWorkspaceRoots"],
             "model": "gpt-5-codex",
             "reasoningEffort": "high",
             "serviceTier": "priority",

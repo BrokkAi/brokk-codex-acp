@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -12,13 +13,14 @@ use agent_client_protocol::schema::{
     NewSessionResponse, PermissionOption, PermissionOptionId, PermissionOptionKind, Plan,
     PlanEntry, PlanEntryPriority, PlanEntryStatus, PromptCapabilities, PromptRequest,
     PromptResponse, ProtocolVersion, RequestPermissionOutcome, RequestPermissionRequest,
-    ResumeSessionRequest, ResumeSessionResponse, SessionCapabilities, SessionCloseCapabilities,
-    SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
-    SessionDeleteCapabilities, SessionForkCapabilities, SessionId, SessionInfo, SessionInfoUpdate,
-    SessionListCapabilities, SessionNotification, SessionResumeCapabilities, SessionUpdate,
-    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, StopReason, TextContent,
-    ToolCall, ToolCallContent, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind,
-    UnstructuredCommandInput, UsageUpdate,
+    ResumeSessionRequest, ResumeSessionResponse, SessionAdditionalDirectoriesCapabilities,
+    SessionCapabilities, SessionCloseCapabilities, SessionConfigOption,
+    SessionConfigOptionCategory, SessionConfigSelectOption, SessionDeleteCapabilities,
+    SessionForkCapabilities, SessionId, SessionInfo, SessionInfoUpdate, SessionListCapabilities,
+    SessionNotification, SessionResumeCapabilities, SessionUpdate, SetSessionConfigOptionRequest,
+    SetSessionConfigOptionResponse, StopReason, TextContent, ToolCall, ToolCallContent,
+    ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, UnstructuredCommandInput,
+    UsageUpdate,
 };
 use agent_client_protocol::{
     Agent, ByteStreams, Client, ConnectTo, ConnectionTo, Error, on_receive_notification,
@@ -110,6 +112,7 @@ pub struct CodexAcpAgent {
     outstanding_approvals: CancelSignals,
     skills_by_cwd: Arc<Mutex<HashMap<String, Vec<AppServerSkill>>>>,
     session_cwds: Arc<Mutex<HashMap<String, String>>>,
+    session_additional_directories: Arc<Mutex<HashMap<String, Vec<PathBuf>>>>,
     config_by_session: Arc<Mutex<HashMap<String, AcpConfigState>>>,
     notification_listener_started: Arc<Mutex<bool>>,
 }
@@ -152,6 +155,7 @@ impl CodexAcpAgent {
             outstanding_approvals: Arc::new(Mutex::new(HashMap::new())),
             skills_by_cwd: Arc::new(Mutex::new(HashMap::new())),
             session_cwds: Arc::new(Mutex::new(HashMap::new())),
+            session_additional_directories: Arc::new(Mutex::new(HashMap::new())),
             config_by_session: Arc::new(Mutex::new(HashMap::new())),
             notification_listener_started: Arc::new(Mutex::new(false)),
         }
@@ -550,7 +554,9 @@ impl CodexAcpAgent {
     ) -> Result<NewSessionResponse, Error> {
         let cwd = request.cwd.to_string_lossy().into_owned();
         debug!(method = "session/new", %cwd, "handling ACP request");
-        let (session_id, config_options) = self.start_thread(cwd, &cx).await?;
+        let (session_id, config_options) = self
+            .start_thread(request.cwd, request.additional_directories, &cx)
+            .await?;
 
         Ok(NewSessionResponse::new(session_id).config_options(config_options))
     }
@@ -568,7 +574,14 @@ impl CodexAcpAgent {
             %cwd,
             "handling ACP request"
         );
-        let (session_id, config_options) = self.fork_thread(source_thread_id, cwd, &cx).await?;
+        let (session_id, config_options) = self
+            .fork_thread(
+                source_thread_id,
+                request.cwd,
+                request.additional_directories,
+                &cx,
+            )
+            .await?;
 
         Ok(ForkSessionResponse::new(session_id).config_options(config_options))
     }
@@ -582,11 +595,13 @@ impl CodexAcpAgent {
         let cwd = request.cwd.to_string_lossy().into_owned();
         debug!(method = "session/load", thread_id, %cwd, "handling ACP request");
 
+        let runtime_workspace_roots =
+            runtime_workspace_roots_for_acp_request(&request.cwd, &request.additional_directories)?;
         let resume_response = self
             .app_server
             .lock()
             .await
-            .thread_resume(thread_id.clone(), cwd)
+            .thread_resume(thread_id.clone(), cwd, Some(runtime_workspace_roots))
             .await
             .map_err(acp_internal_error)?;
 
@@ -615,6 +630,12 @@ impl CodexAcpAgent {
         if let Some(cwd) = resume_response.thread.cwd {
             let cwd = cwd.to_string_lossy().into_owned();
             self.set_session_cwd(&request.session_id, cwd.clone()).await;
+            self.set_session_additional_directories_from_runtime_roots(
+                &request.session_id,
+                &cwd,
+                resume_response.runtime_workspace_roots,
+            )
+            .await;
             self.refresh_and_publish_skills(cwd, &request.session_id, &cx, false)
                 .await?;
             config_options = self
@@ -633,7 +654,9 @@ impl CodexAcpAgent {
         let thread_id = request.session_id.0.to_string();
         let cwd = request.cwd.to_string_lossy().into_owned();
         debug!(method = "session/resume", thread_id, %cwd, "handling ACP request");
-        let (_, config_options) = self.resume_thread(thread_id, cwd, &cx).await?;
+        let (_, config_options) = self
+            .resume_thread(thread_id, request.cwd, request.additional_directories, &cx)
+            .await?;
 
         Ok(ResumeSessionResponse::new().config_options(config_options))
     }
@@ -650,11 +673,18 @@ impl CodexAcpAgent {
             .thread_list(cwd, request.cursor)
             .await
             .map_err(acp_internal_error)?;
+        let additional_directories = self.session_additional_directories.lock().await.clone();
 
         let sessions = response
             .data
             .into_iter()
-            .filter_map(session_info_from_app_server_thread)
+            .filter_map(|thread| {
+                let additional = additional_directories
+                    .get(&thread.id)
+                    .cloned()
+                    .unwrap_or_default();
+                session_info_from_app_server_thread(thread, additional)
+            })
             .collect();
 
         Ok(ListSessionsResponse::new(sessions).next_cursor(response.next_cursor))
@@ -1079,7 +1109,9 @@ impl CodexAcpAgent {
                     .session_cwd(session_id)
                     .await
                     .ok_or_else(|| Error::invalid_request().data("session cwd is not known yet"))?;
-                let (new_session_id, _) = self.start_thread(cwd, cx).await?;
+                let (new_session_id, _) = self
+                    .start_thread(PathBuf::from(cwd), Vec::new(), cx)
+                    .await?;
                 publish_catalog_message(
                     session_id,
                     "New",
@@ -1092,8 +1124,9 @@ impl CodexAcpAgent {
                     .session_cwd(session_id)
                     .await
                     .ok_or_else(|| Error::invalid_request().data("session cwd is not known yet"))?;
-                let (forked_session_id, _) =
-                    self.fork_thread(thread_id.to_owned(), cwd, cx).await?;
+                let (forked_session_id, _) = self
+                    .fork_thread(thread_id.to_owned(), PathBuf::from(cwd), Vec::new(), cx)
+                    .await?;
 
                 publish_catalog_message(
                     session_id,
@@ -1236,7 +1269,9 @@ impl CodexAcpAgent {
                     .await
                     .ok_or_else(|| Error::invalid_request().data("session cwd is not known yet"))?;
                 let target_thread_id = self.resolve_resume_target(&cwd, &target).await;
-                let (resumed_session_id, _) = self.resume_thread(target_thread_id, cwd, cx).await?;
+                let (resumed_session_id, _) = self
+                    .resume_thread(target_thread_id, PathBuf::from(cwd), Vec::new(), cx)
+                    .await?;
                 publish_catalog_message(
                     session_id,
                     "Resume",
@@ -1310,16 +1345,34 @@ impl CodexAcpAgent {
             .cloned()
     }
 
+    async fn set_session_additional_directories_from_runtime_roots(
+        &self,
+        session_id: &SessionId,
+        cwd: &str,
+        runtime_workspace_roots: Vec<PathBuf>,
+    ) {
+        let additional_directories =
+            additional_directories_from_runtime_roots(Path::new(cwd), runtime_workspace_roots);
+        self.session_additional_directories
+            .lock()
+            .await
+            .insert(session_id.0.to_string(), additional_directories);
+    }
+
     async fn start_thread(
         &self,
-        cwd: String,
+        cwd: PathBuf,
+        additional_directories: Vec<PathBuf>,
         cx: &ConnectionTo<Client>,
     ) -> Result<(SessionId, Vec<SessionConfigOption>), Error> {
+        let cwd_string = cwd.to_string_lossy().into_owned();
+        let runtime_workspace_roots =
+            runtime_workspace_roots_for_acp_request(&cwd, &additional_directories)?;
         let response = self
             .app_server
             .lock()
             .await
-            .thread_start(cwd)
+            .thread_start(cwd_string, Some(runtime_workspace_roots))
             .await
             .map_err(acp_internal_error)?;
 
@@ -1346,6 +1399,12 @@ impl CodexAcpAgent {
         if let Some(cwd) = response.thread.cwd {
             let cwd = cwd.to_string_lossy().into_owned();
             self.set_session_cwd(&session_id, cwd.clone()).await;
+            self.set_session_additional_directories_from_runtime_roots(
+                &session_id,
+                &cwd,
+                response.runtime_workspace_roots,
+            )
+            .await;
             self.refresh_and_publish_skills(cwd, &session_id, cx, false)
                 .await?;
             config_options = self.config_options_for_session(session_id.0.as_ref()).await;
@@ -1357,14 +1416,18 @@ impl CodexAcpAgent {
     async fn fork_thread(
         &self,
         source_thread_id: String,
-        cwd: String,
+        cwd: PathBuf,
+        additional_directories: Vec<PathBuf>,
         cx: &ConnectionTo<Client>,
     ) -> Result<(SessionId, Vec<SessionConfigOption>), Error> {
+        let cwd_string = cwd.to_string_lossy().into_owned();
+        let runtime_workspace_roots =
+            runtime_workspace_roots_for_acp_request(&cwd, &additional_directories)?;
         let response = self
             .app_server
             .lock()
             .await
-            .thread_fork(source_thread_id, cwd)
+            .thread_fork(source_thread_id, cwd_string, Some(runtime_workspace_roots))
             .await
             .map_err(acp_internal_error)?;
 
@@ -1390,6 +1453,12 @@ impl CodexAcpAgent {
         if let Some(cwd) = response.thread.cwd {
             let cwd = cwd.to_string_lossy().into_owned();
             self.set_session_cwd(&session_id, cwd.clone()).await;
+            self.set_session_additional_directories_from_runtime_roots(
+                &session_id,
+                &cwd,
+                response.runtime_workspace_roots,
+            )
+            .await;
             self.refresh_and_publish_skills(cwd, &session_id, cx, false)
                 .await?;
             config_options = self.config_options_for_session(session_id.0.as_ref()).await;
@@ -1481,14 +1550,18 @@ impl CodexAcpAgent {
     async fn resume_thread(
         &self,
         thread_id: String,
-        cwd: String,
+        cwd: PathBuf,
+        additional_directories: Vec<PathBuf>,
         cx: &ConnectionTo<Client>,
     ) -> Result<(SessionId, Vec<SessionConfigOption>), Error> {
+        let cwd_string = cwd.to_string_lossy().into_owned();
+        let runtime_workspace_roots =
+            runtime_workspace_roots_for_acp_request(&cwd, &additional_directories)?;
         let response = self
             .app_server
             .lock()
             .await
-            .thread_resume(thread_id, cwd)
+            .thread_resume(thread_id, cwd_string, Some(runtime_workspace_roots))
             .await
             .map_err(acp_internal_error)?;
 
@@ -1514,6 +1587,12 @@ impl CodexAcpAgent {
         if let Some(cwd) = response.thread.cwd {
             let cwd = cwd.to_string_lossy().into_owned();
             self.set_session_cwd(&session_id, cwd.clone()).await;
+            self.set_session_additional_directories_from_runtime_roots(
+                &session_id,
+                &cwd,
+                response.runtime_workspace_roots,
+            )
+            .await;
             self.refresh_and_publish_skills(cwd, &session_id, cx, false)
                 .await?;
             config_options = self.config_options_for_session(session_id.0.as_ref()).await;
@@ -2201,6 +2280,7 @@ impl CodexAcpAgent {
                     .resume(SessionResumeCapabilities::new())
                     .close(SessionCloseCapabilities::new())
                     .delete(SessionDeleteCapabilities::new())
+                    .additional_directories(SessionAdditionalDirectoriesCapabilities::new())
                     .fork(SessionForkCapabilities::new()),
             )
     }
@@ -3231,13 +3311,17 @@ fn publish_session_adapter_meta_update(
     )
 }
 
-fn session_info_from_app_server_thread(thread: AppServerThread) -> Option<SessionInfo> {
+fn session_info_from_app_server_thread(
+    thread: AppServerThread,
+    additional_directories: Vec<PathBuf>,
+) -> Option<SessionInfo> {
     let cwd = thread.cwd.clone()?;
     let title = thread.name.clone().or_else(|| thread.preview.clone());
     let meta = session_info_meta_from_app_server_thread(&thread);
 
     Some(
         SessionInfo::new(SessionId::new(thread.id), cwd)
+            .additional_directories(additional_directories)
             .title(title)
             .updated_at(thread.updated_at.map(unix_timestamp_to_utc_iso8601))
             .meta(meta),
@@ -3311,6 +3395,45 @@ fn insert_optional_value(
     if let Some(value) = value {
         meta.insert(key.to_owned(), value.clone());
     }
+}
+
+fn runtime_workspace_roots_for_acp_request(
+    cwd: &Path,
+    additional_directories: &[PathBuf],
+) -> Result<Vec<PathBuf>, Error> {
+    if !cwd.is_absolute() {
+        return Err(Error::invalid_params().data("cwd must be an absolute path"));
+    }
+
+    let mut roots = vec![cwd.to_path_buf()];
+    for additional_directory in additional_directories {
+        if !additional_directory.is_absolute() {
+            return Err(Error::invalid_params()
+                .data("additionalDirectories entries must be absolute paths"));
+        }
+        if !roots.iter().any(|root| root == additional_directory) {
+            roots.push(additional_directory.clone());
+        }
+    }
+    Ok(roots)
+}
+
+fn additional_directories_from_runtime_roots(
+    cwd: &Path,
+    runtime_workspace_roots: Vec<PathBuf>,
+) -> Vec<PathBuf> {
+    let mut additional_directories = Vec::new();
+    for root in runtime_workspace_roots {
+        if root == cwd
+            || additional_directories
+                .iter()
+                .any(|existing| existing == &root)
+        {
+            continue;
+        }
+        additional_directories.push(root);
+    }
+    additional_directories
 }
 
 fn unix_timestamp_to_utc_iso8601(timestamp: i64) -> String {
@@ -4482,25 +4605,32 @@ mod tests {
 
     #[test]
     fn session_info_preserves_app_server_thread_metadata() {
-        let session = session_info_from_app_server_thread(AppServerThread {
-            id: "thread-1".to_owned(),
-            cwd: Some(std::path::PathBuf::from("/repo")),
-            turns: Vec::new(),
-            name: None,
-            preview: Some("Recent work summary".to_owned()),
-            status: Some(serde_json::json!({"type": "notLoaded"})),
-            model_provider: Some("openai".to_owned()),
-            created_at: Some(1_700_000_000),
-            updated_at: Some(1_700_000_100),
-            recency_at: Some(1_700_000_200),
-            agent_nickname: Some("Codex".to_owned()),
-            agent_role: Some("primary".to_owned()),
-            parent_thread_id: Some("thread-parent".to_owned()),
-        })
+        let session = session_info_from_app_server_thread(
+            AppServerThread {
+                id: "thread-1".to_owned(),
+                cwd: Some(std::path::PathBuf::from("/repo")),
+                turns: Vec::new(),
+                name: None,
+                preview: Some("Recent work summary".to_owned()),
+                status: Some(serde_json::json!({"type": "notLoaded"})),
+                model_provider: Some("openai".to_owned()),
+                created_at: Some(1_700_000_000),
+                updated_at: Some(1_700_000_100),
+                recency_at: Some(1_700_000_200),
+                agent_nickname: Some("Codex".to_owned()),
+                agent_role: Some("primary".to_owned()),
+                parent_thread_id: Some("thread-parent".to_owned()),
+            },
+            vec![std::path::PathBuf::from("/shared")],
+        )
         .expect("thread with cwd should map to session info");
 
         assert_eq!(session.session_id.0.as_ref(), "thread-1");
         assert_eq!(session.cwd, std::path::PathBuf::from("/repo"));
+        assert_eq!(
+            session.additional_directories,
+            vec![std::path::PathBuf::from("/shared")]
+        );
         assert_eq!(session.title.as_deref(), Some("Recent work summary"));
         assert_eq!(session.updated_at.as_deref(), Some("2023-11-14T22:15:00Z"));
 
@@ -4526,6 +4656,54 @@ mod tests {
             "2023-11-14T22:15:00Z"
         );
         assert_eq!(unix_timestamp_to_utc_iso8601(-1), "1969-12-31T23:59:59Z");
+    }
+
+    #[test]
+    fn runtime_workspace_roots_include_cwd_and_additional_directories() {
+        let roots = runtime_workspace_roots_for_acp_request(
+            std::path::Path::new("/repo"),
+            &[
+                std::path::PathBuf::from("/shared"),
+                std::path::PathBuf::from("/repo"),
+            ],
+        )
+        .expect("absolute roots should map");
+
+        assert_eq!(
+            roots,
+            vec![
+                std::path::PathBuf::from("/repo"),
+                std::path::PathBuf::from("/shared")
+            ]
+        );
+    }
+
+    #[test]
+    fn runtime_workspace_roots_reject_relative_additional_directories() {
+        let error = runtime_workspace_roots_for_acp_request(
+            std::path::Path::new("/repo"),
+            &[std::path::PathBuf::from("relative")],
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.data.as_ref().and_then(serde_json::Value::as_str),
+            Some("additionalDirectories entries must be absolute paths")
+        );
+    }
+
+    #[test]
+    fn additional_directories_are_extracted_from_runtime_workspace_roots() {
+        let additional = additional_directories_from_runtime_roots(
+            std::path::Path::new("/repo"),
+            vec![
+                std::path::PathBuf::from("/repo"),
+                std::path::PathBuf::from("/shared"),
+                std::path::PathBuf::from("/shared"),
+            ],
+        );
+
+        assert_eq!(additional, vec![std::path::PathBuf::from("/shared")]);
     }
 
     #[test]

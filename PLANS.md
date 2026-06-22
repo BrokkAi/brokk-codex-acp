@@ -638,7 +638,7 @@ Return:
 - session ID
 - cwd
 - additional directories when `sessionCapabilities.additionalDirectories` is
-  supported and app-server provides them
+  supported and app-server provides lifecycle `runtimeWorkspaceRoots`
 - title/name if available
 - ACP `updatedAt` converted from app-server Unix seconds to an ISO 8601 UTC
   timestamp when app-server provides `updatedAt`
@@ -649,8 +649,9 @@ Return:
 
 Still pending:
 
-- additional directories when `sessionCapabilities.additionalDirectories` is
-  supported and app-server provides them
+- reporting additional directories for cold `session/list` entries that were
+  not started, loaded, resumed, or forked through the current adapter process;
+  app-server `thread/list` does not currently include runtime workspace roots
 
 ### session/close
 

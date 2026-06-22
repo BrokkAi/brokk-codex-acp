@@ -108,17 +108,28 @@ impl AppServerClient {
         Ok(response)
     }
 
-    pub async fn thread_start(&mut self, cwd: String) -> anyhow::Result<ThreadStartResponse> {
-        self.request("thread/start", ThreadStartParams { cwd: Some(cwd) })
-            .await
+    pub async fn thread_start(
+        &mut self,
+        cwd: String,
+        runtime_workspace_roots: Option<Vec<PathBuf>>,
+    ) -> anyhow::Result<ThreadStartResponse> {
+        self.request(
+            "thread/start",
+            ThreadStartParams {
+                cwd: Some(cwd),
+                runtime_workspace_roots,
+            },
+        )
+        .await
     }
 
     pub async fn thread_fork(
         &mut self,
         thread_id: String,
         cwd: String,
+        runtime_workspace_roots: Option<Vec<PathBuf>>,
     ) -> anyhow::Result<ThreadForkResponse> {
-        self.thread_fork_with_options(thread_id, cwd, false, false)
+        self.thread_fork_with_options(thread_id, cwd, runtime_workspace_roots, false, false)
             .await
     }
 
@@ -126,6 +137,7 @@ impl AppServerClient {
         &mut self,
         thread_id: String,
         cwd: String,
+        runtime_workspace_roots: Option<Vec<PathBuf>>,
         ephemeral: bool,
         exclude_turns: bool,
     ) -> anyhow::Result<ThreadForkResponse> {
@@ -134,6 +146,7 @@ impl AppServerClient {
             ThreadForkParams {
                 thread_id,
                 cwd: Some(cwd),
+                runtime_workspace_roots,
                 ephemeral,
                 exclude_turns,
             },
@@ -145,12 +158,14 @@ impl AppServerClient {
         &mut self,
         thread_id: String,
         cwd: String,
+        runtime_workspace_roots: Option<Vec<PathBuf>>,
     ) -> anyhow::Result<ThreadResumeResponse> {
         self.request(
             "thread/resume",
             ThreadResumeParams {
                 thread_id,
                 cwd: Some(cwd),
+                runtime_workspace_roots,
                 exclude_turns: true,
             },
         )
@@ -1151,6 +1166,8 @@ pub struct InitializeResponse {
 struct ThreadStartParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    runtime_workspace_roots: Option<Vec<PathBuf>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1169,6 +1186,8 @@ pub struct ThreadStartResponse {
     pub collaboration_mode: Option<AppServerCollaborationMode>,
     #[serde(default)]
     pub active_permission_profile: Option<AppServerActivePermissionProfile>,
+    #[serde(default)]
+    pub runtime_workspace_roots: Vec<PathBuf>,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -1177,6 +1196,8 @@ struct ThreadForkParams {
     thread_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    runtime_workspace_roots: Option<Vec<PathBuf>>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     ephemeral: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -1199,6 +1220,8 @@ pub struct ThreadForkResponse {
     pub collaboration_mode: Option<AppServerCollaborationMode>,
     #[serde(default)]
     pub active_permission_profile: Option<AppServerActivePermissionProfile>,
+    #[serde(default)]
+    pub runtime_workspace_roots: Vec<PathBuf>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1207,6 +1230,8 @@ struct ThreadResumeParams {
     thread_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    runtime_workspace_roots: Option<Vec<PathBuf>>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     exclude_turns: bool,
 }
@@ -1227,6 +1252,8 @@ pub struct ThreadResumeResponse {
     pub collaboration_mode: Option<AppServerCollaborationMode>,
     #[serde(default)]
     pub active_permission_profile: Option<AppServerActivePermissionProfile>,
+    #[serde(default)]
+    pub runtime_workspace_roots: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
