@@ -72,6 +72,8 @@ The project currently includes:
   `/marketplace-remove <name>`, `/marketplace-upgrade [name]`,
   `/feature <name> enable|disable`,
   `/features`, `/rate-limits`, `/realtime start [text|audio]`,
+  `/realtime text <role> <text>`, `/realtime speech <text>`,
+  `/realtime audio <base64> <sampleRate> <channels> [samples]`,
   `/realtime stop`, `/realtime voices`,
   `/remote-control [status|enable|disable]`, `/usage`, `/workspace-messages`,
   `/mcp`, `/mcp-login <server>`, `/mcp-refresh`, `/mcp-reload`,

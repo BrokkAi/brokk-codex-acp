@@ -51,8 +51,9 @@ use crate::app_server::{
     AppServerMcpServerStartupStatusUpdate, AppServerMessage, AppServerModel,
     AppServerModelReroutedUpdate, AppServerModelSafetyBufferingUpdate,
     AppServerModelVerificationUpdate, AppServerPermissionProfile, AppServerPlanStatus,
-    AppServerPromptCompletion, AppServerPromptEvent, AppServerRealtimeAudioDelta,
-    AppServerRealtimeOutputModality, AppServerRealtimeUpdate, AppServerRemoteControlStatusUpdate,
+    AppServerPromptCompletion, AppServerPromptEvent, AppServerRealtimeAudioChunk,
+    AppServerRealtimeAudioDelta, AppServerRealtimeOutputModality, AppServerRealtimeTextRole,
+    AppServerRealtimeUpdate, AppServerRemoteControlStatusUpdate,
     AppServerServerRequestResolvedUpdate, AppServerSkill, AppServerThread,
     AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
     AppServerTurnModerationMetadataUpdate, AppServerTurnStartInput, AppServerUserInputQuestion,
@@ -1967,6 +1968,54 @@ impl CodexAcpAgent {
                         cx,
                     )
                 }
+                RealtimeCommandAction::Text { role, text } => {
+                    self.app_server
+                        .lock()
+                        .await
+                        .thread_realtime_append_text(thread_id.to_owned(), role, text.clone())
+                        .await
+                        .map_err(|error| {
+                            acp_app_server_method_error("thread/realtime/appendText", error)
+                        })?;
+                    publish_catalog_message(
+                        session_id,
+                        "Realtime text",
+                        realtime_text_summary(role, &text),
+                        cx,
+                    )
+                }
+                RealtimeCommandAction::Speech { text } => {
+                    self.app_server
+                        .lock()
+                        .await
+                        .thread_realtime_append_speech(thread_id.to_owned(), text.clone())
+                        .await
+                        .map_err(|error| {
+                            acp_app_server_method_error("thread/realtime/appendSpeech", error)
+                        })?;
+                    publish_catalog_message(
+                        session_id,
+                        "Realtime speech",
+                        realtime_speech_summary(&text),
+                        cx,
+                    )
+                }
+                RealtimeCommandAction::Audio { audio } => {
+                    self.app_server
+                        .lock()
+                        .await
+                        .thread_realtime_append_audio(thread_id.to_owned(), audio.clone())
+                        .await
+                        .map_err(|error| {
+                            acp_app_server_method_error("thread/realtime/appendAudio", error)
+                        })?;
+                    publish_catalog_message(
+                        session_id,
+                        "Realtime audio",
+                        realtime_input_audio_summary(&audio),
+                        cx,
+                    )
+                }
                 RealtimeCommandAction::Stop => {
                     self.app_server
                         .lock()
@@ -3629,10 +3678,20 @@ enum RemoteControlAction {
     Disable,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum RealtimeCommandAction {
     Start {
         output_modality: AppServerRealtimeOutputModality,
+    },
+    Text {
+        role: AppServerRealtimeTextRole,
+        text: String,
+    },
+    Speech {
+        text: String,
+    },
+    Audio {
+        audio: AppServerRealtimeAudioChunk,
     },
     Stop,
     Voices,
@@ -4026,7 +4085,9 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         name: REALTIME_COMMAND,
         aliases: &[],
         description: "Control Codex thread realtime",
-        input_hint: Some("start [text|audio], stop, or voices"),
+        input_hint: Some(
+            "start [text|audio], text <role> <text>, speech <text>, audio <base64> <sampleRate> <channels> [samples], stop, or voices",
+        ),
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::Realtime,
     },
@@ -4350,51 +4411,170 @@ fn parse_remote_control_command(rest: &str) -> Result<Option<BuiltinCommand>, Er
 }
 
 fn parse_realtime_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
-    let mut parts = rest.split_whitespace();
-    let Some(action) = parts.next() else {
-        return Err(Error::invalid_params().data("/realtime requires `start`, `stop`, or `voices`"));
+    let rest = rest.trim();
+    let Some((action, tail)) = split_command_head(rest) else {
+        return Err(Error::invalid_params()
+            .data("/realtime requires `start`, `text`, `speech`, `audio`, `stop`, or `voices`"));
     };
-    let command_action =
-        match action {
-            "start" => {
-                let output_modality = match parts.next() {
-                    None | Some("text") => AppServerRealtimeOutputModality::Text,
-                    Some("audio") => AppServerRealtimeOutputModality::Audio,
-                    Some(_) => {
-                        return Err(Error::invalid_params()
-                            .data("/realtime start accepts only `text` or `audio`"));
-                    }
-                };
-                if parts.next().is_some() {
-                    return Err(Error::invalid_params()
-                        .data("/realtime start accepts only `text` or `audio`"));
-                }
-                RealtimeCommandAction::Start { output_modality }
+    let command_action = match action {
+        "start" => parse_realtime_start_command(tail)?,
+        "text" => parse_realtime_text_command(tail)?,
+        "speech" => parse_realtime_speech_command(tail)?,
+        "audio" => parse_realtime_audio_command(tail)?,
+        "stop" => {
+            if !tail.trim().is_empty() {
+                return Err(
+                    Error::invalid_params().data("/realtime stop does not accept arguments")
+                );
             }
-            "stop" => {
-                if parts.next().is_some() {
-                    return Err(
-                        Error::invalid_params().data("/realtime stop does not accept arguments")
-                    );
-                }
-                RealtimeCommandAction::Stop
+            RealtimeCommandAction::Stop
+        }
+        "voices" => {
+            if !tail.trim().is_empty() {
+                return Err(
+                    Error::invalid_params().data("/realtime voices does not accept arguments")
+                );
             }
-            "voices" => {
-                if parts.next().is_some() {
-                    return Err(
-                        Error::invalid_params().data("/realtime voices does not accept arguments")
-                    );
-                }
-                RealtimeCommandAction::Voices
-            }
-            _ => {
-                return Err(Error::invalid_params()
-                    .data("/realtime accepts only `start`, `stop`, or `voices`"));
-            }
-        };
+            RealtimeCommandAction::Voices
+        }
+        _ => {
+            return Err(Error::invalid_params().data(
+                "/realtime accepts only `start`, `text`, `speech`, `audio`, `stop`, or `voices`",
+            ));
+        }
+    };
     Ok(Some(BuiltinCommand::Realtime {
         action: command_action,
     }))
+}
+
+fn parse_realtime_start_command(rest: &str) -> Result<RealtimeCommandAction, Error> {
+    let mut parts = rest.split_whitespace();
+    let output_modality = match parts.next() {
+        None | Some("text") => AppServerRealtimeOutputModality::Text,
+        Some("audio") => AppServerRealtimeOutputModality::Audio,
+        Some(_) => {
+            return Err(
+                Error::invalid_params().data("/realtime start accepts only `text` or `audio`")
+            );
+        }
+    };
+    if parts.next().is_some() {
+        return Err(Error::invalid_params().data("/realtime start accepts only `text` or `audio`"));
+    }
+    Ok(RealtimeCommandAction::Start { output_modality })
+}
+
+fn parse_realtime_text_command(rest: &str) -> Result<RealtimeCommandAction, Error> {
+    let Some((role_text, text)) = split_once_whitespace(rest.trim()) else {
+        return Err(Error::invalid_params()
+            .data("/realtime text requires a role and text: user, developer, or assistant"));
+    };
+    let role = match role_text {
+        "user" => AppServerRealtimeTextRole::User,
+        "developer" => AppServerRealtimeTextRole::Developer,
+        "assistant" => AppServerRealtimeTextRole::Assistant,
+        _ => {
+            return Err(Error::invalid_params()
+                .data("/realtime text role must be `user`, `developer`, or `assistant`"));
+        }
+    };
+    let text = text.trim();
+    if text.is_empty() {
+        return Err(Error::invalid_params().data("/realtime text requires non-empty text"));
+    }
+    Ok(RealtimeCommandAction::Text {
+        role,
+        text: text.to_owned(),
+    })
+}
+
+fn parse_realtime_speech_command(rest: &str) -> Result<RealtimeCommandAction, Error> {
+    let text = rest.trim();
+    if text.is_empty() {
+        return Err(Error::invalid_params().data("/realtime speech requires text"));
+    }
+    Ok(RealtimeCommandAction::Speech {
+        text: text.to_owned(),
+    })
+}
+
+fn parse_realtime_audio_command(rest: &str) -> Result<RealtimeCommandAction, Error> {
+    let mut parts = rest.split_whitespace();
+    let Some(data) = parts.next() else {
+        return Err(Error::invalid_params()
+            .data("/realtime audio requires base64 data, sample rate, and channel count"));
+    };
+    let Some(sample_rate) = parts.next() else {
+        return Err(Error::invalid_params().data("/realtime audio requires a sample rate"));
+    };
+    let Some(num_channels) = parts.next() else {
+        return Err(Error::invalid_params().data("/realtime audio requires a channel count"));
+    };
+    let samples_per_channel = parts.next();
+    if parts.next().is_some() {
+        return Err(Error::invalid_params().data(
+            "/realtime audio accepts base64 data, sample rate, channel count, and optional samples per channel",
+        ));
+    }
+    let sample_rate = parse_realtime_positive_u32(sample_rate, "sample rate")?;
+    let num_channels = parse_realtime_positive_u16(num_channels, "channel count")?;
+    let samples_per_channel = samples_per_channel
+        .map(|value| parse_realtime_positive_u32(value, "samples per channel"))
+        .transpose()?;
+    Ok(RealtimeCommandAction::Audio {
+        audio: AppServerRealtimeAudioChunk {
+            data: data.to_owned(),
+            sample_rate,
+            num_channels,
+            samples_per_channel,
+            item_id: None,
+        },
+    })
+}
+
+fn split_once_whitespace(value: &str) -> Option<(&str, &str)> {
+    let trimmed = value.trim_start();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let index = trimmed.find(char::is_whitespace)?;
+    let (head, tail) = trimmed.split_at(index);
+    Some((head, tail.trim_start()))
+}
+
+fn split_command_head(value: &str) -> Option<(&str, &str)> {
+    let trimmed = value.trim_start();
+    if trimmed.is_empty() {
+        return None;
+    }
+    match trimmed.find(char::is_whitespace) {
+        Some(index) => {
+            let (head, tail) = trimmed.split_at(index);
+            Some((head, tail.trim_start()))
+        }
+        None => Some((trimmed, "")),
+    }
+}
+
+fn parse_realtime_positive_u32(text: &str, field: &str) -> Result<u32, Error> {
+    let value = text.parse::<u32>().map_err(|_| {
+        Error::invalid_params().data(format!(
+            "/realtime audio {field} must be a positive integer"
+        ))
+    })?;
+    if value == 0 {
+        return Err(Error::invalid_params()
+            .data(format!("/realtime audio {field} must be greater than zero")));
+    }
+    Ok(value)
+}
+
+fn parse_realtime_positive_u16(text: &str, field: &str) -> Result<u16, Error> {
+    let value = parse_realtime_positive_u32(text, field)?;
+    value
+        .try_into()
+        .map_err(|_| Error::invalid_params().data(format!("/realtime audio {field} is too large")))
 }
 
 fn parse_login_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
@@ -7178,6 +7358,40 @@ fn realtime_start_summary(output_modality: AppServerRealtimeOutputModality) -> S
     format!("Started Codex realtime session for this thread.\n- Output modality: {output_modality}")
 }
 
+fn realtime_text_summary(role: AppServerRealtimeTextRole, text: &str) -> String {
+    let role = match role {
+        AppServerRealtimeTextRole::User => "user",
+        AppServerRealtimeTextRole::Developer => "developer",
+        AppServerRealtimeTextRole::Assistant => "assistant",
+    };
+    format!(
+        "Appended Codex realtime text input.\n- Role: {role}\n- Text: {}",
+        compact_text_preview(text)
+    )
+}
+
+fn realtime_speech_summary(text: &str) -> String {
+    format!(
+        "Appended Codex realtime speech input.\n- Text: {}",
+        compact_text_preview(text)
+    )
+}
+
+fn realtime_input_audio_summary(audio: &AppServerRealtimeAudioChunk) -> String {
+    let mut parts = vec![
+        format!("{} encoded characters", audio.data.len()),
+        format!("{} Hz", audio.sample_rate),
+        format!("{} channels", audio.num_channels),
+    ];
+    if let Some(samples_per_channel) = audio.samples_per_channel {
+        parts.push(format!("{samples_per_channel} samples per channel"));
+    }
+    format!(
+        "Appended Codex realtime audio input.\n- Audio: {}",
+        readable_label_list(parts).unwrap_or_else(|| "unknown audio payload".to_owned())
+    )
+}
+
 fn realtime_voices_summary(value: &serde_json::Value) -> String {
     let Some(voices) = value.get("voices") else {
         return "Realtime voices: unavailable".to_owned();
@@ -7285,6 +7499,10 @@ fn truncate_for_summary(text: &str, max_chars: usize) -> String {
         truncated.push_str("...");
     }
     truncated
+}
+
+fn compact_text_preview(text: &str) -> String {
+    truncate_for_summary(text.replace('\n', "\\n").as_str(), 160)
 }
 
 fn catalog_entries(value: &serde_json::Value) -> Vec<&serde_json::Value> {
@@ -7885,6 +8103,9 @@ mod tests {
             "/rate-limits",
             "/realtime start",
             "/realtime start audio",
+            "/realtime text developer Check the handoff",
+            "/realtime speech Say this aloud",
+            "/realtime audio YWJjZA== 24000 1 320",
             "/realtime stop",
             "/realtime voices",
             "/remote-control",
@@ -8038,6 +8259,30 @@ mod tests {
                             output_modality: AppServerRealtimeOutputModality::Audio
                         }
                     }
+                )),
+                "/realtime text developer Check the handoff" => assert!(matches!(
+                    command,
+                    BuiltinCommand::Realtime {
+                        action: RealtimeCommandAction::Text {
+                            role: AppServerRealtimeTextRole::Developer,
+                            text
+                        }
+                    } if text == "Check the handoff"
+                )),
+                "/realtime speech Say this aloud" => assert!(matches!(
+                    command,
+                    BuiltinCommand::Realtime {
+                        action: RealtimeCommandAction::Speech { text }
+                    } if text == "Say this aloud"
+                )),
+                "/realtime audio YWJjZA== 24000 1 320" => assert!(matches!(
+                    command,
+                    BuiltinCommand::Realtime {
+                        action: RealtimeCommandAction::Audio { audio }
+                    } if audio.data == "YWJjZA=="
+                        && audio.sample_rate == 24000
+                        && audio.num_channels == 1
+                        && audio.samples_per_channel == Some(320)
                 )),
                 "/realtime stop" => assert!(matches!(
                     command,
@@ -8260,11 +8505,11 @@ mod tests {
         for (text, expected) in [
             (
                 "/realtime",
-                "/realtime requires `start`, `stop`, or `voices`",
+                "/realtime requires `start`, `text`, `speech`, `audio`, `stop`, or `voices`",
             ),
             (
                 "/realtime now",
-                "/realtime accepts only `start`, `stop`, or `voices`",
+                "/realtime accepts only `start`, `text`, `speech`, `audio`, `stop`, or `voices`",
             ),
             (
                 "/realtime start video",
@@ -8273,6 +8518,31 @@ mod tests {
             (
                 "/realtime start text extra",
                 "/realtime start accepts only `text` or `audio`",
+            ),
+            (
+                "/realtime text",
+                "/realtime text requires a role and text: user, developer, or assistant",
+            ),
+            (
+                "/realtime text system hi",
+                "/realtime text role must be `user`, `developer`, or `assistant`",
+            ),
+            ("/realtime speech", "/realtime speech requires text"),
+            (
+                "/realtime audio",
+                "/realtime audio requires base64 data, sample rate, and channel count",
+            ),
+            (
+                "/realtime audio YWJjZA==",
+                "/realtime audio requires a sample rate",
+            ),
+            (
+                "/realtime audio YWJjZA== 0 1",
+                "/realtime audio sample rate must be greater than zero",
+            ),
+            (
+                "/realtime audio YWJjZA== 24000 70000",
+                "/realtime audio channel count is too large",
             ),
             (
                 "/realtime stop now",

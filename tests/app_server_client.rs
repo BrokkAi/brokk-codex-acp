@@ -929,6 +929,34 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         .await?;
     assert_eq!(realtime_start, serde_json::json!({}));
 
+    let realtime_text = client
+        .thread_realtime_append_text(
+            "thread-1".to_string(),
+            brokk_codex_acp::app_server::AppServerRealtimeTextRole::Developer,
+            "Use concise handoffs.".to_string(),
+        )
+        .await?;
+    assert_eq!(realtime_text, serde_json::json!({}));
+
+    let realtime_speech = client
+        .thread_realtime_append_speech("thread-1".to_string(), "Build complete.".to_string())
+        .await?;
+    assert_eq!(realtime_speech, serde_json::json!({}));
+
+    let realtime_audio = client
+        .thread_realtime_append_audio(
+            "thread-1".to_string(),
+            brokk_codex_acp::app_server::AppServerRealtimeAudioChunk {
+                data: "YWJjZA==".to_string(),
+                sample_rate: 24000,
+                num_channels: 1,
+                samples_per_channel: Some(320),
+                item_id: None,
+            },
+        )
+        .await?;
+    assert_eq!(realtime_audio, serde_json::json!({}));
+
     let realtime_stop = client.thread_realtime_stop("thread-1".to_string()).await?;
     assert_eq!(realtime_stop, serde_json::json!({}));
 
@@ -2035,6 +2063,30 @@ for line in sys.stdin:
         assert params == {
             "threadId": "thread-1",
             "outputModality": "audio",
+        }
+        response(message_id, {})
+    elif method == "thread/realtime/appendText":
+        assert params == {
+            "threadId": "thread-1",
+            "role": "developer",
+            "text": "Use concise handoffs.",
+        }
+        response(message_id, {})
+    elif method == "thread/realtime/appendSpeech":
+        assert params == {
+            "threadId": "thread-1",
+            "text": "Build complete.",
+        }
+        response(message_id, {})
+    elif method == "thread/realtime/appendAudio":
+        assert params == {
+            "threadId": "thread-1",
+            "audio": {
+                "data": "YWJjZA==",
+                "sampleRate": 24000,
+                "numChannels": 1,
+                "samplesPerChannel": 320,
+            },
         }
         response(message_id, {})
     elif method == "thread/realtime/stop":

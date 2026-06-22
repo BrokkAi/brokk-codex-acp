@@ -1036,6 +1036,28 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             ],
         ),
         (
+            "/realtime text developer Use concise handoffs.",
+            &[
+                "Appended Codex realtime text input.",
+                "- Role: developer",
+                "- Text: Use concise handoffs.",
+            ],
+        ),
+        (
+            "/realtime speech Build complete.",
+            &[
+                "Appended Codex realtime speech input.",
+                "- Text: Build complete.",
+            ],
+        ),
+        (
+            "/realtime audio YWJjZA== 24000 1 320",
+            &[
+                "Appended Codex realtime audio input.",
+                "- Audio: 8 encoded characters, 24000 Hz, 1 channels, and 320 samples per channel",
+            ],
+        ),
+        (
             "/realtime stop",
             &["Stopped Codex realtime session for this thread."],
         ),
@@ -2014,6 +2036,36 @@ for line in sys.stdin:
         assert params == {
             "threadId": "thread-serialized",
             "outputModality": "audio",
+        }
+        response(message_id, {
+            "result": {},
+        })
+    elif method == "thread/realtime/appendText":
+        assert params == {
+            "threadId": "thread-serialized",
+            "role": "developer",
+            "text": "Use concise handoffs.",
+        }
+        response(message_id, {
+            "result": {},
+        })
+    elif method == "thread/realtime/appendSpeech":
+        assert params == {
+            "threadId": "thread-serialized",
+            "text": "Build complete.",
+        }
+        response(message_id, {
+            "result": {},
+        })
+    elif method == "thread/realtime/appendAudio":
+        assert params == {
+            "threadId": "thread-serialized",
+            "audio": {
+                "data": "YWJjZA==",
+                "sampleRate": 24000,
+                "numChannels": 1,
+                "samplesPerChannel": 320,
+            },
         }
         response(message_id, {
             "result": {},

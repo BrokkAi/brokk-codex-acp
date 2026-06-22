@@ -274,12 +274,15 @@ The current repository has the first working ACP/app-server bridge in place:
   - `/features` is intercepted by the adapter, mapped to
     `experimentalFeature/list` for the current thread, and reflected as a short
     ACP agent-message summary.
-  - `/realtime start [text|audio]`, `/realtime stop`, and `/realtime voices`
-    are intercepted by the adapter, mapped to `thread/realtime/start`,
-    `thread/realtime/stop`, and `thread/realtime/listVoices`, and reflected as
-    short ACP agent-message summaries. Realtime output notifications continue
-    through the diagnostic projection because ACP v1 has no native realtime
-    audio stream.
+  - `/realtime` subcommands `start [text|audio]`, `text <role> <text>`,
+    `speech <text>`, `audio <base64> <sampleRate> <channels> [samples]`,
+    `stop`, and `voices` are intercepted by the adapter, mapped to
+    `thread/realtime/start`,
+    `thread/realtime/appendText`, `thread/realtime/appendSpeech`,
+    `thread/realtime/appendAudio`, `thread/realtime/stop`, and
+    `thread/realtime/listVoices`, and reflected as short ACP agent-message
+    summaries. Realtime output notifications continue through the diagnostic
+    projection because ACP v1 has no native realtime audio stream.
   - `/account` is intercepted by the adapter, mapped to `account/read`, and
     reflected as a short ACP agent-message summary.
   - `/login [chatgpt|device]`, `/login-cancel <loginId>`, and `/logout` are
@@ -1076,7 +1079,7 @@ These map cleanly to app-server APIs and should be supported early:
 | `/features` | `experimentalFeature/list` `[implemented as summary]` |
 | `/feature <name> enable|disable` | `experimentalFeature/enablement/set` `[implemented as summary]` |
 | `/rate-limits` | `account/rateLimits/read` `[implemented as summary]` |
-| `/realtime start [text\|audio]` / `/realtime stop` / `/realtime voices` | `thread/realtime/start`, `thread/realtime/stop`, or `thread/realtime/listVoices` `[implemented as summary]` |
+| `/realtime start [text\|audio]` / `/realtime text <role> <text>` / `/realtime speech <text>` / `/realtime audio <base64> <sampleRate> <channels> [samples]` / `/realtime stop` / `/realtime voices` | `thread/realtime/start`, `thread/realtime/appendText`, `thread/realtime/appendSpeech`, `thread/realtime/appendAudio`, `thread/realtime/stop`, or `thread/realtime/listVoices` `[implemented as summary]` |
 | `/remote-control [status\|enable\|disable]` | `remoteControl/status/read`, `remoteControl/enable`, or `remoteControl/disable` `[implemented as summary]` |
 | `/usage` | `account/usage/read` `[implemented as summary]` |
 | `/workspace-messages` | `account/workspaceMessages/read` `[implemented as summary]` |
@@ -1361,9 +1364,10 @@ model prompts:
   ACP agent-message summary.
 - [x] `/rate-limits` calls `account/rateLimits/read` and returns an ACP
   agent-message summary.
-- [x] `/realtime start [text|audio]`, `/realtime stop`, and
-  `/realtime voices` call `thread/realtime/start`, `thread/realtime/stop`, or
-  `thread/realtime/listVoices` and return ACP agent-message summaries.
+- [x] `/realtime` subcommands `start [text|audio]`, `text <role> <text>`,
+  `speech <text>`, `audio <base64> <sampleRate> <channels> [samples]`,
+  `stop`, and `voices` call the matching `thread/realtime/*` app-server APIs
+  and return ACP agent-message summaries.
 - [x] `/remote-control [status|enable|disable]` calls
   `remoteControl/status/read`, `remoteControl/enable`, or
   `remoteControl/disable` and returns an ACP agent-message summary.
@@ -1716,7 +1720,7 @@ Manual flows:
 - [x] Add account login/logout commands.
 - [x] Add experimental feature flag display.
 - [x] Add experimental feature enable/disable command.
-- [x] Add realtime start, stop, and voices commands.
+- [x] Add realtime start, text, speech, audio, stop, and voices commands.
 - [x] Add remote-control status, enable, and disable commands.
 - [x] Add initial hooks display.
 - [x] Add background terminal list/clean.

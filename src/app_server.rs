@@ -690,6 +690,47 @@ impl AppServerClient {
         .await
     }
 
+    pub async fn thread_realtime_append_text(
+        &mut self,
+        thread_id: String,
+        role: AppServerRealtimeTextRole,
+        text: String,
+    ) -> anyhow::Result<Value> {
+        self.request(
+            "thread/realtime/appendText",
+            ThreadRealtimeAppendTextParams {
+                thread_id,
+                text,
+                role,
+            },
+        )
+        .await
+    }
+
+    pub async fn thread_realtime_append_speech(
+        &mut self,
+        thread_id: String,
+        text: String,
+    ) -> anyhow::Result<Value> {
+        self.request(
+            "thread/realtime/appendSpeech",
+            ThreadRealtimeAppendSpeechParams { thread_id, text },
+        )
+        .await
+    }
+
+    pub async fn thread_realtime_append_audio(
+        &mut self,
+        thread_id: String,
+        audio: AppServerRealtimeAudioChunk,
+    ) -> anyhow::Result<Value> {
+        self.request(
+            "thread/realtime/appendAudio",
+            ThreadRealtimeAppendAudioParams { thread_id, audio },
+        )
+        .await
+    }
+
     pub async fn thread_realtime_stop(&mut self, thread_id: String) -> anyhow::Result<Value> {
         self.request("thread/realtime/stop", ThreadScopedParams { thread_id })
             .await
@@ -2298,11 +2339,53 @@ pub enum AppServerRealtimeOutputModality {
     Audio,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AppServerRealtimeTextRole {
+    User,
+    Developer,
+    Assistant,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppServerRealtimeAudioChunk {
+    pub data: String,
+    pub sample_rate: u32,
+    pub num_channels: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub samples_per_channel: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_id: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ThreadRealtimeStartParams {
     thread_id: String,
     output_modality: AppServerRealtimeOutputModality,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadRealtimeAppendTextParams {
+    thread_id: String,
+    text: String,
+    role: AppServerRealtimeTextRole,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadRealtimeAppendSpeechParams {
+    thread_id: String,
+    text: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadRealtimeAppendAudioParams {
+    thread_id: String,
+    audio: AppServerRealtimeAudioChunk,
 }
 
 #[derive(Debug, Serialize)]
