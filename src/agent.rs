@@ -81,6 +81,7 @@ const HOOKS_COMMAND: &str = "hooks";
 const INIT_COMMAND: &str = "init";
 const KILL_COMMAND: &str = "kill";
 const MCP_COMMAND: &str = "mcp";
+const MCP_RESOURCE_COMMAND: &str = "mcp-resource";
 const MODEL_COMMAND: &str = "model";
 const NEW_COMMAND: &str = "new";
 const PERMISSIONS_COMMAND: &str = "permissions";
@@ -1269,6 +1270,21 @@ impl CodexAcpAgent {
                     .await
                     .map_err(acp_internal_error)?;
                 publish_catalog_message(session_id, "MCP", catalog_summary("MCP", &response), cx)
+            }
+            BuiltinCommand::McpResource { server, uri } => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .mcp_server_resource_read(thread_id.to_owned(), server.clone(), uri.clone())
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(
+                    session_id,
+                    "MCP resource",
+                    mcp_resource_summary(&server, &uri, &response),
+                    cx,
+                )
             }
             BuiltinCommand::Model => {
                 let config_options = self.refresh_current_config_options(session_id).await;
@@ -2578,6 +2594,10 @@ enum BuiltinCommand {
     },
     Init,
     Mcp,
+    McpResource {
+        server: String,
+        uri: String,
+    },
     Model,
     New,
     Permissions,
@@ -2629,6 +2649,7 @@ enum CommandHandler {
     Kill,
     Init,
     Mcp,
+    McpResource,
     Model,
     New,
     Permissions,
@@ -2728,6 +2749,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         input_hint: None,
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::Mcp,
+    },
+    BuiltinCommandSpec {
+        name: MCP_RESOURCE_COMMAND,
+        aliases: &[],
+        description: "Read a configured MCP server resource",
+        input_hint: Some("server uri"),
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::McpResource,
     },
     BuiltinCommandSpec {
         name: MODEL_COMMAND,
@@ -2917,6 +2946,7 @@ fn parse_command_from_spec(
         }
         CommandHandler::Init => parse_no_argument_command(rest, spec.name, BuiltinCommand::Init),
         CommandHandler::Mcp => parse_no_argument_command(rest, spec.name, BuiltinCommand::Mcp),
+        CommandHandler::McpResource => parse_mcp_resource_command(rest),
         CommandHandler::Model => parse_no_argument_command(rest, spec.name, BuiltinCommand::Model),
         CommandHandler::New => parse_no_argument_command(rest, spec.name, BuiltinCommand::New),
         CommandHandler::Permissions => {
@@ -3014,6 +3044,25 @@ fn parse_plugin_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
     Ok(Some(BuiltinCommand::Plugin {
         marketplace_path: marketplace_path.to_owned(),
         plugin_name: plugin_name.to_owned(),
+    }))
+}
+
+fn parse_mcp_resource_command(rest: &str) -> Result<Option<BuiltinCommand>, Error> {
+    let Some((server, uri)) = split_first_token(rest) else {
+        return Err(
+            Error::invalid_params().data("/mcp-resource requires a server and resource uri")
+        );
+    };
+    let uri = uri.trim();
+    if uri.is_empty() {
+        return Err(
+            Error::invalid_params().data("/mcp-resource requires a server and resource uri")
+        );
+    }
+
+    Ok(Some(BuiltinCommand::McpResource {
+        server: server.to_owned(),
+        uri: uri.to_owned(),
     }))
 }
 
@@ -4859,6 +4908,56 @@ fn append_plugin_entries(lines: &mut Vec<String>, title: &str, value: Option<&se
     }
 }
 
+fn mcp_resource_summary(server: &str, uri: &str, value: &serde_json::Value) -> String {
+    let mut lines = vec![
+        "MCP resource".to_owned(),
+        format!("- Server: {server}"),
+        format!("- URI: {uri}"),
+    ];
+    let contents = value.get("contents").and_then(serde_json::Value::as_array);
+    let Some(contents) = contents else {
+        lines.push(format!("- Response: {}", compact_json(value)));
+        return lines.join("\n");
+    };
+    if contents.is_empty() {
+        lines.push("- Contents: no entries found.".to_owned());
+        return lines.join("\n");
+    }
+
+    lines.push(format!("- Contents: {} entries", contents.len()));
+    for content in contents.iter().take(3) {
+        if let Some(text) = content.get("text").and_then(serde_json::Value::as_str) {
+            lines.push(format!(
+                "- Text: {}",
+                truncate_for_summary(text.replace('\n', "\\n").as_str(), 240)
+            ));
+        } else if let Some(blob) = content.get("blob").and_then(serde_json::Value::as_str) {
+            lines.push(format!("- Blob: {} encoded characters", blob.len()));
+        } else {
+            lines.push(format!("- {}", compact_json(content)));
+        }
+    }
+    if contents.len() > 3 {
+        lines.push(format!("- ... {} more", contents.len() - 3));
+    }
+    lines.join("\n")
+}
+
+fn truncate_for_summary(text: &str, max_chars: usize) -> String {
+    let mut chars = text.chars();
+    let mut truncated = String::new();
+    for _ in 0..max_chars {
+        let Some(ch) = chars.next() else {
+            return text.to_owned();
+        };
+        truncated.push(ch);
+    }
+    if chars.next().is_some() {
+        truncated.push_str("...");
+    }
+    truncated
+}
+
 fn catalog_entries(value: &serde_json::Value) -> Vec<&serde_json::Value> {
     value
         .get("data")
@@ -5240,6 +5339,7 @@ mod tests {
             "/hooks",
             "/init",
             "/mcp",
+            "/mcp-resource filesystem file:///repo/README.md",
             "/model",
             "/new",
             "/permissions",
@@ -5260,6 +5360,11 @@ mod tests {
                 "/hooks" => assert!(matches!(command, BuiltinCommand::Hooks)),
                 "/init" => assert!(matches!(command, BuiltinCommand::Init)),
                 "/mcp" => assert!(matches!(command, BuiltinCommand::Mcp)),
+                "/mcp-resource filesystem file:///repo/README.md" => assert!(matches!(
+                    command,
+                    BuiltinCommand::McpResource { server, uri }
+                        if server == "filesystem" && uri == "file:///repo/README.md"
+                )),
                 "/model" => assert!(matches!(command, BuiltinCommand::Model)),
                 "/new" => assert!(matches!(command, BuiltinCommand::New)),
                 "/permissions" => assert!(matches!(command, BuiltinCommand::Permissions)),
@@ -5521,6 +5626,17 @@ mod tests {
     }
 
     #[test]
+    fn parse_builtin_command_rejects_invalid_mcp_resource_reference() {
+        for text in ["/mcp-resource", "/mcp-resource filesystem"] {
+            let error = parse_builtin_command(text).unwrap_err();
+            assert_eq!(
+                error.data.as_ref().and_then(serde_json::Value::as_str),
+                Some("/mcp-resource requires a server and resource uri")
+            );
+        }
+    }
+
+    #[test]
     fn parse_builtin_command_rejects_empty_skill_roots() {
         let error = parse_builtin_command("/skill-roots").unwrap_err();
 
@@ -5585,6 +5701,7 @@ mod tests {
                 "kill",
                 "init",
                 "mcp",
+                "mcp-resource",
                 "model",
                 "new",
                 "permissions",
@@ -5647,6 +5764,28 @@ mod tests {
         assert_eq!(
             summary,
             "Plugin: github\nMarketplace: openai\nDescription: GitHub integration\nSkills: 1 entries\n- triage\nMCP servers: 1 entries\n- github"
+        );
+    }
+
+    #[test]
+    fn mcp_resource_summary_includes_text_contents() {
+        let summary = mcp_resource_summary(
+            "filesystem",
+            "file:///repo/README.md",
+            &serde_json::json!({
+                "contents": [
+                    {
+                        "uri": "file:///repo/README.md",
+                        "mimeType": "text/markdown",
+                        "text": "README contents"
+                    }
+                ]
+            }),
+        );
+
+        assert_eq!(
+            summary,
+            "MCP resource\n- Server: filesystem\n- URI: file:///repo/README.md\n- Contents: 1 entries\n- Text: README contents"
         );
     }
 

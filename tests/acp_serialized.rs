@@ -564,6 +564,15 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             ],
         ),
         ("/mcp", &["MCP: 1 entries", "- filesystem"]),
+        (
+            "/mcp-resource filesystem file:///repo/README.md",
+            &[
+                "MCP resource",
+                "- Server: filesystem",
+                "- URI: file:///repo/README.md",
+                "- Text: README contents",
+            ],
+        ),
         ("/hooks", &["Hooks: 1 entries", "- /repo"]),
         ("/ps", &["Background terminals: 1 entries", "terminal-1"]),
         (
@@ -1150,6 +1159,23 @@ for line in sys.stdin:
                         "tools": [
                             {"name": "read_file"},
                         ],
+                    },
+                ],
+            },
+        })
+    elif method == "mcpServer/resource/read":
+        assert params == {
+            "threadId": "thread-serialized",
+            "server": "filesystem",
+            "uri": "file:///repo/README.md",
+        }
+        response(message_id, {
+            "result": {
+                "contents": [
+                    {
+                        "uri": "file:///repo/README.md",
+                        "mimeType": "text/markdown",
+                        "text": "README contents",
                     },
                 ],
             },

@@ -956,8 +956,10 @@ These map cleanly to app-server APIs and should be supported early:
 | `/model` | `model/list` plus ACP config-option refresh `[implemented]` |
 | `/permissions` | `permissionProfile/list` plus ACP config-option refresh `[implemented]` |
 | `/mcp` | `mcpServerStatus/list` `[implemented as summary]` |
+| `/mcp-resource <server> <uri>` | `mcpServer/resource/read` `[implemented as summary]` |
 | `/apps` | `app/list` `[implemented as summary]` |
 | `/plugins` | `plugin/list` and `plugin/installed` `[implemented as summary]` |
+| `/plugin <pluginName@marketplacePath>` | `plugin/read` `[implemented as summary]` |
 | `/hooks` | `hooks/list` `[implemented as summary]` |
 | `/skill-roots <paths...>` | `skills/extraRoots/set` plus `skills/list(forceReload)` `[implemented as process-local summary]` |
 | `/ps` | `thread/backgroundTerminals/list` `[implemented as summary]` |
@@ -1181,6 +1183,8 @@ model prompts:
   ACP agent-message summary.
 - [x] `/mcp` calls `mcpServerStatus/list` and returns an ACP agent-message
   summary.
+- [x] `/mcp-resource <server> <uri>` calls `mcpServer/resource/read` for the
+  current thread and returns an ACP agent-message summary.
 - [x] `/hooks` calls `hooks/list` and returns an ACP agent-message summary.
 - [x] `/status` calls `thread/loaded/list` and returns an ACP agent-message
   summary.
