@@ -824,6 +824,16 @@ async fn serialized_backend_commands_publish_catalog_messages() -> anyhow::Resul
             ],
         ),
         (
+            "/usage",
+            &[
+                "Usage: account token activity",
+                "- Lifetime tokens: 12345",
+                "- Peak daily tokens: 900",
+                "- Daily buckets: 2 entries",
+                "- 2026-06-22: 900 tokens",
+            ],
+        ),
+        (
             "/features",
             &[
                 "Features: 2 entries",
@@ -1518,6 +1528,29 @@ for line in sys.stdin:
                         "usedPercent": 7,
                     },
                 },
+            },
+        })
+    elif method == "account/usage/read":
+        assert params == {}
+        response(message_id, {
+            "result": {
+                "summary": {
+                    "lifetimeTokens": 12345,
+                    "peakDailyTokens": 900,
+                    "longestRunningTurnSec": 360,
+                    "currentStreakDays": 3,
+                    "longestStreakDays": 7,
+                },
+                "dailyUsageBuckets": [
+                    {
+                        "startDate": "2026-06-21",
+                        "tokens": 700,
+                    },
+                    {
+                        "startDate": "2026-06-22",
+                        "tokens": 900,
+                    },
+                ],
             },
         })
     elif method == "plugin/list":

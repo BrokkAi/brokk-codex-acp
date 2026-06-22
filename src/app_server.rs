@@ -405,6 +405,10 @@ impl AppServerClient {
             .await
     }
 
+    pub async fn account_usage_read(&mut self) -> anyhow::Result<Value> {
+        self.request("account/usage/read", EmptyParams {}).await
+    }
+
     pub async fn experimental_feature_list(
         &mut self,
         thread_id: String,

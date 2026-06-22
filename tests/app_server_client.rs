@@ -785,6 +785,10 @@ async fn app_server_client_maps_thread_and_prompt_methods() -> anyhow::Result<()
         "2026-06-22T12:00:00Z"
     );
 
+    let usage = client.account_usage_read().await?;
+    assert_eq!(usage["summary"]["lifetimeTokens"], 12345);
+    assert_eq!(usage["dailyUsageBuckets"][0]["tokens"], 700);
+
     let plugins = client.plugin_list().await?;
     assert_eq!(plugins["data"][0]["name"], "github");
 
@@ -1667,6 +1671,27 @@ for line in sys.stdin:
                     "usedPercent": 7,
                 },
             },
+        })
+    elif method == "account/usage/read":
+        assert params == {}
+        response(message_id, {
+            "summary": {
+                "lifetimeTokens": 12345,
+                "peakDailyTokens": 900,
+                "longestRunningTurnSec": 360,
+                "currentStreakDays": 3,
+                "longestStreakDays": 7,
+            },
+            "dailyUsageBuckets": [
+                {
+                    "startDate": "2026-06-21",
+                    "tokens": 700,
+                },
+                {
+                    "startDate": "2026-06-22",
+                    "tokens": 900,
+                },
+            ],
         })
     elif method == "plugin/list":
         assert params == {}

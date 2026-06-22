@@ -119,6 +119,7 @@ const SKILL_ROOTS_COMMAND: &str = "skill-roots";
 const STATUS_COMMAND: &str = "status";
 const STOP_COMMAND: &str = "stop";
 const UNARCHIVE_COMMAND: &str = "unarchive";
+const USAGE_COMMAND: &str = "usage";
 type CancelSignals = Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>;
 const HISTORY_REPLAY_PAGE_SIZE: u32 = 50;
 const APPROVAL_POLICY_OPTIONS: [(&str, &str, &str); 4] = [
@@ -1791,6 +1792,16 @@ impl CodexAcpAgent {
                     .map_err(acp_internal_error)?;
                 Ok(PromptResponse::new(StopReason::EndTurn))
             }
+            BuiltinCommand::Usage => {
+                let response = self
+                    .app_server
+                    .lock()
+                    .await
+                    .account_usage_read()
+                    .await
+                    .map_err(acp_internal_error)?;
+                publish_catalog_message(session_id, "Usage", account_usage_summary(&response), cx)
+            }
             BuiltinCommand::Resume { target } => {
                 let cwd = self
                     .session_cwd(session_id)
@@ -3094,6 +3105,7 @@ enum BuiltinCommand {
     Status,
     Stop,
     Unarchive,
+    Usage,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -3153,6 +3165,7 @@ enum CommandHandler {
     Status,
     Stop,
     Unarchive,
+    Usage,
 }
 
 #[derive(Debug)]
@@ -3454,6 +3467,14 @@ const BUILTIN_COMMAND_SPECS: &[BuiltinCommandSpec] = &[
         availability: CommandAvailability::RequiresSession,
         handler: CommandHandler::Unarchive,
     },
+    BuiltinCommandSpec {
+        name: USAGE_COMMAND,
+        aliases: &[],
+        description: "Show Codex account usage",
+        input_hint: None,
+        availability: CommandAvailability::RequiresSession,
+        handler: CommandHandler::Usage,
+    },
 ];
 
 fn parse_builtin_command(text: &str) -> Result<Option<BuiltinCommand>, Error> {
@@ -3584,6 +3605,7 @@ fn parse_command_from_spec(
         CommandHandler::Unarchive => {
             parse_no_argument_command(rest, spec.name, BuiltinCommand::Unarchive)
         }
+        CommandHandler::Usage => parse_no_argument_command(rest, spec.name, BuiltinCommand::Usage),
     }
 }
 
@@ -5828,6 +5850,52 @@ fn rate_limits_summary(value: &serde_json::Value) -> String {
     lines.join("\n")
 }
 
+fn account_usage_summary(value: &serde_json::Value) -> String {
+    let summary = value.get("summary").unwrap_or(value);
+    let mut lines = vec!["Usage: account token activity".to_owned()];
+
+    for (label, key) in [
+        ("Lifetime tokens", "lifetimeTokens"),
+        ("Peak daily tokens", "peakDailyTokens"),
+        ("Longest running turn seconds", "longestRunningTurnSec"),
+        ("Current streak days", "currentStreakDays"),
+        ("Longest streak days", "longestStreakDays"),
+    ] {
+        if let Some(field) = summary.get(key)
+            && !field.is_null()
+        {
+            lines.push(format!("- {label}: {}", compact_json(field)));
+        }
+    }
+
+    if let Some(buckets) = value
+        .get("dailyUsageBuckets")
+        .and_then(serde_json::Value::as_array)
+    {
+        lines.push(format!("- Daily buckets: {} entries", buckets.len()));
+        for bucket in buckets.iter().take(5) {
+            let start_date = bucket
+                .get("startDate")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("<unknown>");
+            if let Some(tokens) = bucket.get("tokens") {
+                lines.push(format!("- {start_date}: {} tokens", compact_json(tokens)));
+            } else {
+                lines.push(format!("- {}", compact_json(bucket)));
+            }
+        }
+        if buckets.len() > 5 {
+            lines.push(format!("- ... {} more", buckets.len() - 5));
+        }
+    }
+
+    if lines.len() == 1 && !value.is_null() {
+        lines.push(format!("- Response: {}", compact_json(value)));
+    }
+
+    lines.join("\n")
+}
+
 fn experimental_features_summary(
     response: &crate::app_server::ExperimentalFeatureListResponse,
 ) -> String {
@@ -6578,6 +6646,7 @@ mod tests {
             "/status",
             "/stop",
             "/unarchive",
+            "/usage",
         ] {
             let command = parse_builtin_command(text).unwrap().unwrap();
             match text {
@@ -6673,6 +6742,7 @@ mod tests {
                 "/status" => assert!(matches!(command, BuiltinCommand::Status)),
                 "/stop" => assert!(matches!(command, BuiltinCommand::Stop)),
                 "/unarchive" => assert!(matches!(command, BuiltinCommand::Unarchive)),
+                "/usage" => assert!(matches!(command, BuiltinCommand::Usage)),
                 _ => unreachable!(),
             }
         }
@@ -7137,6 +7207,7 @@ mod tests {
                 "status",
                 "stop",
                 "unarchive",
+                "usage",
                 "skill:skill-creator"
             ]
         );
@@ -7182,6 +7253,34 @@ mod tests {
         assert_eq!(
             summary,
             "Rate limits: current account\n- Primary: {\"usedPercent\":42,\"resetsAt\":\"2026-06-22T12:00:00Z\"}\n- Secondary: {\"usedPercent\":7}"
+        );
+    }
+
+    #[test]
+    fn account_usage_summary_lists_summary_and_daily_buckets() {
+        let summary = account_usage_summary(&serde_json::json!({
+            "summary": {
+                "lifetimeTokens": 12345,
+                "peakDailyTokens": 900,
+                "longestRunningTurnSec": 360,
+                "currentStreakDays": 3,
+                "longestStreakDays": 7
+            },
+            "dailyUsageBuckets": [
+                {
+                    "startDate": "2026-06-21",
+                    "tokens": 700
+                },
+                {
+                    "startDate": "2026-06-22",
+                    "tokens": 900
+                }
+            ]
+        }));
+
+        assert_eq!(
+            summary,
+            "Usage: account token activity\n- Lifetime tokens: 12345\n- Peak daily tokens: 900\n- Longest running turn seconds: 360\n- Current streak days: 3\n- Longest streak days: 7\n- Daily buckets: 2 entries\n- 2026-06-21: 700 tokens\n- 2026-06-22: 900 tokens"
         );
     }
 
