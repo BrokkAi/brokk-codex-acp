@@ -902,13 +902,18 @@ For normal user input, map to:
 turn/start
 ```
 
-For in-flight steering, optionally map to:
+App-server also exposes:
 
 ```text
 turn/steer
 ```
 
-The adapter should choose `turn/steer` only when:
+The adapter intentionally does not route ordinary ACP `session/prompt` requests
+to `turn/steer` today. ACP v1 has no explicit "steer this active turn"
+request shape, and the adapter currently rejects concurrent prompts for a
+session so clients do not accidentally append text into a running turn.
+
+Add `turn/steer` only when all of these are true:
 
 - the target app-server thread has an active steerable turn
 - the ACP client supports steering semantics
@@ -1158,6 +1163,27 @@ has a real mapping:
 | `/ide` | Requires client-specific editor context contract. |
 | `/pets` | TUI-only. |
 | debug commands | Not part of stable user-facing ACP behavior. |
+
+### Deferred App-Server APIs
+
+The upstream app-server exposes additional APIs that are intentionally not
+projected as ACP commands yet. They are either low-level host control surfaces,
+need a client/product UX contract, or duplicate app-server-owned behavior that
+ACP clients should not reimplement.
+
+| App-server API | Adapter status |
+| --- | --- |
+| `turn/steer` | Deferred until ACP has explicit active-turn steering semantics or a client extension names that behavior. |
+| `thread/inject_items` | Not exposed; mutates model-visible history without a user turn and has no stable ACP v1 equivalent. |
+| `thread/metadata/update` | Not exposed; currently limited to persisted metadata patches such as git info, which ACP clients do not provide here. |
+| `command/exec*` | Not exposed as generic commands; Codex-owned command execution already streams through turn item events, preserving approval policy. |
+| `process/*` | Not exposed; raw host process control is outside ACP agent behavior and would bypass Codex turn semantics. |
+| `fs/*` | Not exposed; direct host filesystem mutation should go through Codex tools/turns or MCP resources, not ad hoc ACP slash commands. |
+| `fs/watch` / `fs/unwatch` | Not exposed; ACP v1 has no watch subscription projection used by this adapter. |
+| `environment/add` | Not exposed; remote execution environment selection needs a separate client capability and trust contract. |
+| `remoteControl/pairing/*` | Not exposed; pairing is product UX and account-management flow beyond status/enable/disable. |
+| `remoteControl/client/*` | Not exposed; controller-device account management needs product-specific confirmation and selection UI. |
+| `feedback/upload` | Not exposed; requires product-specific feedback classification, log attachment, and privacy UX. |
 
 ## Skills Support
 
@@ -1709,12 +1735,11 @@ Manual flows:
 - Should the adapter use the installed `codex` binary or link app-server crates
   directly in-process?
 
-## Next Concrete PRs
+## Deferred Future Work
 
-Keep PRs small enough to review against fake app-server tests.
-
-1. ACP terminal handoff, only after app-server exposes a command event that asks
-   the adapter/client to own execution:
-   - call `terminal/create` when the ACP client advertises terminal support
-   - embed the returned terminal id in the related tool call before releasing it
-   - keep app-server-owned command execution on the existing command-event path
+- ACP terminal handoff remains deferred until app-server exposes a command event
+  that asks the adapter or client to own execution. Until then, command
+  execution stays app-server-owned and is projected through command item events,
+  which preserves Codex approval and sandbox policy.
+- `turn/steer` remains deferred until an ACP client can express active-turn
+  steering explicitly instead of sending a normal `session/prompt`.
