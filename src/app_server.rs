@@ -103,6 +103,7 @@ impl AppServerClient {
             },
             capabilities: ClientCapabilities {
                 experimental_api: true,
+                mcp_server_openai_form_elicitation: true,
             },
         };
 
@@ -1280,6 +1281,7 @@ struct ClientInfo {
 #[serde(rename_all = "camelCase")]
 struct ClientCapabilities {
     experimental_api: bool,
+    mcp_server_openai_form_elicitation: bool,
 }
 
 #[derive(Debug, Deserialize)]

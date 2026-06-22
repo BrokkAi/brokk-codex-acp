@@ -1150,6 +1150,8 @@ for line in sys.stdin:
     message_id = message.get("id")
 
     if method == "initialize":
+        assert params["capabilities"]["experimentalApi"] is True
+        assert params["capabilities"]["mcpServerOpenaiFormElicitation"] is True
         response(message_id, {
             "userAgent": "fake-codex/0.0.0",
             "codexHome": "/tmp/fake-codex-home",

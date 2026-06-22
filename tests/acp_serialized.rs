@@ -974,6 +974,8 @@ for line in sys.stdin:
     message_id = message["id"]
     params = message.get("params", {})
     if method == "initialize":
+        assert params["capabilities"]["experimentalApi"] is True
+        assert params["capabilities"]["mcpServerOpenaiFormElicitation"] is True
         response(message_id, {
             "result": {
                 "userAgent": "serialized-rename-test",

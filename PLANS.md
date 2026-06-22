@@ -92,7 +92,8 @@ Then perform the app-server handshake:
       "version": "0.1.0"
     },
     "capabilities": {
-      "experimentalApi": true
+      "experimentalApi": true,
+      "mcpServerOpenaiFormElicitation": true
     }
   }
 }
