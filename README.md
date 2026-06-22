@@ -41,9 +41,10 @@ The project currently includes:
   persisted under Codex home.
 - Initial prompt streaming from Codex `item/agentMessage/delta` notifications to
   ACP agent message chunks.
-- Text, resource-link, and image prompt blocks routed to Codex app-server
-  `turn/start` inputs. Audio and embedded resource prompt blocks remain
-  unsupported until app-server exposes matching user-input variants.
+- Text, resource-link, embedded resource, and image prompt blocks routed to
+  Codex app-server `turn/start` inputs. Embedded resources are passed through
+  app-server `additionalContext`; audio prompt blocks remain unsupported until
+  app-server exposes a matching user-input variant.
 - Initial turn event projection for reasoning chunks, command/file/tool item
   lifecycles, command output, plan updates, turn diffs, and usage updates.
 - Initial skills discovery through app-server `skills/list`, projected as ACP

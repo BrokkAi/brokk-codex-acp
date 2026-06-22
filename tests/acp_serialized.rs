@@ -318,6 +318,36 @@ async fn serialized_image_prompt_sends_app_server_image_input() -> anyhow::Resul
 }
 
 #[tokio::test]
+async fn serialized_embedded_resource_prompt_sends_app_server_additional_context()
+-> anyhow::Result<()> {
+    let (prompt, notifications) = run_serialized_prompt_blocks(json!([
+        {
+            "type": "text",
+            "text": "summarize",
+        },
+        {
+            "type": "resource",
+            "resource": {
+                "uri": "file:///notes.md",
+                "mimeType": "text/markdown",
+                "text": "Project notes",
+            },
+        },
+    ]))
+    .await?;
+
+    assert_eq!(prompt["result"]["stopReason"], "end_turn");
+    assert!(
+        agent_message_texts(&notifications)
+            .iter()
+            .any(|text| text == "resource accepted"),
+        "notifications: {notifications:#?}"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn serialized_mcp_elicitation_uses_acp_elicitation_create() -> anyhow::Result<()> {
     let fake_codex = fake_codex_app_server(SERIALIZED_RENAME_CODEX_APP_SERVER)?;
     let mut app_server =
@@ -2239,6 +2269,34 @@ for line in sys.stdin:
                 "params": {
                     "threadId": "thread-serialized",
                     "turn": {"id": "turn-serialized-image", "status": "completed"},
+                },
+            })
+        elif params["input"] == [{"type": "text", "text": "summarize\n@file:///notes.md"}]:
+            assert params["additionalContext"] == {
+                "file:///notes.md": {
+                    "value": "MIME type: text/markdown\n\nProject notes",
+                    "kind": "untrusted",
+                },
+            }
+            response(message_id, {
+                "result": {
+                    "turn": {"id": "turn-serialized-resource", "status": "running"},
+                },
+            })
+            send({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turnId": "turn-serialized-resource",
+                    "itemId": "item-serialized-resource",
+                    "delta": "resource accepted",
+                },
+            })
+            send({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-serialized",
+                    "turn": {"id": "turn-serialized-resource", "status": "completed"},
                 },
             })
         elif params["input"] == [{"type": "text", "text": "close me"}]:

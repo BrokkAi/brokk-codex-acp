@@ -582,13 +582,40 @@ impl AppServerClient {
         OnApproval: FnMut(AppServerApprovalRequest) -> ApprovalFuture,
         ApprovalFuture: Future<Output = anyhow::Result<AppServerApprovalDecision>>,
     {
+        self.turn_start_until_complete_with_context(
+            thread_id,
+            AppServerTurnStartInput {
+                input,
+                additional_context: None,
+            },
+            cancel_rx,
+            on_event,
+            on_approval,
+        )
+        .await
+    }
+
+    pub async fn turn_start_until_complete_with_context<OnEvent, OnApproval, ApprovalFuture>(
+        &mut self,
+        thread_id: String,
+        turn_input: AppServerTurnStartInput,
+        cancel_rx: Option<oneshot::Receiver<()>>,
+        on_event: OnEvent,
+        on_approval: OnApproval,
+    ) -> anyhow::Result<AppServerPromptCompletion>
+    where
+        OnEvent: FnMut(AppServerPromptEvent) -> anyhow::Result<()>,
+        OnApproval: FnMut(AppServerApprovalRequest) -> ApprovalFuture,
+        ApprovalFuture: Future<Output = anyhow::Result<AppServerApprovalDecision>>,
+    {
         let messages_rx = self.subscribe();
         let response: TurnStartResponse = self
             .request(
                 "turn/start",
                 TurnStartParams {
                     thread_id: thread_id.clone(),
-                    input,
+                    input: turn_input.input,
+                    additional_context: turn_input.additional_context,
                 },
             )
             .await?;
@@ -616,7 +643,7 @@ impl AppServerClient {
     >(
         &mut self,
         thread_id: String,
-        input: Vec<AppServerTurnInput>,
+        turn_input: AppServerTurnStartInput,
         cancel_rx: Option<oneshot::Receiver<()>>,
         on_event: OnEvent,
         on_approval: OnApproval,
@@ -635,7 +662,8 @@ impl AppServerClient {
                 "turn/start",
                 TurnStartParams {
                     thread_id: thread_id.clone(),
-                    input,
+                    input: turn_input.input,
+                    additional_context: turn_input.additional_context,
                 },
             )
             .await?;
@@ -2071,6 +2099,8 @@ fn default_true() -> bool {
 struct TurnStartParams {
     thread_id: String,
     input: Vec<AppServerTurnInput>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    additional_context: Option<AppServerAdditionalContext>,
 }
 
 #[derive(Debug, Serialize)]
@@ -2117,6 +2147,28 @@ pub enum AppServerTurnInput {
     Text { text: String },
     Image { url: String },
     Skill { name: String, path: String },
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct AppServerTurnStartInput {
+    pub input: Vec<AppServerTurnInput>,
+    pub additional_context: Option<AppServerAdditionalContext>,
+}
+
+pub type AppServerAdditionalContext = HashMap<String, AppServerAdditionalContextEntry>;
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppServerAdditionalContextEntry {
+    pub value: String,
+    pub kind: AppServerAdditionalContextKind,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AppServerAdditionalContextKind {
+    Untrusted,
+    Application,
 }
 
 #[derive(Debug, Deserialize)]

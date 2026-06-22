@@ -10,20 +10,21 @@ use agent_client_protocol::schema::{
     AvailableCommandsUpdate, CancelNotification, CloseSessionRequest, CloseSessionResponse,
     ConfigOptionUpdate, ContentBlock, ContentChunk, CreateElicitationRequest, DeleteSessionRequest,
     DeleteSessionResponse, Diff, ElicitationAction, ElicitationContentValue, ElicitationFormMode,
-    ElicitationMode, ElicitationSchema, ElicitationSessionScope, ElicitationUrlMode, EnumOption,
-    ExtRequest, ForkSessionRequest, ForkSessionResponse, InitializeRequest, InitializeResponse,
-    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse, MessageId,
-    NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionId,
-    PermissionOptionKind, Plan, PlanEntry, PlanEntryPriority, PlanEntryStatus, PromptCapabilities,
-    PromptRequest, PromptResponse, ProtocolVersion, RequestPermissionOutcome,
-    RequestPermissionRequest, ResumeSessionRequest, ResumeSessionResponse,
-    SessionAdditionalDirectoriesCapabilities, SessionCapabilities, SessionCloseCapabilities,
-    SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
-    SessionDeleteCapabilities, SessionForkCapabilities, SessionId, SessionInfo, SessionInfoUpdate,
-    SessionListCapabilities, SessionNotification, SessionResumeCapabilities, SessionUpdate,
-    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, StopReason,
-    StringPropertySchema, TextContent, ToolCall, ToolCallContent, ToolCallId, ToolCallStatus,
-    ToolCallUpdate, ToolCallUpdateFields, ToolKind, UnstructuredCommandInput, UsageUpdate,
+    ElicitationMode, ElicitationSchema, ElicitationSessionScope, ElicitationUrlMode,
+    EmbeddedResourceResource, EnumOption, ExtRequest, ForkSessionRequest, ForkSessionResponse,
+    InitializeRequest, InitializeResponse, ListSessionsRequest, ListSessionsResponse,
+    LoadSessionRequest, LoadSessionResponse, MessageId, NewSessionRequest, NewSessionResponse,
+    PermissionOption, PermissionOptionId, PermissionOptionKind, Plan, PlanEntry, PlanEntryPriority,
+    PlanEntryStatus, PromptCapabilities, PromptRequest, PromptResponse, ProtocolVersion,
+    RequestPermissionOutcome, RequestPermissionRequest, ResumeSessionRequest,
+    ResumeSessionResponse, SessionAdditionalDirectoriesCapabilities, SessionCapabilities,
+    SessionCloseCapabilities, SessionConfigOption, SessionConfigOptionCategory,
+    SessionConfigSelectOption, SessionDeleteCapabilities, SessionForkCapabilities, SessionId,
+    SessionInfo, SessionInfoUpdate, SessionListCapabilities, SessionNotification,
+    SessionResumeCapabilities, SessionUpdate, SetSessionConfigOptionRequest,
+    SetSessionConfigOptionResponse, StopReason, StringPropertySchema, TextContent, ToolCall,
+    ToolCallContent, ToolCallId, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind,
+    UnstructuredCommandInput, UsageUpdate,
 };
 use agent_client_protocol::{
     Agent, ByteStreams, Client, ConnectTo, ConnectionTo, Error, on_receive_notification,
@@ -37,7 +38,8 @@ use tracing::{debug, trace, warn};
 
 use crate::app_server::{
     AppServerAccountLoginCompletedUpdate, AppServerAccountRateLimitsUpdatedUpdate,
-    AppServerAccountUpdatedUpdate, AppServerActivePermissionProfile, AppServerAgentMessageDelta,
+    AppServerAccountUpdatedUpdate, AppServerActivePermissionProfile, AppServerAdditionalContext,
+    AppServerAdditionalContextEntry, AppServerAdditionalContextKind, AppServerAgentMessageDelta,
     AppServerApprovalChoice, AppServerApprovalDecision, AppServerApprovalOption,
     AppServerApprovalRequest, AppServerApprovalResponseKind, AppServerClient,
     AppServerCollaborationMode, AppServerCollaborationModeMask, AppServerCollaborationModeSettings,
@@ -49,10 +51,10 @@ use crate::app_server::{
     AppServerPlanStatus, AppServerPromptCompletion, AppServerPromptEvent,
     AppServerRealtimeAudioDelta, AppServerRealtimeUpdate, AppServerSkill, AppServerThread,
     AppServerThreadSettingsUpdate, AppServerToolKind, AppServerToolStatus, AppServerTurnInput,
-    AppServerTurnModerationMetadataUpdate, AppServerUserInputQuestion, AppServerUserInputRequest,
-    AppServerWarningUpdate, AppServerWindowsSandboxSetupUpdate, ThreadSettingsUpdateParams,
-    decode_account_login_completed, decode_account_rate_limits_updated, decode_account_updated,
-    decode_config_warning, decode_error, decode_fuzzy_file_search_update,
+    AppServerTurnModerationMetadataUpdate, AppServerTurnStartInput, AppServerUserInputQuestion,
+    AppServerUserInputRequest, AppServerWarningUpdate, AppServerWindowsSandboxSetupUpdate,
+    ThreadSettingsUpdateParams, decode_account_login_completed, decode_account_rate_limits_updated,
+    decode_account_updated, decode_config_warning, decode_error, decode_fuzzy_file_search_update,
     decode_mcp_server_oauth_login_completed, decode_mcp_server_startup_status_updated,
     decode_model_rerouted, decode_model_verification, decode_realtime_update,
     decode_thread_archived, decode_thread_closed, decode_thread_deleted,
@@ -1063,7 +1065,7 @@ impl CodexAcpAgent {
         &self,
         session_id: &SessionId,
         thread_id: &str,
-        input: Vec<AppServerTurnInput>,
+        input: PromptTurnInput,
         cx: &ConnectionTo<Client>,
     ) -> Result<PromptResponse, Error> {
         let (cancel_tx, cancel_rx) = oneshot::channel();
@@ -1086,7 +1088,10 @@ impl CodexAcpAgent {
             .await
             .turn_start_until_complete_with_interactive(
                 thread_id.to_owned(),
-                input,
+                AppServerTurnStartInput {
+                    input: input.input,
+                    additional_context: input.additional_context,
+                },
                 Some(cancel_rx),
                 |event| {
                     handle_app_server_event(
@@ -1144,9 +1149,9 @@ impl CodexAcpAgent {
     async fn prompt_input(
         &self,
         session_id: &SessionId,
-        input: Vec<AppServerTurnInput>,
-    ) -> Vec<AppServerTurnInput> {
-        let [AppServerTurnInput::Text { text }] = input.as_slice() else {
+        mut input: PromptTurnInput,
+    ) -> PromptTurnInput {
+        let [AppServerTurnInput::Text { text }] = input.input.as_slice() else {
             return input;
         };
         let text = text.clone();
@@ -1158,7 +1163,8 @@ impl CodexAcpAgent {
             .get(session_id.0.as_ref())
             .cloned()
         else {
-            return vec![AppServerTurnInput::Text { text }];
+            input.input = vec![AppServerTurnInput::Text { text }];
+            return input;
         };
 
         let skills = self
@@ -1169,7 +1175,8 @@ impl CodexAcpAgent {
             .cloned()
             .unwrap_or_default();
 
-        prompt_input_with_skills(text, &skills)
+        input.input = prompt_input_with_skills(text, &skills);
+        input
     }
 
     async fn run_builtin_command(
@@ -1293,9 +1300,12 @@ impl CodexAcpAgent {
                 publish_catalog_message(session_id, "Kill", message, cx)
             }
             BuiltinCommand::Init => {
-                let input = vec![AppServerTurnInput::Text {
-                    text: init_prompt(),
-                }];
+                let input = PromptTurnInput {
+                    input: vec![AppServerTurnInput::Text {
+                        text: init_prompt(),
+                    }],
+                    additional_context: None,
+                };
                 self.run_turn_inputs(session_id, thread_id, input, cx).await
             }
             BuiltinCommand::Mcp => {
@@ -2578,7 +2588,7 @@ impl CodexAcpAgent {
     fn capabilities() -> AgentCapabilities {
         AgentCapabilities::new()
             .load_session(true)
-            .prompt_capabilities(PromptCapabilities::new().image(true))
+            .prompt_capabilities(PromptCapabilities::new().image(true).embedded_context(true))
             .session_capabilities(
                 // Fork is exposed by the Rust ACP crate behind its unstable
                 // RFD/extension feature; it is not stable ACP v1 behavior.
@@ -2607,8 +2617,15 @@ fn acp_app_server_method_error(method: &str, error: anyhow::Error) -> Error {
     }
 }
 
-fn prompt_input_blocks(prompt: Vec<ContentBlock>) -> Result<Vec<AppServerTurnInput>, Error> {
+#[derive(Debug, Default)]
+struct PromptTurnInput {
+    input: Vec<AppServerTurnInput>,
+    additional_context: Option<AppServerAdditionalContext>,
+}
+
+fn prompt_input_blocks(prompt: Vec<ContentBlock>) -> Result<PromptTurnInput, Error> {
     let mut input = Vec::new();
+    let mut additional_context = AppServerAdditionalContext::new();
     let mut text = String::new();
 
     fn append_text(text: &mut String, value: &str) {
@@ -2636,6 +2653,18 @@ fn prompt_input_blocks(prompt: Vec<ContentBlock>) -> Result<Vec<AppServerTurnInp
             ContentBlock::ResourceLink(resource) => {
                 append_text(&mut text, &format!("@{}", resource.uri));
             }
+            ContentBlock::Resource(resource) => {
+                let (uri, value) = embedded_resource_context(resource.resource)?;
+                append_text(&mut text, &format!("@{uri}"));
+                let key = unique_additional_context_key(&additional_context, &uri);
+                additional_context.insert(
+                    key,
+                    AppServerAdditionalContextEntry {
+                        value,
+                        kind: AppServerAdditionalContextKind::Untrusted,
+                    },
+                );
+            }
             ContentBlock::Image(image) => {
                 flush_text(&mut input, &mut text);
                 let url = if let Some(uri) = image.uri.filter(|uri| !uri.trim().is_empty()) {
@@ -2651,7 +2680,7 @@ fn prompt_input_blocks(prompt: Vec<ContentBlock>) -> Result<Vec<AppServerTurnInp
             }
             _ => {
                 return Err(Error::invalid_params().data(
-                    "only text, resource link, and image prompt blocks are supported so far",
+                    "only text, resource link, embedded resource, and image prompt blocks are supported so far",
                 ));
             }
         }
@@ -2663,19 +2692,71 @@ fn prompt_input_blocks(prompt: Vec<ContentBlock>) -> Result<Vec<AppServerTurnInp
         return Err(Error::invalid_params().data("prompt cannot be empty"));
     }
 
-    Ok(input)
+    Ok(PromptTurnInput {
+        input,
+        additional_context: (!additional_context.is_empty()).then_some(additional_context),
+    })
 }
 
-fn prompt_command_text(input: &[AppServerTurnInput]) -> Option<&str> {
-    match input {
-        [AppServerTurnInput::Text { text }] => Some(text),
+fn embedded_resource_context(
+    resource: EmbeddedResourceResource,
+) -> Result<(String, String), Error> {
+    match resource {
+        EmbeddedResourceResource::TextResourceContents(resource) => {
+            let mut value = String::new();
+            if let Some(mime_type) = resource.mime_type {
+                value.push_str(&format!("MIME type: {mime_type}\n\n"));
+            }
+            value.push_str(&resource.text);
+            Ok((resource.uri, value))
+        }
+        EmbeddedResourceResource::BlobResourceContents(resource) => {
+            let mut value = String::new();
+            if let Some(mime_type) = resource.mime_type {
+                value.push_str(&format!("MIME type: {mime_type}\n"));
+            }
+            value.push_str("Encoding: base64\n\n");
+            value.push_str(&resource.blob);
+            Ok((resource.uri, value))
+        }
+        _ => Err(Error::invalid_params().data("unsupported embedded resource prompt block")),
+    }
+}
+
+fn unique_additional_context_key(
+    additional_context: &AppServerAdditionalContext,
+    uri: &str,
+) -> String {
+    let base = if uri.trim().is_empty() {
+        "embedded-resource".to_owned()
+    } else {
+        uri.to_owned()
+    };
+
+    if !additional_context.contains_key(&base) {
+        return base;
+    }
+
+    for index in 2.. {
+        let candidate = format!("{base}#{index}");
+        if !additional_context.contains_key(&candidate) {
+            return candidate;
+        }
+    }
+
+    unreachable!("unbounded iterator should always find a unique context key")
+}
+
+fn prompt_command_text(input: &PromptTurnInput) -> Option<&str> {
+    match (input.input.as_slice(), input.additional_context.as_ref()) {
+        ([AppServerTurnInput::Text { text }], None) => Some(text),
         _ => None,
     }
 }
 
-fn prompt_starts_with_command_prefix(input: &[AppServerTurnInput]) -> bool {
+fn prompt_starts_with_command_prefix(input: &PromptTurnInput) -> bool {
     matches!(
-        input.first(),
+        input.input.first(),
         Some(AppServerTurnInput::Text { text }) if text.trim_start().starts_with(['/', '!'])
     )
 }
@@ -5609,13 +5690,47 @@ mod tests {
         .unwrap();
 
         assert!(matches!(
-            &input[..],
+            &input.input[..],
             [
                 AppServerTurnInput::Text { text },
                 AppServerTurnInput::Image { url },
             ] if text == "describe this" && url == "data:image/png;base64,iVBORw0KGgo="
         ));
         assert!(prompt_command_text(&input).is_none());
+    }
+
+    #[test]
+    fn prompt_input_blocks_maps_embedded_text_resources_to_additional_context() {
+        let input = prompt_input_blocks(vec![
+            ContentBlock::Text(TextContent::new("summarize")),
+            ContentBlock::Resource(agent_client_protocol::schema::EmbeddedResource::new(
+                EmbeddedResourceResource::TextResourceContents(
+                    agent_client_protocol::schema::TextResourceContents::new(
+                        "Project notes",
+                        "file:///notes.md",
+                    )
+                    .mime_type("text/markdown"),
+                ),
+            )),
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            &input.input[..],
+            [AppServerTurnInput::Text { text }]
+                if text == "summarize\n@file:///notes.md"
+        ));
+        let additional_context = input
+            .additional_context
+            .as_ref()
+            .expect("embedded resources should populate app-server additionalContext");
+        assert_eq!(
+            additional_context
+                .get("file:///notes.md")
+                .expect("resource URI should be used as context key")
+                .value,
+            "MIME type: text/markdown\n\nProject notes"
+        );
     }
 
     #[test]
