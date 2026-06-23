@@ -204,6 +204,18 @@ struct PendingAppServerUpdates {
     thread_settings: Option<AppServerThreadSettingsUpdate>,
 }
 
+struct StartedSession {
+    session_id: SessionId,
+    config_options: Vec<SessionConfigOption>,
+    advertisements: SessionAdvertisements,
+}
+
+struct SessionAdvertisements {
+    session_id: SessionId,
+    commands: Vec<AvailableCommand>,
+    config_options: Vec<SessionConfigOption>,
+}
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct PersistedSessionAdditionalDirectories {
     #[serde(default)]
@@ -265,8 +277,14 @@ impl CodexAcpAgent {
                         let agent = agent.clone();
                         let session_cx = cx.clone();
                         cx.spawn(async move {
-                            responder
-                                .respond_with_result(agent.new_session(request, session_cx).await)
+                            let result = agent.new_session(request, session_cx.clone()).await;
+                            match result {
+                                Ok((response, advertisements)) => {
+                                    responder.respond_with_result(Ok(response))?;
+                                    publish_session_advertisements(&session_cx, advertisements)
+                                }
+                                Err(error) => responder.respond_with_result(Err(error)),
+                            }
                         })?;
                         Ok(())
                     }
@@ -280,8 +298,14 @@ impl CodexAcpAgent {
                         let agent = agent.clone();
                         let session_cx = cx.clone();
                         cx.spawn(async move {
-                            responder
-                                .respond_with_result(agent.fork_session(request, session_cx).await)
+                            let result = agent.fork_session(request, session_cx.clone()).await;
+                            match result {
+                                Ok((response, advertisements)) => {
+                                    responder.respond_with_result(Ok(response))?;
+                                    publish_session_advertisements(&session_cx, advertisements)
+                                }
+                                Err(error) => responder.respond_with_result(Err(error)),
+                            }
                         })?;
                         Ok(())
                     }
@@ -295,8 +319,14 @@ impl CodexAcpAgent {
                         let agent = agent.clone();
                         let session_cx = cx.clone();
                         cx.spawn(async move {
-                            responder
-                                .respond_with_result(agent.load_session(request, session_cx).await)
+                            let result = agent.load_session(request, session_cx.clone()).await;
+                            match result {
+                                Ok((response, advertisements)) => {
+                                    responder.respond_with_result(Ok(response))?;
+                                    publish_session_advertisements(&session_cx, advertisements)
+                                }
+                                Err(error) => responder.respond_with_result(Err(error)),
+                            }
                         })?;
                         Ok(())
                     }
@@ -312,9 +342,14 @@ impl CodexAcpAgent {
                         let agent = agent.clone();
                         let session_cx = cx.clone();
                         cx.spawn(async move {
-                            responder.respond_with_result(
-                                agent.resume_session(request, session_cx).await,
-                            )
+                            let result = agent.resume_session(request, session_cx.clone()).await;
+                            match result {
+                                Ok((response, advertisements)) => {
+                                    responder.respond_with_result(Ok(response))?;
+                                    publish_session_advertisements(&session_cx, advertisements)
+                                }
+                                Err(error) => responder.respond_with_result(Err(error)),
+                            }
                         })?;
                         Ok(())
                     }
@@ -825,21 +860,24 @@ impl CodexAcpAgent {
         &self,
         request: NewSessionRequest,
         cx: ConnectionTo<Client>,
-    ) -> Result<NewSessionResponse, Error> {
+    ) -> Result<(NewSessionResponse, SessionAdvertisements), Error> {
         let cwd = request.cwd.to_string_lossy().into_owned();
         debug!(method = "session/new", %cwd, "handling ACP request");
-        let (session_id, config_options) = self
+        let started = self
             .start_thread(request.cwd, request.additional_directories, &cx)
             .await?;
 
-        Ok(NewSessionResponse::new(session_id).config_options(config_options))
+        Ok((
+            NewSessionResponse::new(started.session_id).config_options(started.config_options),
+            started.advertisements,
+        ))
     }
 
     async fn fork_session(
         &self,
         request: ForkSessionRequest,
         cx: ConnectionTo<Client>,
-    ) -> Result<ForkSessionResponse, Error> {
+    ) -> Result<(ForkSessionResponse, SessionAdvertisements), Error> {
         let source_thread_id = request.session_id.0.to_string();
         let cwd = request.cwd.to_string_lossy().into_owned();
         debug!(
@@ -848,7 +886,7 @@ impl CodexAcpAgent {
             %cwd,
             "handling ACP request"
         );
-        let (session_id, config_options) = self
+        let started = self
             .fork_thread(
                 source_thread_id,
                 request.cwd,
@@ -857,14 +895,17 @@ impl CodexAcpAgent {
             )
             .await?;
 
-        Ok(ForkSessionResponse::new(session_id).config_options(config_options))
+        Ok((
+            ForkSessionResponse::new(started.session_id).config_options(started.config_options),
+            started.advertisements,
+        ))
     }
 
     async fn load_session(
         &self,
         request: LoadSessionRequest,
         cx: ConnectionTo<Client>,
-    ) -> Result<LoadSessionResponse, Error> {
+    ) -> Result<(LoadSessionResponse, SessionAdvertisements), Error> {
         let thread_id = request.session_id.0.to_string();
         let cwd = request.cwd.to_string_lossy().into_owned();
         debug!(method = "session/load", thread_id, %cwd, "handling ACP request");
@@ -882,7 +923,7 @@ impl CodexAcpAgent {
         self.replay_session_history(&thread_id, &request.session_id, &cx)
             .await?;
 
-        let mut config_options = self
+        let config_options = self
             .refresh_config_options(
                 &request.session_id,
                 CurrentConfigSelections {
@@ -901,7 +942,7 @@ impl CodexAcpAgent {
             )
             .await;
 
-        if let Some(cwd) = resume_response.thread.cwd {
+        let advertisements = if let Some(cwd) = resume_response.thread.cwd {
             let cwd = cwd.to_string_lossy().into_owned();
             self.set_session_cwd(&request.session_id, cwd.clone()).await;
             self.set_session_additional_directories_from_runtime_roots(
@@ -910,29 +951,38 @@ impl CodexAcpAgent {
                 resume_response.runtime_workspace_roots,
             )
             .await;
-            self.refresh_and_publish_skills(cwd, &request.session_id, &cx, false)
-                .await?;
-            config_options = self
-                .config_options_for_session(request.session_id.0.as_ref())
-                .await;
-        }
+            self.refresh_session_advertisements(cwd, &request.session_id, false)
+                .await
+        } else {
+            SessionAdvertisements {
+                session_id: request.session_id.clone(),
+                commands: builtin_commands(),
+                config_options,
+            }
+        };
 
-        Ok(LoadSessionResponse::new().config_options(config_options))
+        Ok((
+            LoadSessionResponse::new().config_options(advertisements.config_options.clone()),
+            advertisements,
+        ))
     }
 
     async fn resume_session(
         &self,
         request: ResumeSessionRequest,
         cx: ConnectionTo<Client>,
-    ) -> Result<ResumeSessionResponse, Error> {
+    ) -> Result<(ResumeSessionResponse, SessionAdvertisements), Error> {
         let thread_id = request.session_id.0.to_string();
         let cwd = request.cwd.to_string_lossy().into_owned();
         debug!(method = "session/resume", thread_id, %cwd, "handling ACP request");
-        let (_, config_options) = self
+        let started = self
             .resume_thread(thread_id, request.cwd, request.additional_directories, &cx)
             .await?;
 
-        Ok(ResumeSessionResponse::new().config_options(config_options))
+        Ok((
+            ResumeSessionResponse::new().config_options(started.config_options),
+            started.advertisements,
+        ))
     }
 
     async fn list_sessions(
@@ -1719,13 +1769,14 @@ impl CodexAcpAgent {
                     .session_cwd(session_id)
                     .await
                     .ok_or_else(|| Error::invalid_request().data("session cwd is not known yet"))?;
-                let (new_session_id, _) = self
+                let started = self
                     .start_thread(PathBuf::from(cwd), Vec::new(), cx)
                     .await?;
+                publish_session_advertisements(cx, started.advertisements)?;
                 publish_catalog_message(
                     session_id,
                     "New",
-                    format!("Started a new Codex session `{}`.", new_session_id.0),
+                    format!("Started a new Codex session `{}`.", started.session_id.0),
                     cx,
                 )
             }
@@ -1734,16 +1785,17 @@ impl CodexAcpAgent {
                     .session_cwd(session_id)
                     .await
                     .ok_or_else(|| Error::invalid_request().data("session cwd is not known yet"))?;
-                let (forked_session_id, _) = self
+                let started = self
                     .fork_thread(thread_id.to_owned(), PathBuf::from(cwd), Vec::new(), cx)
                     .await?;
+                publish_session_advertisements(cx, started.advertisements)?;
 
                 publish_catalog_message(
                     session_id,
                     "Fork",
                     format!(
                         "Forked this Codex thread into session `{}`.",
-                        forked_session_id.0
+                        started.session_id.0
                     ),
                     cx,
                 )
@@ -2169,13 +2221,14 @@ impl CodexAcpAgent {
                     .await
                     .ok_or_else(|| Error::invalid_request().data("session cwd is not known yet"))?;
                 let target_thread_id = self.resolve_resume_target(&cwd, &target).await;
-                let (resumed_session_id, _) = self
+                let resumed = self
                     .resume_thread(target_thread_id, PathBuf::from(cwd), Vec::new(), cx)
                     .await?;
+                publish_session_advertisements(cx, resumed.advertisements)?;
                 publish_catalog_message(
                     session_id,
                     "Resume",
-                    format!("Resumed Codex session `{}`.", resumed_session_id.0),
+                    format!("Resumed Codex session `{}`.", resumed.session_id.0),
                     cx,
                 )
             }
@@ -2274,7 +2327,7 @@ impl CodexAcpAgent {
         cwd: PathBuf,
         additional_directories: Vec<PathBuf>,
         cx: &ConnectionTo<Client>,
-    ) -> Result<(SessionId, Vec<SessionConfigOption>), Error> {
+    ) -> Result<StartedSession, Error> {
         let cwd_string = cwd.to_string_lossy().into_owned();
         let runtime_workspace_roots =
             runtime_workspace_roots_for_acp_request(&cwd, &additional_directories)?;
@@ -2287,7 +2340,7 @@ impl CodexAcpAgent {
             .map_err(acp_internal_error)?;
 
         let session_id = SessionId::new(response.thread.id);
-        let mut config_options = self
+        let config_options = self
             .refresh_config_options(
                 &session_id,
                 CurrentConfigSelections {
@@ -2306,7 +2359,7 @@ impl CodexAcpAgent {
             )
             .await;
         self.replay_thread_turns(&session_id, &response.thread.turns, cx)?;
-        if let Some(cwd) = response.thread.cwd {
+        let advertisements = if let Some(cwd) = response.thread.cwd {
             let cwd = cwd.to_string_lossy().into_owned();
             self.set_session_cwd(&session_id, cwd.clone()).await;
             self.set_session_additional_directories_from_runtime_roots(
@@ -2315,12 +2368,21 @@ impl CodexAcpAgent {
                 response.runtime_workspace_roots,
             )
             .await;
-            self.refresh_and_publish_skills(cwd, &session_id, cx, false)
-                .await?;
-            config_options = self.config_options_for_session(session_id.0.as_ref()).await;
-        }
+            self.refresh_session_advertisements(cwd, &session_id, false)
+                .await
+        } else {
+            SessionAdvertisements {
+                session_id: session_id.clone(),
+                commands: builtin_commands(),
+                config_options,
+            }
+        };
 
-        Ok((session_id, config_options))
+        Ok(StartedSession {
+            session_id,
+            config_options: advertisements.config_options.clone(),
+            advertisements,
+        })
     }
 
     async fn fork_thread(
@@ -2328,8 +2390,8 @@ impl CodexAcpAgent {
         source_thread_id: String,
         cwd: PathBuf,
         additional_directories: Vec<PathBuf>,
-        cx: &ConnectionTo<Client>,
-    ) -> Result<(SessionId, Vec<SessionConfigOption>), Error> {
+        _cx: &ConnectionTo<Client>,
+    ) -> Result<StartedSession, Error> {
         let cwd_string = cwd.to_string_lossy().into_owned();
         let runtime_workspace_roots =
             runtime_workspace_roots_for_acp_request(&cwd, &additional_directories)?;
@@ -2342,7 +2404,7 @@ impl CodexAcpAgent {
             .map_err(acp_internal_error)?;
 
         let session_id = SessionId::new(response.thread.id);
-        let mut config_options = self
+        let config_options = self
             .refresh_config_options(
                 &session_id,
                 CurrentConfigSelections {
@@ -2360,7 +2422,7 @@ impl CodexAcpAgent {
                 },
             )
             .await;
-        if let Some(cwd) = response.thread.cwd {
+        let advertisements = if let Some(cwd) = response.thread.cwd {
             let cwd = cwd.to_string_lossy().into_owned();
             self.set_session_cwd(&session_id, cwd.clone()).await;
             self.set_session_additional_directories_from_runtime_roots(
@@ -2369,12 +2431,21 @@ impl CodexAcpAgent {
                 response.runtime_workspace_roots,
             )
             .await;
-            self.refresh_and_publish_skills(cwd, &session_id, cx, false)
-                .await?;
-            config_options = self.config_options_for_session(session_id.0.as_ref()).await;
-        }
+            self.refresh_session_advertisements(cwd, &session_id, false)
+                .await
+        } else {
+            SessionAdvertisements {
+                session_id: session_id.clone(),
+                commands: builtin_commands(),
+                config_options,
+            }
+        };
 
-        Ok((session_id, config_options))
+        Ok(StartedSession {
+            session_id,
+            config_options: advertisements.config_options.clone(),
+            advertisements,
+        })
     }
 
     fn replay_thread_turns(
@@ -2462,8 +2533,8 @@ impl CodexAcpAgent {
         thread_id: String,
         cwd: PathBuf,
         additional_directories: Vec<PathBuf>,
-        cx: &ConnectionTo<Client>,
-    ) -> Result<(SessionId, Vec<SessionConfigOption>), Error> {
+        _cx: &ConnectionTo<Client>,
+    ) -> Result<StartedSession, Error> {
         let cwd_string = cwd.to_string_lossy().into_owned();
         let runtime_workspace_roots =
             runtime_workspace_roots_for_acp_request(&cwd, &additional_directories)?;
@@ -2476,7 +2547,7 @@ impl CodexAcpAgent {
             .map_err(acp_internal_error)?;
 
         let session_id = SessionId::new(response.thread.id);
-        let mut config_options = self
+        let config_options = self
             .refresh_config_options(
                 &session_id,
                 CurrentConfigSelections {
@@ -2494,7 +2565,7 @@ impl CodexAcpAgent {
                 },
             )
             .await;
-        if let Some(cwd) = response.thread.cwd {
+        let advertisements = if let Some(cwd) = response.thread.cwd {
             let cwd = cwd.to_string_lossy().into_owned();
             self.set_session_cwd(&session_id, cwd.clone()).await;
             self.set_session_additional_directories_from_runtime_roots(
@@ -2503,12 +2574,21 @@ impl CodexAcpAgent {
                 response.runtime_workspace_roots,
             )
             .await;
-            self.refresh_and_publish_skills(cwd, &session_id, cx, false)
-                .await?;
-            config_options = self.config_options_for_session(session_id.0.as_ref()).await;
-        }
+            self.refresh_session_advertisements(cwd, &session_id, false)
+                .await
+        } else {
+            SessionAdvertisements {
+                session_id: session_id.clone(),
+                commands: builtin_commands(),
+                config_options,
+            }
+        };
 
-        Ok((session_id, config_options))
+        Ok(StartedSession {
+            session_id,
+            config_options: advertisements.config_options.clone(),
+            advertisements,
+        })
     }
 
     async fn resolve_resume_target(&self, cwd: &str, target: &str) -> String {
@@ -2754,6 +2834,18 @@ impl CodexAcpAgent {
         cx: &ConnectionTo<Client>,
         force_reload: bool,
     ) -> Result<(), Error> {
+        let advertisements = self
+            .refresh_session_advertisements(cwd, session_id, force_reload)
+            .await;
+        publish_session_advertisements(cx, advertisements)
+    }
+
+    async fn refresh_session_advertisements(
+        &self,
+        cwd: String,
+        session_id: &SessionId,
+        force_reload: bool,
+    ) -> SessionAdvertisements {
         let skills_response = match self
             .app_server
             .lock()
@@ -2764,7 +2856,11 @@ impl CodexAcpAgent {
             Ok(response) => response,
             Err(error) => {
                 debug!(%cwd, %error, "failed to refresh Codex skills");
-                return send_available_commands_update(cx, session_id.clone(), builtin_commands());
+                return SessionAdvertisements {
+                    session_id: session_id.clone(),
+                    commands: builtin_commands(),
+                    config_options: self.config_options_for_session(session_id.0.as_ref()).await,
+                };
             }
         };
 
@@ -2777,14 +2873,12 @@ impl CodexAcpAgent {
 
         self.skills_by_cwd.lock().await.insert(cwd, skills.clone());
 
-        send_available_commands_update(cx, session_id.clone(), available_commands(skills))?;
         let config_options = self.config_options_for_session(session_id.0.as_ref()).await;
-        send_session_update(
-            cx,
-            session_id.clone(),
-            SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(config_options)),
-        )
-        .map_err(acp_internal_error)
+        SessionAdvertisements {
+            session_id: session_id.clone(),
+            commands: available_commands(skills),
+            config_options,
+        }
     }
 
     async fn publish_pending_updates(
@@ -5290,6 +5384,23 @@ fn send_available_commands_update(
         cx,
         session_id,
         SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(commands)),
+    )
+    .map_err(acp_internal_error)
+}
+
+fn publish_session_advertisements(
+    cx: &ConnectionTo<Client>,
+    advertisements: SessionAdvertisements,
+) -> Result<(), Error> {
+    send_available_commands_update(
+        cx,
+        advertisements.session_id.clone(),
+        advertisements.commands,
+    )?;
+    send_session_update(
+        cx,
+        advertisements.session_id,
+        SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(advertisements.config_options)),
     )
     .map_err(acp_internal_error)
 }
