@@ -11,6 +11,85 @@ use tokio::io::{AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader, ReadHalf,
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 #[tokio::test]
+async fn serialized_session_new_defers_advertisements_after_response() -> anyhow::Result<()> {
+    let fake_codex = fake_codex_app_server(SERIALIZED_RENAME_CODEX_APP_SERVER)?;
+    let mut app_server =
+        AppServerClient::spawn(AppServerCommand::new(fake_codex.path().to_owned())).await?;
+    app_server
+        .initialize(
+            "brokk_codex_acp_test",
+            "Brokk Codex ACP Test",
+            env!("CARGO_PKG_VERSION"),
+        )
+        .await?;
+
+    let (agent_side, client_side) = tokio::io::duplex(64 * 1024);
+    let (agent_read, agent_write) = split(agent_side);
+    let agent_transport = ByteStreams::new(agent_write.compat_write(), agent_read.compat());
+    let agent_task = tokio::spawn(CodexAcpAgent::new(app_server).serve(agent_transport));
+
+    let (client_read, mut client_write) = split(client_side);
+    let mut client_read = BufReader::new(client_read);
+    let mut notifications = Vec::new();
+
+    write_json(
+        &mut client_write,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": 1,
+                "clientCapabilities": {},
+            },
+        }),
+    )
+    .await?;
+    let initialize = read_response(&mut client_read, 1, &mut notifications).await?;
+    assert_eq!(initialize["result"]["protocolVersion"], 1);
+
+    let cwd = tempfile::tempdir()?;
+    write_json(
+        &mut client_write,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "session/new",
+            "params": {
+                "cwd": cwd.path(),
+                "mcpServers": [],
+            },
+        }),
+    )
+    .await?;
+
+    let first = read_json(&mut client_read).await?;
+    assert_eq!(
+        first["id"], 2,
+        "session/new response should arrive first: {first:#?}"
+    );
+
+    assert_no_json_within(&mut client_read, Duration::from_millis(2)).await?;
+
+    let second = read_json(&mut client_read).await?;
+    assert_eq!(second["method"], "session/update", "message: {second:#?}");
+    assert_eq!(
+        second["params"]["update"]["sessionUpdate"], "available_commands_update",
+        "message: {second:#?}"
+    );
+    assert!(
+        second["params"]["update"]["availableCommands"]
+            .as_array()
+            .is_some_and(|commands| commands.iter().any(|command| command["name"] == "plan")),
+        "message: {second:#?}"
+    );
+
+    drop(client_write);
+    agent_task.abort();
+    Ok(())
+}
+
+#[tokio::test]
 async fn serialized_rename_emits_session_info_update_without_starting_turn() -> anyhow::Result<()> {
     let (prompt, notifications) = run_serialized_prompt("/rename Serialized Rename").await?;
 
@@ -501,7 +580,7 @@ async fn serialized_mcp_elicitation_uses_acp_elicitation_create() -> anyhow::Res
     )
     .await?;
 
-    let elicitation = read_json(&mut client_read).await?;
+    let elicitation = read_next_non_setup_message(&mut client_read, &mut notifications).await?;
     assert_eq!(elicitation["method"], "elicitation/create");
     assert_eq!(elicitation["params"]["mode"], "form");
     assert_eq!(elicitation["params"]["message"], "Provide an answer");
@@ -621,7 +700,7 @@ async fn serialized_request_user_input_uses_acp_elicitation_create() -> anyhow::
     )
     .await?;
 
-    let elicitation = read_json(&mut client_read).await?;
+    let elicitation = read_next_non_setup_message(&mut client_read, &mut notifications).await?;
     assert_eq!(elicitation["method"], "elicitation/create");
     assert_eq!(elicitation["params"]["mode"], "form");
     assert_eq!(
@@ -746,7 +825,7 @@ async fn serialized_dynamic_tool_call_uses_acp_extension_request() -> anyhow::Re
     )
     .await?;
 
-    let dynamic_tool = read_json(&mut client_read).await?;
+    let dynamic_tool = read_next_non_setup_message(&mut client_read, &mut notifications).await?;
     assert_eq!(dynamic_tool["method"], "_brokk_codex_acp/dynamic_tool_call");
     assert_eq!(dynamic_tool["params"]["threadId"], "thread-serialized");
     assert_eq!(
@@ -1432,7 +1511,7 @@ async fn run_serialized_close_during_prompt() -> anyhow::Result<(Value, Vec<Valu
     )
     .await?;
 
-    let turn_started = read_json(&mut client_read).await?;
+    let turn_started = read_next_non_setup_message(&mut client_read, &mut messages).await?;
     assert!(
         turn_started["method"] == "session/update"
             && turn_started["params"]["update"]["sessionUpdate"] == "agent_message_chunk"
@@ -1480,6 +1559,41 @@ async fn read_response(
         }
         notifications.push(message);
     }
+}
+
+async fn read_next_non_setup_message(
+    reader: &mut BufReader<ReadHalf<tokio::io::DuplexStream>>,
+    notifications: &mut Vec<Value>,
+) -> anyhow::Result<Value> {
+    loop {
+        let message = read_json(reader).await?;
+        if is_session_setup_update(&message) {
+            notifications.push(message);
+            continue;
+        }
+        return Ok(message);
+    }
+}
+
+async fn assert_no_json_within(
+    reader: &mut BufReader<ReadHalf<tokio::io::DuplexStream>>,
+    duration: Duration,
+) -> anyhow::Result<()> {
+    match tokio::time::timeout(duration, read_json(reader)).await {
+        Ok(Ok(message)) => anyhow::bail!(
+            "setup update arrived before client registration window completed: {message:#?}"
+        ),
+        Ok(Err(error)) => Err(error),
+        Err(_) => Ok(()),
+    }
+}
+
+fn is_session_setup_update(message: &Value) -> bool {
+    message["method"] == "session/update"
+        && matches!(
+            message["params"]["update"]["sessionUpdate"].as_str(),
+            Some("available_commands_update" | "config_option_update")
+        )
 }
 
 async fn read_json(
