@@ -11,7 +11,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader, ReadHalf,
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 #[tokio::test]
-async fn serialized_session_new_advertises_commands_after_response() -> anyhow::Result<()> {
+async fn serialized_session_new_defers_advertisements_after_response() -> anyhow::Result<()> {
     let fake_codex = fake_codex_app_server(SERIALIZED_RENAME_CODEX_APP_SERVER)?;
     let mut app_server =
         AppServerClient::spawn(AppServerCommand::new(fake_codex.path().to_owned())).await?;
@@ -68,6 +68,8 @@ async fn serialized_session_new_advertises_commands_after_response() -> anyhow::
         first["id"], 2,
         "session/new response should arrive first: {first:#?}"
     );
+
+    assert_no_json_within(&mut client_read, Duration::from_millis(2)).await?;
 
     let second = read_json(&mut client_read).await?;
     assert_eq!(second["method"], "session/update", "message: {second:#?}");
@@ -1570,6 +1572,19 @@ async fn read_next_non_setup_message(
             continue;
         }
         return Ok(message);
+    }
+}
+
+async fn assert_no_json_within(
+    reader: &mut BufReader<ReadHalf<tokio::io::DuplexStream>>,
+    duration: Duration,
+) -> anyhow::Result<()> {
+    match tokio::time::timeout(duration, read_json(reader)).await {
+        Ok(Ok(message)) => anyhow::bail!(
+            "setup update arrived before client registration window completed: {message:#?}"
+        ),
+        Ok(Err(error)) => Err(error),
+        Err(_) => Ok(()),
     }
 }
 

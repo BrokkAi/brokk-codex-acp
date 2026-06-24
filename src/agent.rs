@@ -33,6 +33,7 @@ use agent_client_protocol::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::sync::{Mutex, broadcast, oneshot};
+use tokio::time::{Duration, sleep};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{debug, trace, warn};
 
@@ -281,7 +282,7 @@ impl CodexAcpAgent {
                             match result {
                                 Ok((response, advertisements)) => {
                                     responder.respond_with_result(Ok(response))?;
-                                    publish_session_advertisements(&session_cx, advertisements)
+                                    schedule_session_advertisements(&session_cx, advertisements)
                                 }
                                 Err(error) => responder.respond_with_result(Err(error)),
                             }
@@ -302,7 +303,7 @@ impl CodexAcpAgent {
                             match result {
                                 Ok((response, advertisements)) => {
                                     responder.respond_with_result(Ok(response))?;
-                                    publish_session_advertisements(&session_cx, advertisements)
+                                    schedule_session_advertisements(&session_cx, advertisements)
                                 }
                                 Err(error) => responder.respond_with_result(Err(error)),
                             }
@@ -323,7 +324,7 @@ impl CodexAcpAgent {
                             match result {
                                 Ok((response, advertisements)) => {
                                     responder.respond_with_result(Ok(response))?;
-                                    publish_session_advertisements(&session_cx, advertisements)
+                                    schedule_session_advertisements(&session_cx, advertisements)
                                 }
                                 Err(error) => responder.respond_with_result(Err(error)),
                             }
@@ -346,7 +347,7 @@ impl CodexAcpAgent {
                             match result {
                                 Ok((response, advertisements)) => {
                                     responder.respond_with_result(Ok(response))?;
-                                    publish_session_advertisements(&session_cx, advertisements)
+                                    schedule_session_advertisements(&session_cx, advertisements)
                                 }
                                 Err(error) => responder.respond_with_result(Err(error)),
                             }
@@ -5403,6 +5404,18 @@ fn publish_session_advertisements(
         SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(advertisements.config_options)),
     )
     .map_err(acp_internal_error)
+}
+
+fn schedule_session_advertisements(
+    cx: &ConnectionTo<Client>,
+    advertisements: SessionAdvertisements,
+) -> Result<(), Error> {
+    let cx = cx.clone();
+    cx.clone().spawn(async move {
+        tokio::task::yield_now().await;
+        sleep(Duration::from_millis(10)).await;
+        publish_session_advertisements(&cx, advertisements)
+    })
 }
 
 fn publish_session_name_update(
